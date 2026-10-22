@@ -1,0 +1,22 @@
+/target/
+/island-ui/node_modules/
+# Local reverse-engineering working files (~2.2 GB), including extracted bundles
+# and tools. Keep the small reviewed reports in reference/Island/outputs/.
+/reference/Island/work/
+/island-ui/.tmp/
+
+# Local secrets and developer-specific files
+.env
+.env.*
+!.env.example
+*.pfx
+*.p12
+*.key
+*.log
+/.idea/
+/.vscode/
+/.vs/
+*.swp
+*.swo
+Thumbs.db
+Desktop.ini

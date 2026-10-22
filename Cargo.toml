@@ -1,0 +1,166 @@
+[package]
+name = "island-desktop"
+description = "A compact Windows desktop workspace for everyday tools and ACP coding agents"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+readme = "README.md"
+license = "MIT"
+publish = false
+
+[profile.dev]
+# The layered shell rasterizes animated alpha on the CPU; keep debug builds
+# responsive enough for product interaction while retaining debug assertions.
+opt-level = 1
+
+[profile.dev.package."*"]
+# Keep third-party dependency builds at Cargo's default speed; the CPU shell
+# renderer is part of this package and receives the development optimization.
+opt-level = 0
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+windows-shell-probe = []
+linux-x11-probe = ["dep:x11rb"]
+ui-host-common = [
+    "dep:eframe",
+    "dep:raw-window-handle",
+    "eframe/accesskit",
+    "eframe/default_fonts",
+    "eframe/wayland",
+    "eframe/x11",
+]
+ui-host-probe = ["ui-host-common", "eframe/glow", "eframe/wgpu"]
+ui-host-profile-wgpu = ["ui-host-common", "eframe/wgpu"]
+ui-host-profile-glow = ["ui-host-common", "eframe/glow"]
+windows-media-probe = ["dep:windows"]
+product-app = [
+    "dep:image",
+    "dep:eframe",
+    "dep:raw-window-handle",
+    "dep:rusqlite",
+    "dep:windows-startup",
+    "dep:windows-core",
+    "dep:windows-future",
+    "dep:windows-collections",
+    "eframe/accesskit",
+    "eframe/default_fonts",
+    "eframe/glow",
+    "dep:wry",
+]
+
+[[example]]
+name = "windows_shell_probe"
+path = "examples/windows_shell_probe.rs"
+required-features = ["windows-shell-probe"]
+
+[[example]]
+name = "linux_x11_probe"
+path = "examples/linux_x11_probe.rs"
+required-features = ["linux-x11-probe"]
+
+[[example]]
+name = "native_motion_probe"
+path = "examples/native_motion_probe.rs"
+required-features = ["ui-host-common"]
+
+[[bin]]
+name = "island-desktop"
+path = "app/main.rs"
+required-features = ["product-app"]
+
+[[example]]
+name = "windows_media_probe"
+path = "examples/windows_media_probe.rs"
+required-features = ["windows-media-probe"]
+
+[dependencies]
+image = { version = "=0.25.9", optional = true, default-features = false, features = ["png", "jpeg", "webp", "bmp", "tiff", "gif"] }
+eframe = { version = "0.36.2", optional = true, default-features = false }
+raw-window-handle = { version = "0.6.2", optional = true }
+rusqlite = { version = "0.37.0", features = ["bundled"], optional = true }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[dev-dependencies]
+gif = { version = "=0.14.2", default-features = false, features = ["raii_no_panic", "std"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_Graphics_Dwm",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Power",
+    "Win32_System_Shutdown",
+    "Win32_System_Registry",
+    "Win32_System_SystemInformation",
+    "Win32_System_Threading",
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_NetworkManagement_WiFi",
+    "Win32_Networking_WinSock",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Diagnostics_Debug",
+    "Win32_Security",
+    "Win32_Security_Cryptography",
+    "Win32_System_DataExchange",
+    "Win32_System_Memory",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+windows = { version = "0.62.2", optional = true, features = [
+    "Foundation",
+    "Globalization",
+    "Graphics_Capture",
+    "Graphics_Imaging",
+    "Media_Ocr",
+    "Storage_Streams",
+    "Win32_Media_Audio",
+    "Win32_Media_MediaFoundation",
+    "Win32_Networking_WinHttp",
+    "Win32_System_Com",
+    "Win32_System_WinRT",
+] }
+windows-startup = { package = "windows", version = "0.62.2", optional = true, default-features = false, features = [
+    "std",
+    "Foundation",
+    "ApplicationModel",
+    "Devices_Radios",
+    "Globalization",
+    "Graphics_Imaging",
+    "Media_Control",
+    "Media_Ocr",
+    "Storage_Streams",
+    "Win32_Media_Audio",
+    "Win32_Media_Audio_Endpoints",
+    "Win32_Media_MediaFoundation",
+    "Win32_Networking_WinHttp",
+    "Win32_Graphics_Gdi",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Ole",
+    "Win32_System_SystemServices",
+    "Win32_System_Variant",
+    "Win32_System_WinRT",
+    "Media_SpeechRecognition",
+    "Win32_Media_Speech",
+    "Foundation_Collections",
+    "Win32_Devices_FunctionDiscovery",
+    "Win32_UI_Shell",
+    "Win32_UI_Shell_Common",
+    "Win32_UI_Shell_PropertiesSystem",
+] }
+windows-core = { version = "0.62.2", optional = true }
+windows-future = { version = "0.3.2", optional = true }
+windows-collections = { version = "0.3.2", optional = true }
+base64 = "0.22.1"
+png = "0.18.1"
+wry = { version = "0.57.0", optional = true, default-features = false }
+quircs = "0.10.3"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+x11rb = { version = "0.14.0", default-features = false, optional = true }

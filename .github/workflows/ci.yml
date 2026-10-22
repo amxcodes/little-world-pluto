@@ -1,0 +1,52 @@
+name: Rust CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Windows quality checks
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: island-ui/package-lock.json
+
+      - name: Check frontend
+        working-directory: island-ui
+        run: |
+          npm ci
+          node --test tests/agent-navigation.test.mjs tests/voice-capture.test.mjs tests/voice-submit.test.mjs
+          npm run build
+          git diff --exit-code -- dist/index.html
+
+      - name: Record toolchain
+        run: rustc --version && cargo --version
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Verify shared-core architecture boundaries
+        shell: pwsh
+        run: ./scripts/phase0/verify_architecture.ps1
+
+      - name: Lint
+        run: cargo clippy --locked --all-targets --features windows-shell-probe,ui-host-probe,windows-media-probe -- -D warnings
+
+      - name: Build and run tests and probes
+        run: cargo test --locked --all-targets --features windows-shell-probe,ui-host-probe,windows-media-probe

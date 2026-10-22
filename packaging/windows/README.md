@@ -1,0 +1,7 @@
+# Windows package
+
+`scripts/phase1/package_windows.ps1` builds the locked, offline Rust release binary, generates the three MSIX logo sizes, packs the package with the Windows SDK, and signs it with a short-lived developer certificate. The private signing key is removed after signing. The output MSIX and public `.cer` are written below `target/windows-package/`; generated files are ignored by Git.
+
+This is a local developer package, not a production-trusted release. Windows deployment requires a certificate trusted by the package deployment service. The install lifecycle checker is `scripts/phase1/verify_windows_package_install.ps1`; it installs only the Island package, launches the executable with an isolated `LOCALAPPDATA`, checks the declared startup task, uninstalls the package, and removes its test data and trust entry. A successful package build does not count as an install/upgrade/uninstall pass.
+
+The manifest declares a disabled-by-default Windows startup task (`IslandDesktopStartup`). In the packaged app, Settings reads the effective Windows state and can request enable/disable. The UI preserves Windows' `DisabledByUser` and policy states, and the API is unavailable in an unpackaged run. Use Windows Startup settings/Task Manager when Windows has disabled the task for the user or policy. Product package install/start/upgrade/uninstall and user-data retention still require an accepted test identity.
