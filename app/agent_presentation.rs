@@ -1,6 +1,6 @@
 //! A bounded, provider-neutral presentation contract for compact agent answers.
 //!
-//! The model can suggest data for registered Island components, but this module
+//! The model can suggest data for registered Pluto components, but this module
 //! never accepts markup, scripts, styles, arbitrary actions, or remote assets.
 use serde::{Deserialize, Serialize};
 

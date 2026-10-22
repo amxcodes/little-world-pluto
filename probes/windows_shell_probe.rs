@@ -126,7 +126,7 @@ fn main() {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     use std::{ffi::OsStr, iter::once, os::windows::ffi::OsStrExt, ptr::null_mut};
 
-    use island_desktop::visual::{
+    use pluto::visual::{
         CALIBRATED_STATUS_WIDTH, FOLDED_HEIGHT, FOLDED_HOST_HEIGHT, ShapeMode, ShellLayout,
     };
 
@@ -165,7 +165,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // its source-derived dynamic width target separately.
     const PILL_WIDTH: f64 = CALIBRATED_STATUS_WIDTH;
     const PILL_HEIGHT: f64 = FOLDED_HEIGHT as f64;
-    const NOTCH_EAR: f64 = island_desktop::visual::NOTCH_EAR as f64;
+    const NOTCH_EAR: f64 = pluto::visual::NOTCH_EAR as f64;
     // Preserve a small transparent host tail for the measured outer crop;
     // shape coverage and hit testing use the source's 30 px body height.
     const HOST_HEIGHT: f64 = FOLDED_HOST_HEIGHT;

@@ -147,7 +147,7 @@ try {
         id = 0
         params = @{
             clientInfo = @{
-                name = 'island-desktop-phase0'
+                name = 'pluto-phase0'
                 title = 'Island Phase 0 isolated smoke'
                 version = '0.1.0'
             }

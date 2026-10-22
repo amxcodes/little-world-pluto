@@ -13,9 +13,9 @@ use crate::shortcuts::{
     MOD_ALT, MOD_CONTROL, MOD_SHIFT, SHORTCUT_COUNT, ShortcutAction, ShortcutSet,
 };
 use eframe::egui;
-use island_desktop::motion::{COLLAPSE_SPRING, CONTENT_EXIT_DURATION, Spring, SpringMotion};
-use island_desktop::shell_state::{ShellEvent, ShellMode, ShellReducer};
-use island_desktop::visual::{
+use pluto::motion::{COLLAPSE_SPRING, CONTENT_EXIT_DURATION, Spring, SpringMotion};
+use pluto::shell_state::{ShellEvent, ShellMode, ShellReducer};
+use pluto::visual::{
     EXPANDED_HEIGHT, FOLDED_HEIGHT, ShapeMode, ShellLayout, centered_pixel_origin,
     centered_pixel_width,
 };
@@ -86,7 +86,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{SW_RESTORE, SW_SHOW, ShowWindowAsync};
 
-const CLASS_NAME: &str = "IslandDesktopEdgeShell";
+const CLASS_NAME: &str = "PlutoDesktopEdgeShell";
 
 fn wake_sensitivity() -> crate::platform::windows::wake_word::Sensitivity {
     let preferences = load_agent_preferences().unwrap_or_default();
@@ -100,7 +100,7 @@ fn wake_sensitivity() -> crate::platform::windows::wake_word::Sensitivity {
 fn agent_preferences_path() -> Option<std::path::PathBuf> {
     std::env::var_os("LOCALAPPDATA").map(|root| {
         std::path::PathBuf::from(root)
-            .join("Island")
+            .join("Pluto")
             .join("agent-preferences.json")
     })
 }
@@ -201,8 +201,8 @@ fn pick_opencode_files(owner: HWND) -> Option<Vec<String>> {
     }
     Some(paths)
 }
-const DROP_CATCHER_CLASS_NAME: &str = "IslandDesktopDropCatcher";
-const WINDOW_TITLE: &str = "Island edge shell";
+const DROP_CATCHER_CLASS_NAME: &str = "PlutoDesktopDropCatcher";
+const WINDOW_TITLE: &str = "Pluto edge shell";
 // Coverage is analytically antialiased from the contour's signed distance,
 // so one center sample per edge pixel is sufficient at every device scale.
 // Interior pixels still use the scanline fast path; only contour pixels need
@@ -1654,7 +1654,7 @@ fn start_signature_file_drag(hwnd: HWND, png: &[u8]) -> Result<bool, String> {
         return Err("The signature PNG is invalid or too large.".into());
     }
 
-    let directory = std::env::temp_dir().join("Island").join("signature-drops");
+    let directory = std::env::temp_dir().join("Pluto").join("signature-drops");
     std::fs::create_dir_all(&directory)
         .map_err(|_| "Could not prepare the signature drag file.".to_owned())?;
     let stamp = std::time::SystemTime::now()
@@ -2548,7 +2548,7 @@ fn register_shortcuts(
     for binding in shortcuts.bindings() {
         if !matches!(
             binding.action,
-            ShortcutAction::ToggleIsland | ShortcutAction::CommandBar
+            ShortcutAction::TogglePluto | ShortcutAction::CommandBar
         ) {
             continue;
         }
@@ -3010,7 +3010,7 @@ impl EdgeShell {
             speech_pending: false,
             wake_word,
             wake_word_status: "off".into(),
-            wake_word_phrase: "Hey Island".into(),
+            wake_word_phrase: "Hey Pluto".into(),
             wake_word_error: None,
             wake_word_revision: 0,
             wake_surface: false,
@@ -3156,7 +3156,7 @@ impl EdgeShell {
         }
         // SAFETY: the boxed shell's address is stable until Drop destroys the
         // HWND. WndProc runs on this shell thread, never concurrently with
-        // IslandApp's update callback.
+        // PlutoApp's update callback.
         let shell_pointer = Box::as_mut(&mut shell) as *mut Self;
         // SAFETY: shell_pointer points at the stable allocation that owns this
         // callback state, and the callback is nulled before HWND destruction.
@@ -3253,7 +3253,7 @@ impl EdgeShell {
             let child_window = windows_startup::Win32::Foundation::HWND(child as _);
             // Another WebView2 component may have registered its own target
             // before the child became part of this view. This view owns every
-            // descendant of our shell HWND, so Island replaces that target.
+            // descendant of our shell HWND, so Pluto replaces that target.
             let _ = unsafe { windows_startup::Win32::System::Ole::RevokeDragDrop(child_window) };
             if unsafe {
                 windows_startup::Win32::System::Ole::RegisterDragDrop(child_window, &target)
@@ -3296,7 +3296,7 @@ impl EdgeShell {
             CreateWindowExW(
                 WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
                 class_name.as_ptr(),
-                wide("Island drop catcher").as_ptr(),
+                wide("Pluto drop catcher").as_ptr(),
                 WS_POPUP,
                 self.position.x,
                 self.position.y,
@@ -3310,7 +3310,7 @@ impl EdgeShell {
         };
         if catcher.is_null() {
             eprintln!(
-                "Island drop catcher creation failed: {}",
+                "Pluto drop catcher creation failed: {}",
                 std::io::Error::last_os_error()
             );
             return;
@@ -3330,7 +3330,7 @@ impl EdgeShell {
             };
             trace_drop(format_args!("catcher registration={result:?}"));
             if let Err(error) = result {
-                eprintln!("Island drop catcher OLE registration failed: {error}");
+                eprintln!("Pluto drop catcher OLE registration failed: {error}");
                 unsafe { DragAcceptFiles(catcher, 1) };
             }
         } else {
@@ -3415,7 +3415,7 @@ impl EdgeShell {
         let profile = std::env::var_os("LOCALAPPDATA")
             .map(std::path::PathBuf::from)
             .unwrap_or_else(std::env::temp_dir)
-            .join("Island")
+            .join("Pluto")
             .join("WebView2");
         std::fs::create_dir_all(&profile).map_err(|error| error.to_string())?;
         let mut web_context = wry::WebContext::new(Some(profile));
@@ -3429,7 +3429,7 @@ impl EdgeShell {
                 wry::http::Response::builder()
                     .header(wry::http::header::CONTENT_TYPE, "text/html; charset=utf-8")
                     .body(std::borrow::Cow::Borrowed(html.as_bytes()))
-                    .expect("the embedded Island page response is valid")
+                    .expect("the embedded Pluto page response is valid")
             })
             .with_https_scheme(true)
             .with_url("island://localhost/")
@@ -3465,7 +3465,7 @@ impl EdgeShell {
                 Ok(())
             }
             Err(error) => Err(format!(
-                "Island needs WebView2 to show its React interface: {error}"
+                "Pluto needs WebView2 to show its React interface: {error}"
             )),
         }
     }
@@ -4210,7 +4210,7 @@ impl EdgeShell {
                 }
                 "wakeWordSet" => {
                     if value["enabled"].as_bool().unwrap_or(false) {
-                        let phrase = value["phrase"].as_str().unwrap_or("Hey Island");
+                        let phrase = value["phrase"].as_str().unwrap_or("Hey Pluto");
                         match self.wake_word.arm(phrase, wake_sensitivity()) {
                             Ok(phrase) => {
                                 self.wake_word_status = "arming".into();
@@ -5303,8 +5303,8 @@ impl EdgeShell {
                                 .file_name()
                                 .and_then(|name| name.to_str())
                                 .is_some_and(|name| {
-                                    name.starts_with("Island-capture-")
-                                        || name.starts_with("Island-recording-")
+                                    name.starts_with("Pluto-capture-")
+                                        || name.starts_with("Pluto-recording-")
                                 })
                         {
                             if action == "open" {
@@ -5540,7 +5540,7 @@ impl EdgeShell {
                     let query = value["query"].as_str().unwrap_or("");
                     if query.trim_start().starts_with('>') {
                         self.command_result = None;
-                        self.command_error = Some("Island will not execute shell text. Open a terminal if you want to run this command.".to_owned());
+                        self.command_error = Some("Pluto will not execute shell text. Open a terminal if you want to run this command.".to_owned());
                     } else {
                         match crate::commands::evaluate(query) {
                             Ok(result) => {
@@ -5738,7 +5738,7 @@ impl EdgeShell {
                         } else {
                             self.send_speech_result(
                                 request_id,
-                                Err("Island received an unsupported audio recording.".into()),
+                                Err("Pluto received an unsupported audio recording.".into()),
                             );
                             continue;
                         };
@@ -7696,7 +7696,7 @@ impl EdgeShell {
         let Some(local) = std::env::var_os("LOCALAPPDATA") else {
             return;
         };
-        let directory = std::path::PathBuf::from(local).join("Island");
+        let directory = std::path::PathBuf::from(local).join("Pluto");
         if let Some(folder) = self.notebook.folders.get_mut(self.notebook.selected) {
             folder.text = self.note.clone();
         }
@@ -9406,7 +9406,7 @@ unsafe extern "system" fn shell_window_proc(
         else {
             return 0;
         };
-        if action == ShortcutAction::ToggleIsland {
+        if action == ShortcutAction::TogglePluto {
             // Preserve rapid repeated toggles if the UI hasn't drained one.
             callbacks.toggle_requested.fetch_add(1, Ordering::Release);
         } else {
@@ -9420,7 +9420,7 @@ unsafe extern "system" fn shell_window_proc(
         }
         callbacks.context.request_repaint();
         let owner = callbacks.owner.load(Ordering::Acquire);
-        if action == ShortcutAction::ToggleIsland && !owner.is_null() {
+        if action == ShortcutAction::TogglePluto && !owner.is_null() {
             // SAFETY: this WndProc runs on the shell's dedicated owner thread;
             // Drop clears owner before destroying the HWND.
             unsafe {
@@ -9906,7 +9906,7 @@ fn is_windows_capture_surface(window: HWND) -> bool {
     }
 
     // Win+Shift+S uses a temporary full-desktop window. Treating that picker
-    // as a fullscreen app hides and re-shows the Island around every snip,
+    // as a fullscreen app hides and re-shows the Pluto around every snip,
     // which needlessly tears down the compact WebView presentation.
     let mut path = [0u16; 1024];
     let mut length = path.len() as u32;
@@ -10091,7 +10091,7 @@ fn read_local_note() -> String {
         return String::new();
     };
     let path = std::path::PathBuf::from(local)
-        .join("Island")
+        .join("Pluto")
         .join("note.txt");
     std::fs::read_to_string(path)
         .ok()
@@ -10109,7 +10109,7 @@ fn unix_seconds() -> u64 {
 fn load_notebook() -> NoteBook {
     let saved = std::env::var_os("LOCALAPPDATA")
         .map(std::path::PathBuf::from)
-        .and_then(|local| std::fs::read(local.join("Island").join("notes.json")).ok())
+        .and_then(|local| std::fs::read(local.join("Pluto").join("notes.json")).ok())
         .filter(|bytes| bytes.len() <= 4 * 1024 * 1024)
         .and_then(|bytes| serde_json::from_slice::<NoteBook>(&bytes).ok())
         .filter(|book| {
@@ -10134,7 +10134,7 @@ fn load_notebook() -> NoteBook {
 fn weather_city_path() -> Option<std::path::PathBuf> {
     std::env::var_os("LOCALAPPDATA")
         .map(std::path::PathBuf::from)
-        .map(|local| local.join("Island").join("weather_city.txt"))
+        .map(|local| local.join("Pluto").join("weather_city.txt"))
 }
 
 fn enable_shutdown_privilege() -> bool {
@@ -10240,7 +10240,7 @@ struct WeatherCache {
 fn weather_cache_path() -> Option<std::path::PathBuf> {
     std::env::var_os("LOCALAPPDATA")
         .map(std::path::PathBuf::from)
-        .map(|local| local.join("Island").join("weather_cache.json"))
+        .map(|local| local.join("Pluto").join("weather_cache.json"))
 }
 
 fn load_weather_cache(city: &str, units: WeatherUnits) -> Option<WeatherCache> {
@@ -10287,7 +10287,7 @@ fn save_weather_cache(cache: &WeatherCache) {
 fn shelf_path() -> Option<std::path::PathBuf> {
     std::env::var_os("LOCALAPPDATA")
         .map(std::path::PathBuf::from)
-        .map(|local| local.join("Island").join("shelf.json"))
+        .map(|local| local.join("Pluto").join("shelf.json"))
 }
 
 const HOME_ACTION_IDS: [&str; 17] = [
@@ -10322,7 +10322,7 @@ fn default_home_actions() -> Vec<Option<String>> {
 fn home_actions_path() -> Option<std::path::PathBuf> {
     std::env::var_os("LOCALAPPDATA")
         .map(std::path::PathBuf::from)
-        .map(|local| local.join("Island").join("home_actions.json"))
+        .map(|local| local.join("Pluto").join("home_actions.json"))
 }
 
 fn valid_home_actions(actions: &[Option<String>]) -> bool {
@@ -10652,13 +10652,13 @@ fn save_shelf_paths(paths: &[std::path::PathBuf]) {
 fn clipboard_history_setting_path() -> Option<std::path::PathBuf> {
     std::env::var_os("LOCALAPPDATA")
         .map(std::path::PathBuf::from)
-        .map(|local| local.join("Island").join("clipboard_history_enabled.txt"))
+        .map(|local| local.join("Pluto").join("clipboard_history_enabled.txt"))
 }
 
 fn clipboard_settings_path() -> Option<std::path::PathBuf> {
     std::env::var_os("LOCALAPPDATA")
         .map(std::path::PathBuf::from)
-        .map(|local| local.join("Island").join("clipboard_settings.json"))
+        .map(|local| local.join("Pluto").join("clipboard_settings.json"))
 }
 
 pub fn load_clipboard_settings() -> ClipboardSettings {
@@ -10695,7 +10695,7 @@ pub fn save_clipboard_settings(settings: ClipboardSettings) -> bool {
 fn module_settings_path() -> Option<std::path::PathBuf> {
     std::env::var_os("LOCALAPPDATA")
         .map(std::path::PathBuf::from)
-        .map(|local| local.join("Island").join("modules.json"))
+        .map(|local| local.join("Pluto").join("modules.json"))
 }
 
 pub fn load_module_settings() -> ModuleSettings {
@@ -10804,7 +10804,7 @@ pub fn save_weather_city(city: &str) -> bool {
 fn weather_units_path() -> Option<std::path::PathBuf> {
     std::env::var_os("LOCALAPPDATA")
         .map(std::path::PathBuf::from)
-        .map(|local| local.join("Island").join("weather_units.txt"))
+        .map(|local| local.join("Pluto").join("weather_units.txt"))
 }
 
 pub fn load_weather_units() -> WeatherUnits {

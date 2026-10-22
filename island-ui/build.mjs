@@ -16,4 +16,4 @@ const notices = (await readFile('THIRD_PARTY_NOTICES.md', 'utf8')).replaceAll('-
 const js = result.outputFiles[0].text.replaceAll('</script', '<\\/script');
 const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head><body><div id="root"></div><script>${js}</script><!-- THIRD-PARTY NOTICES\n${notices}\n-->\n</body></html>`;
 await writeFile('dist/index.html', html);
-console.log(`Built Island React UI (${Buffer.byteLength(html)} bytes)`);
+console.log(`Built Pluto React UI (${Buffer.byteLength(html)} bytes)`);

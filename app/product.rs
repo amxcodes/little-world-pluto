@@ -1,4 +1,4 @@
-//! The invisible Windows host for the React Island. All visible controls live
+//! The invisible Windows host for the Pluto interface. All visible controls live
 //! in the shell WebView; this eframe viewport only keeps its event dispatcher
 //! alive for the tray, settings persistence, and shell callbacks.
 
@@ -11,7 +11,7 @@ use crate::platform::windows::tray::TrayController;
 use crate::shortcuts::ShortcutAction;
 use crate::storage::{SettingsStore, StoredSettings, StoredTheme};
 
-pub struct IslandApp {
+pub struct PlutoApp {
     shell: Option<ShellController>,
     tray: Option<TrayController>,
     settings_store: Option<SettingsStore>,
@@ -21,7 +21,7 @@ pub struct IslandApp {
     startup_error: Option<String>,
 }
 
-impl IslandApp {
+impl PlutoApp {
     pub fn new(context: &eframe::CreationContext<'_>) -> Self {
         let (settings_store, settings) = match SettingsStore::open_default() {
             Ok(store) => {
@@ -224,14 +224,14 @@ impl IslandApp {
     }
 }
 
-impl Drop for IslandApp {
+impl Drop for PlutoApp {
     fn drop(&mut self) {
         // Stop the shell window before destroying the tray window.
         drop(self.shell.take());
     }
 }
 
-impl eframe::App for IslandApp {
+impl eframe::App for PlutoApp {
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         let context = ui.ctx().clone();
         if self.first_frame {

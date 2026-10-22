@@ -4,12 +4,12 @@
          xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
          xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
          IgnorableNamespaces="uap desktop rescap">
-  <Identity Name="Littleworld.Island.Desktop"
-            Publisher="CN=Littleworld Island Desktop"
+  <Identity Name="Littleworld.Pluto.Desktop"
+            Publisher="CN=Littleworld Pluto"
             Version="@@PACKAGE_VERSION@@"
             ProcessorArchitecture="@@PROCESSOR_ARCHITECTURE@@" />
   <Properties>
-    <DisplayName>Island</DisplayName>
+    <DisplayName>Pluto</DisplayName>
     <PublisherDisplayName>Littleworld</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
@@ -22,23 +22,23 @@
     <Resource Language="en-us" />
   </Resources>
   <Applications>
-    <Application Id="IslandDesktop"
-                 Executable="IslandDesktop.exe"
+    <Application Id="Pluto"
+                 Executable="Pluto.exe"
                  EntryPoint="Windows.FullTrustApplication">
-      <uap:VisualElements DisplayName="Island"
-                          Description="A desktop island and Codex agent desk"
+      <uap:VisualElements DisplayName="Pluto"
+                          Description="A compact desktop workspace with Codex agents"
                           BackgroundColor="#15171D"
                           Square150x150Logo="Assets\Square150x150Logo.png"
                           Square44x44Logo="Assets\Square44x44Logo.png" />
       <Extensions>
         <desktop:Extension Category="windows.fullTrustProcess"
-                           Executable="IslandDesktop.exe" />
+                           Executable="Pluto.exe" />
         <desktop:Extension Category="windows.startupTask"
-                           Executable="IslandDesktop.exe"
+                           Executable="Pluto.exe"
                            EntryPoint="Windows.FullTrustApplication">
-          <desktop:StartupTask TaskId="IslandDesktopStartup"
+          <desktop:StartupTask TaskId="PlutoStartup"
                                Enabled="false"
-                               DisplayName="Island" />
+                               DisplayName="Pluto" />
         </desktop:Extension>
       </Extensions>
     </Application>

@@ -95,25 +95,19 @@ pub struct Converter {
 }
 
 fn config_path() -> Option<PathBuf> {
-    std::env::var_os("LOCALAPPDATA").map(|p| {
-        PathBuf::from(p)
-            .join("Island")
-            .join("conversion-engine.txt")
-    })
+    std::env::var_os("LOCALAPPDATA")
+        .map(|p| PathBuf::from(p).join("Pluto").join("conversion-engine.txt"))
 }
 
 fn output_config_path() -> Option<PathBuf> {
-    std::env::var_os("LOCALAPPDATA").map(|p| {
-        PathBuf::from(p)
-            .join("Island")
-            .join("conversion-output.txt")
-    })
+    std::env::var_os("LOCALAPPDATA")
+        .map(|p| PathBuf::from(p).join("Pluto").join("conversion-output.txt"))
 }
 
 fn managed_engine() -> Option<PathBuf> {
     std::env::var_os("LOCALAPPDATA").map(|p| {
         PathBuf::from(p)
-            .join("Island")
+            .join("Pluto")
             .join("tools")
             .join("ffmpeg")
             .join("ffmpeg.exe")

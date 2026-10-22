@@ -69,7 +69,7 @@ struct McpStore {
 
 fn local_root() -> Result<PathBuf, String> {
     let local = std::env::var_os("LOCALAPPDATA").ok_or("Windows local app data is unavailable.")?;
-    Ok(PathBuf::from(local).join("Island"))
+    Ok(PathBuf::from(local).join("Pluto"))
 }
 
 fn mcp_store_path() -> Result<PathBuf, String> {
@@ -115,7 +115,7 @@ fn write_mcp_store(servers: &[McpServer]) -> Result<(), String> {
         .map_err(|_| "Windows could not protect MCP credentials. Nothing was saved.".to_owned())?;
     let path = mcp_store_path()?;
     fs::create_dir_all(path.parent().ok_or("MCP settings path is invalid.")?)
-        .map_err(|error| format!("Could not create the Island settings folder: {error}"))?;
+        .map_err(|error| format!("Could not create the Pluto settings folder: {error}"))?;
     let suffix = NEXT_TEMP_FILE.fetch_add(1, Ordering::Relaxed);
     let temp = path.with_extension(format!("{}.{}.tmp", std::process::id(), suffix));
     let mut file = OpenOptions::new()
@@ -674,7 +674,7 @@ pub fn save_skill(name: &str, description: &str, instructions: &str) -> Result<(
         .map_err(|error| format!("Could not save skill instructions: {error}"))?;
     let marker = folder.join(".island-managed");
     if !marker.exists() {
-        fs::write(&marker, b"Island shared skill\n")
+        fs::write(&marker, b"Pluto shared skill\n")
             .map_err(|error| format!("Could not write the skill management marker: {error}"))?;
     }
     let from: Vec<u16> = temp.as_os_str().encode_wide().chain(Some(0)).collect();
@@ -704,7 +704,7 @@ pub fn delete_skill(name: &str) -> Result<(), String> {
         || metadata.file_type().is_symlink()
         || !is_regular_file(&folder.join(".island-managed"))
     {
-        return Err("Only skills created by Island can be removed here.".into());
+        return Err("Only skills created by Pluto can be removed here.".into());
     }
     for file in ["SKILL.md", ".island-managed"] {
         let path = folder.join(file);

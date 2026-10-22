@@ -1,6 +1,6 @@
 #Requires -Version 5.1
 param(
-    [string]$ExecutablePath = (Join-Path $PSScriptRoot '..\..\target\debug\island-desktop.exe'),
+    [string]$ExecutablePath = (Join-Path $PSScriptRoot '..\..\target\debug\pluto.exe'),
     [int]$DurationMs = 1200
 )
 
@@ -9,8 +9,8 @@ $ExecutablePath = [System.IO.Path]::GetFullPath($ExecutablePath)
 if (-not (Test-Path -LiteralPath $ExecutablePath)) {
     throw "Build the product first. Executable not found: $ExecutablePath"
 }
-if (Get-Process -Name 'island-desktop' -ErrorAction SilentlyContinue) {
-    throw 'An Island product process is already running; close it before this isolated frame check.'
+if (Get-Process -Name 'pluto' -ErrorAction SilentlyContinue) {
+    throw 'An Pluto product process is already running; close it before this isolated frame check.'
 }
 
 Add-Type -TypeDefinition @'
@@ -19,7 +19,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Diagnostics;
 
-public static class IslandShellFrameProbe {
+public static class PlutoShellFrameProbe {
     [StructLayout(LayoutKind.Sequential)]
     public struct RECT { public int Left, Top, Right, Bottom; }
     public delegate bool EnumWindowsCallback(IntPtr hwnd, IntPtr state);
@@ -44,7 +44,7 @@ public static class IslandShellFrameProbe {
             if (processId != wantedProcessId) return true;
             var title = new StringBuilder(256);
             GetWindowTextW(hwnd, title, title.Capacity);
-            if (title.ToString() == "Island edge shell") {
+            if (title.ToString() == "Pluto edge shell") {
                 found = hwnd;
                 return false;
             }
@@ -55,7 +55,7 @@ public static class IslandShellFrameProbe {
 }
 '@
 
-[void][IslandShellFrameProbe]::SetProcessDpiAwarenessContext([IntPtr](-4))
+[void][PlutoShellFrameProbe]::SetProcessDpiAwarenessContext([IntPtr](-4))
 $process = $null
 $originalLocalAppData = $env:LOCALAPPDATA
 $originalCodexHome = $env:CODEX_HOME
@@ -71,21 +71,21 @@ try {
     $shell = [IntPtr]::Zero
     do {
         Start-Sleep -Milliseconds 100
-        $shell = [IslandShellFrameProbe]::FindShell([uint32]$process.Id)
+        $shell = [PlutoShellFrameProbe]::FindShell([uint32]$process.Id)
     } while ($shell -eq [IntPtr]::Zero -and [DateTime]::UtcNow -lt $deadline)
     if ($shell -eq [IntPtr]::Zero) { throw 'The product shell HWND did not appear.' }
 
     foreach ($direction in @('open', 'close')) {
         # A synthetic hotkey gives a deterministic immediate retarget without
         # relying on this automation session's blocked physical cursor input.
-        [void][IslandShellFrameProbe]::PostMessage($shell, 0x0312, [IntPtr]0x1D51, [IntPtr]::Zero)
+        [void][PlutoShellFrameProbe]::PostMessage($shell, 0x0312, [IntPtr]0x1D51, [IntPtr]::Zero)
 
         $samples = New-Object 'System.Collections.Generic.List[object]'
         $watch = [System.Diagnostics.Stopwatch]::StartNew()
         $previous = ''
         while ($watch.ElapsedMilliseconds -lt $DurationMs) {
-            $rect = New-Object IslandShellFrameProbe+RECT
-            if ([IslandShellFrameProbe]::GetWindowRect($shell, [ref]$rect)) {
+            $rect = New-Object PlutoShellFrameProbe+RECT
+            if ([PlutoShellFrameProbe]::GetWindowRect($shell, [ref]$rect)) {
                 $bounds = '{0}x{1}@{2},{3}' -f ($rect.Right - $rect.Left), ($rect.Bottom - $rect.Top), $rect.Left, $rect.Top
                 if ($bounds -ne $previous) {
                     $samples.Add([pscustomobject]@{

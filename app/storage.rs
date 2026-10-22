@@ -4,8 +4,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use island_desktop::motion::{HOVER_CLOSE_DELAY, HOVER_OPEN_DELAY};
-use island_desktop::visual::ShapeMode;
+use pluto::motion::{HOVER_CLOSE_DELAY, HOVER_OPEN_DELAY};
+use pluto::visual::ShapeMode;
 use rusqlite::ffi::ErrorCode;
 use rusqlite::{Connection, OptionalExtension, params};
 
@@ -184,7 +184,7 @@ impl SettingsStore {
 
     pub fn open_default() -> Result<Self, StorageError> {
         let local = std::env::var_os("LOCALAPPDATA").ok_or(StorageError::Unavailable)?;
-        Self::open(Path::new(&local).join("Island").join("settings.sqlite3"))
+        Self::open(Path::new(&local).join("Pluto").join("settings.sqlite3"))
     }
 
     pub fn open(path: PathBuf) -> Result<Self, StorageError> {

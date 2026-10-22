@@ -1,6 +1,6 @@
 #Requires -Version 5.1
 param(
-    [string]$ExecutablePath = (Join-Path $PSScriptRoot '..\..\target\release\island-desktop.exe')
+    [string]$ExecutablePath = (Join-Path $PSScriptRoot '..\..\target\release\pluto.exe')
 )
 
 $ErrorActionPreference = 'Stop'
@@ -8,8 +8,8 @@ $ExecutablePath = [System.IO.Path]::GetFullPath($ExecutablePath)
 if (-not (Test-Path -LiteralPath $ExecutablePath)) {
     throw "Build the product first. Executable not found: $ExecutablePath"
 }
-if (Get-Process -Name 'island-desktop' -ErrorAction SilentlyContinue) {
-    throw 'Close the existing Island process before running the isolated hotkey registration check.'
+if (Get-Process -Name 'pluto' -ErrorAction SilentlyContinue) {
+    throw 'Close the existing Pluto process before running the isolated hotkey registration check.'
 }
 
 Add-Type -TypeDefinition @'
@@ -17,7 +17,7 @@ using System;
 using System.Runtime.InteropServices;
 using System.Text;
 
-public static class IslandHotkeyProbe {
+public static class PlutoHotkeyProbe {
     public delegate bool EnumWindowsCallback(IntPtr hwnd, IntPtr state);
     [DllImport("user32.dll", SetLastError = true)]
     public static extern bool RegisterHotKey(IntPtr hwnd, int id, uint modifiers, uint virtualKey);
@@ -37,7 +37,7 @@ public static class IslandHotkeyProbe {
             if (processId != wantedProcessId) return true;
             var name = new StringBuilder(256);
             GetClassNameW(hwnd, name, name.Capacity);
-            if (name.ToString() == "IslandDesktopEdgeShell") {
+            if (name.ToString() == "PlutoDesktopEdgeShell") {
                 result = hwnd;
                 return false;
             }
@@ -72,9 +72,9 @@ $baseline = @{}
 for ($i = 0; $i -lt $bindings.Count; $i++) {
     $id = 0x6700 + $i
     $binding = $bindings[$i]
-    $available = [IslandHotkeyProbe]::RegisterHotKey([IntPtr]::Zero, $id, ($binding.Mods -bor $modNoRepeat), [uint32]$binding.Key)
+    $available = [PlutoHotkeyProbe]::RegisterHotKey([IntPtr]::Zero, $id, ($binding.Mods -bor $modNoRepeat), [uint32]$binding.Key)
     if ($available) {
-        [void][IslandHotkeyProbe]::UnregisterHotKey([IntPtr]::Zero, $id)
+        [void][PlutoHotkeyProbe]::UnregisterHotKey([IntPtr]::Zero, $id)
         $baseline[$binding.Name] = 'Free'
     } else {
         $baselineError = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
@@ -104,7 +104,7 @@ try {
     $shell = [IntPtr]::Zero
     do {
         Start-Sleep -Milliseconds 100
-        $shell = [IslandHotkeyProbe]::FindShell([uint32]$process.Id)
+        $shell = [PlutoHotkeyProbe]::FindShell([uint32]$process.Id)
     } while ($shell -eq [IntPtr]::Zero -and [DateTime]::UtcNow -lt $deadline)
     if ($shell -eq [IntPtr]::Zero) { throw 'The product shell HWND did not appear.' }
     Start-Sleep -Milliseconds 400
@@ -123,9 +123,9 @@ try {
         }
         $checked++
         $id = 0x6800 + $checked
-        $canRegister = [IslandHotkeyProbe]::RegisterHotKey([IntPtr]::Zero, $id, ($binding.Mods -bor $modNoRepeat), [uint32]$binding.Key)
+        $canRegister = [PlutoHotkeyProbe]::RegisterHotKey([IntPtr]::Zero, $id, ($binding.Mods -bor $modNoRepeat), [uint32]$binding.Key)
         if ($canRegister) {
-            [void][IslandHotkeyProbe]::UnregisterHotKey([IntPtr]::Zero, $id)
+            [void][PlutoHotkeyProbe]::UnregisterHotKey([IntPtr]::Zero, $id)
             $failures.Add("$($binding.Name): still available after product startup")
         } else {
             $registrationError = [Runtime.InteropServices.Marshal]::GetLastWin32Error()

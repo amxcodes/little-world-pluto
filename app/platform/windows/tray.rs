@@ -19,8 +19,8 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     WM_RBUTTONUP, WNDCLASSW,
 };
 
-const CLASS_NAME: &str = "IslandDesktopTrayWindow";
-const WINDOW_TITLE: &str = "Island";
+const CLASS_NAME: &str = "PlutoDesktopTrayWindow";
+const WINDOW_TITLE: &str = "Pluto";
 const TRAY_ID: u32 = 1;
 const TRAY_MESSAGE: u32 = WM_APP + 17;
 const COMMAND_OPEN: usize = 1;
@@ -213,8 +213,8 @@ fn show_menu(window: HWND, state: &TrayCallbacks) {
         return;
     }
 
-    let open_label = wide("Open Island");
-    let quit_label = wide("Quit Island");
+    let open_label = wide("Open Pluto");
+    let quit_label = wide("Quit Pluto");
     let menu_ready = unsafe {
         AppendMenuW(menu, MF_STRING, COMMAND_OPEN, open_label.as_ptr()) != 0
             && AppendMenuW(menu, MF_STRING, COMMAND_QUIT, quit_label.as_ptr()) != 0
@@ -260,7 +260,7 @@ fn handle_menu_command(command: i32, state: &TrayCallbacks) {
             let root = state.root_window.load(Ordering::Acquire) as HWND;
             if !root.is_null() {
                 // A hidden eframe viewport can sleep through repaint requests.
-                // WM_CLOSE wakes its native event loop; IslandApp consumes the
+                // WM_CLOSE wakes its native event loop; PlutoApp consumes the
                 // quit flag before deciding whether to hide or exit.
                 unsafe { PostMessageW(root, WM_CLOSE, 0, 0) };
             }
@@ -297,7 +297,7 @@ fn notify_icon_data(window: HWND) -> Result<NOTIFYICONDATAW, String> {
         hIcon: icon,
         ..Default::default()
     };
-    copy_wide("Island — Settings", &mut data.szTip);
+    copy_wide("Pluto — Settings", &mut data.szTip);
     Ok(data)
 }
 

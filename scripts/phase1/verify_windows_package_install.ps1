@@ -1,7 +1,7 @@
 #Requires -Version 7.1
 param(
-    [string]$PackagePath = (Join-Path $PSScriptRoot '..\..\target\windows-package\Island-0.1.0.0.msix'),
-    [string]$PublicCertificatePath = (Join-Path $PSScriptRoot '..\..\target\windows-package\Island-Developer.cer'),
+    [string]$PackagePath = (Join-Path $PSScriptRoot '..\..\target\windows-package\Pluto-0.1.0.0.msix'),
+    [string]$PublicCertificatePath = (Join-Path $PSScriptRoot '..\..\target\windows-package\Pluto-Developer.cer'),
     [switch]$CurrentUserTrust
 )
 
@@ -23,22 +23,22 @@ foreach ($path in @($resolvedPackage, $resolvedCertificate)) {
 $certificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($resolvedCertificate)
 $trustStore = if ($CurrentUserTrust) { 'Cert:\CurrentUser\TrustedPeople' } else { 'Cert:\LocalMachine\TrustedPeople' }
 $trustPath = "$trustStore\$($certificate.Thumbprint)"
-$packageName = 'Littleworld.Island.Desktop'
+$packageName = 'Littleworld.Pluto.Desktop'
 $package = $null
 $process = $null
 $trusted = $false
 $installed = $false
 $testRoot = Join-Path $targetRoot ("phase1-package-test-" + [Guid]::NewGuid().ToString('N'))
 $isolatedLocalAppData = Join-Path $testRoot 'LocalAppData'
-$markerDirectory = Join-Path $isolatedLocalAppData 'Island'
+$markerDirectory = Join-Path $isolatedLocalAppData 'Pluto'
 $markerPath = Join-Path $markerDirectory 'uninstall-preservation.marker'
 $oldLocalAppData = $env:LOCALAPPDATA
 
 if (Get-AppxPackage -Name $packageName -ErrorAction SilentlyContinue) {
     throw "A package named $packageName is already installed for this user; refusing to replace it."
 }
-if (Get-Process -Name 'IslandDesktop' -ErrorAction SilentlyContinue) {
-    throw 'Close IslandDesktop before running the isolated package lifecycle test.'
+if (Get-Process -Name 'Pluto' -ErrorAction SilentlyContinue) {
+    throw 'Close Pluto before running the isolated package lifecycle test.'
 }
 
 try {
@@ -53,15 +53,15 @@ try {
     }
 
     $manifest = Get-AppxPackageManifest -Package $package.PackageFullName
-    $startupNode = $manifest.SelectSingleNode("//*[local-name()='StartupTask' and @TaskId='IslandDesktopStartup']")
-    if (-not $startupNode) { throw 'The installed package manifest does not expose the Island startup task.' }
+    $startupNode = $manifest.SelectSingleNode("//*[local-name()='StartupTask' and @TaskId='PlutoStartup']")
+    if (-not $startupNode) { throw 'The installed package manifest does not expose the Pluto startup task.' }
     if ($startupNode.GetAttribute('Enabled') -ne 'false') {
         throw 'The package must leave startup disabled by default until the user opts in.'
     }
 
     New-Item -ItemType Directory -Path $markerDirectory -Force | Out-Null
     [System.IO.File]::WriteAllText($markerPath, 'preserve')
-    $executable = Join-Path $package.InstallLocation 'IslandDesktop.exe'
+    $executable = Join-Path $package.InstallLocation 'Pluto.exe'
     if (-not (Test-Path -LiteralPath $executable)) { throw "Installed executable missing: $executable" }
     New-Item -ItemType Directory -Path $isolatedLocalAppData -Force | Out-Null
     $process = Start-Process -FilePath $executable -WorkingDirectory $package.InstallLocation -PassThru `
@@ -80,7 +80,7 @@ try {
     Remove-AppxPackage -Package $package.PackageFullName
     $installed = $false
     if (Get-AppxPackage -Name $packageName -ErrorAction SilentlyContinue) {
-        throw 'Package inventory still contains Island after uninstall.'
+        throw 'Package inventory still contains Pluto after uninstall.'
     }
     if ((Get-Content -LiteralPath $markerPath -Raw) -ne 'preserve') {
         throw 'User data marker changed during uninstall.'

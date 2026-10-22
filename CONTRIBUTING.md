@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping improve Island Desktop. The project is an early Windows alpha, so small, focused changes with clear reproduction steps are easiest to review.
+Thanks for helping improve Pluto. The project is an early Windows alpha, so small, focused changes with clear reproduction steps are easiest to review.
 
 ## Before opening a change
 

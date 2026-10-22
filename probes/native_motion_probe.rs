@@ -6,7 +6,7 @@
 use std::time::{Duration, Instant};
 
 use eframe::egui::{self, Align2, Color32, FontId, Pos2, Rect, Sense, Stroke, StrokeKind, Vec2};
-use island_desktop::{
+use pluto::{
     motion::{
         COLLAPSE_SPRING, CONTENT_ENTER_DELAY, CONTENT_ENTER_DURATION, CONTENT_EXIT_DURATION,
         OPEN_SPRING, SpringMotion,

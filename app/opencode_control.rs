@@ -521,7 +521,7 @@ fn run_hidden_with_timeout(command: &mut Command, timeout: Duration) -> Result<b
 fn managed_cli() -> Option<std::path::PathBuf> {
     std::env::var_os("LOCALAPPDATA").map(|root| {
         std::path::PathBuf::from(root)
-            .join("Island")
+            .join("Pluto")
             .join("tools")
             .join("opencode")
             .join("opencode.exe")
@@ -967,9 +967,9 @@ fn delete_agent(state: &Snapshot, id: &str) -> Result<(), String> {
     }
     let path = agent_directory(false)?.join(format!("{id}.md"));
     let contents = fs::read_to_string(&path)
-        .map_err(|_| "That Island agent profile no longer exists".to_owned())?;
+        .map_err(|_| "That Pluto agent profile no longer exists".to_owned())?;
     if !contents.contains(ISLAND_AGENT_MARKER) {
-        return Err("Island can only remove profiles it created".into());
+        return Err("Pluto can only remove profiles it created".into());
     }
     fs::remove_file(path).map_err(|_| "Could not remove the agent profile".into())
 }

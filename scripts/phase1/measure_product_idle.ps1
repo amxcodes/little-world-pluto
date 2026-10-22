@@ -1,6 +1,6 @@
 #Requires -Version 5.1
 param(
-    [string]$ExecutablePath = (Join-Path $PSScriptRoot '..\..\target\release\island-desktop.exe'),
+    [string]$ExecutablePath = (Join-Path $PSScriptRoot '..\..\target\release\pluto.exe'),
     [int]$Seconds = 60
 )
 
@@ -9,7 +9,7 @@ Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
 using System.Text;
-public static class IslandIdleProbe {
+public static class PlutoIdleProbe {
     [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X, Y; }
     public delegate bool EnumWindowsCallback(IntPtr window, IntPtr state);
     [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsCallback callback, IntPtr state);
@@ -25,7 +25,7 @@ public static class IslandIdleProbe {
             if (processId != wantedProcessId) return true;
             var className = new StringBuilder(256);
             GetClassNameW(window, className, className.Capacity);
-            if (className.ToString() == "IslandDesktopEdgeShell") { found = window; return false; }
+            if (className.ToString() == "PlutoDesktopEdgeShell") { found = window; return false; }
             return true;
         }, IntPtr.Zero);
         return found;
@@ -35,7 +35,7 @@ public static class IslandIdleProbe {
 $ExecutablePath = [IO.Path]::GetFullPath($ExecutablePath)
 if (-not (Test-Path -LiteralPath $ExecutablePath -PathType Leaf)) { throw 'Release executable is missing.' }
 if ($Seconds -lt 10 -or $Seconds -gt 120) { throw 'Seconds must be between 10 and 120.' }
-if (Get-Process -Name 'island-desktop' -ErrorAction SilentlyContinue) { throw 'Close the existing Island app before measuring.' }
+if (Get-Process -Name 'pluto' -ErrorAction SilentlyContinue) { throw 'Close the existing Pluto app before measuring.' }
 
 $oldLocalAppData = $env:LOCALAPPDATA
 $oldCodexHome = $env:CODEX_HOME
@@ -48,20 +48,20 @@ try {
     [void][IO.Directory]::CreateDirectory($env:CODEX_HOME)
     $process = Start-Process -FilePath $ExecutablePath -PassThru
     Start-Sleep -Seconds 5
-    if ($process.HasExited) { throw "Island exited during startup: $($process.ExitCode)" }
+    if ($process.HasExited) { throw "Pluto exited during startup: $($process.ExitCode)" }
     $shell = [IntPtr]::Zero
     $shellDeadline = [DateTime]::UtcNow.AddSeconds(15)
     do {
-        $shell = [IslandIdleProbe]::FindShell([uint32]$process.Id)
+        $shell = [PlutoIdleProbe]::FindShell([uint32]$process.Id)
         if ($shell -eq [IntPtr]::Zero) { Start-Sleep -Milliseconds 100 }
     } while ($shell -eq [IntPtr]::Zero -and [DateTime]::UtcNow -lt $shellDeadline)
     if ($shell -eq [IntPtr]::Zero) { throw 'Product shell HWND was not found; idle sample would be invalid.' }
     [uint32]$shellProcessId = 0
-    $shellThreadId = [IslandIdleProbe]::GetWindowThreadProcessId($shell, [ref]$shellProcessId)
+    $shellThreadId = [PlutoIdleProbe]::GetWindowThreadProcessId($shell, [ref]$shellProcessId)
     if ($shellProcessId -ne [uint32]$process.Id) { throw 'Shell HWND belongs to a different process.' }
-    $point = New-Object IslandIdleProbe+POINT
+    $point = New-Object PlutoIdleProbe+POINT
     $cursorWindow = [IntPtr]::Zero
-    if ([IslandIdleProbe]::GetCursorPos([ref]$point)) { $cursorWindow = [IslandIdleProbe]::WindowFromPoint($point) }
+    if ([PlutoIdleProbe]::GetCursorPos([ref]$point)) { $cursorWindow = [PlutoIdleProbe]::WindowFromPoint($point) }
     'shell_thread_id={0} shell_process_id={1} cursor=({2},{3}) cursor_on_shell={4}' -f $shellThreadId, $shellProcessId, $point.X, $point.Y, ($cursorWindow -eq $shell)
     $sample = Get-Process -Id $process.Id
     $startCpu = $sample.TotalProcessorTime.TotalSeconds

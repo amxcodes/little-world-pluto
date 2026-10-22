@@ -18,7 +18,7 @@ pub fn recognize_image(bytes: &[u8]) -> Result<String, String> {
     let is_jpeg = bytes.starts_with(&[0xff, 0xd8, 0xff]);
     let is_png = bytes.starts_with(b"\x89PNG\r\n\x1a\n");
     if !is_jpeg && !is_png {
-        return Err("Island received an invalid screen image. Capture the area again.".into());
+        return Err("Pluto received an invalid screen image. Capture the area again.".into());
     }
 
     // OCR and bitmap decoding run on a worker thread so screen recognition
@@ -68,7 +68,7 @@ pub fn recognize_image(bytes: &[u8]) -> Result<String, String> {
         .and_then(|operation| operation.join())
         .map_err(|_| "Windows could not prepare the image for OCR.".to_owned())?;
     let engine = OcrEngine::TryCreateFromUserProfileLanguages().map_err(|_| {
-        "Local Windows OCR is unavailable. Install a Windows OCR language pack and use the packaged Island app.".to_owned()
+        "Local Windows OCR is unavailable. Install a Windows OCR language pack and use the packaged Pluto app.".to_owned()
     })?;
     let operation = engine
         .RecognizeAsync(&bitmap)

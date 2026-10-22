@@ -1,6 +1,6 @@
 #Requires -Version 5.1
 param(
-    [string]$ExecutablePath = (Join-Path $PSScriptRoot '..\..\target\release\island-desktop.exe'),
+    [string]$ExecutablePath = (Join-Path $PSScriptRoot '..\..\target\release\pluto.exe'),
     [int]$TransitionTimeoutMs = 4000
 )
 
@@ -9,8 +9,8 @@ $ExecutablePath = [System.IO.Path]::GetFullPath($ExecutablePath)
 if (-not (Test-Path -LiteralPath $ExecutablePath)) {
     throw "Build the product first. Executable not found: $ExecutablePath"
 }
-if (Get-Process -Name 'island-desktop' -ErrorAction SilentlyContinue) {
-    throw 'An Island product process is already running; close it before this isolated hover check.'
+if (Get-Process -Name 'pluto' -ErrorAction SilentlyContinue) {
+    throw 'An Pluto product process is already running; close it before this isolated hover check.'
 }
 
 Add-Type -TypeDefinition @'
@@ -18,7 +18,7 @@ using System;
 using System.Runtime.InteropServices;
 using System.Text;
 
-public static class IslandProductHoverProbe {
+public static class PlutoProductHoverProbe {
     [StructLayout(LayoutKind.Sequential)]
     public struct RECT { public int Left, Top, Right, Bottom; }
     [StructLayout(LayoutKind.Sequential)]
@@ -92,9 +92,9 @@ public static class IslandProductHoverProbe {
 $process = $null
 $probeProcess = [System.Diagnostics.Process]::GetCurrentProcess()
 $originalPriority = $probeProcess.PriorityClass
-[void][IslandProductHoverProbe]::SetProcessDpiAwarenessContext([IntPtr](-4))
-$originalCursor = New-Object IslandProductHoverProbe+POINT
-$haveOriginalCursor = [IslandProductHoverProbe]::GetCursorPos([ref]$originalCursor)
+[void][PlutoProductHoverProbe]::SetProcessDpiAwarenessContext([IntPtr](-4))
+$originalCursor = New-Object PlutoProductHoverProbe+POINT
+$haveOriginalCursor = [PlutoProductHoverProbe]::GetCursorPos([ref]$originalCursor)
 $originalLocalAppData = $env:LOCALAPPDATA
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $targetRoot = [System.IO.Path]::GetFullPath((Join-Path $repoRoot 'target'))
@@ -114,24 +114,24 @@ try {
     $desk = [IntPtr]::Zero
     do {
         Start-Sleep -Milliseconds 100
-        $shell = [IslandProductHoverProbe]::FindWindowByClass([uint32]$process.Id, 'IslandDesktopEdgeShell')
-        $desk = [IslandProductHoverProbe]::FindWindowByClass([uint32]$process.Id, 'Window Class')
+        $shell = [PlutoProductHoverProbe]::FindWindowByClass([uint32]$process.Id, 'PlutoDesktopEdgeShell')
+        $desk = [PlutoProductHoverProbe]::FindWindowByClass([uint32]$process.Id, 'Window Class')
     } while (($shell -eq [IntPtr]::Zero -or $desk -eq [IntPtr]::Zero) -and [DateTime]::UtcNow -lt $deadline)
     if ($shell -eq [IntPtr]::Zero) { throw 'The product shell HWND did not appear.' }
     if ($desk -eq [IntPtr]::Zero) { throw 'The Agent Desk HWND did not appear.' }
 
     # The tray may be unavailable in an automation desktop. Keep the host
     # visible at startup, then hide it only for this controlled hover check.
-    if ([IslandProductHoverProbe]::IsWindowVisible($desk)) {
-        [void][IslandProductHoverProbe]::ShowWindow($desk, 0)
+    if ([PlutoProductHoverProbe]::IsWindowVisible($desk)) {
+        [void][PlutoProductHoverProbe]::ShowWindow($desk, 0)
         Start-Sleep -Milliseconds 150
     }
-    if ([IslandProductHoverProbe]::IsWindowVisible($desk)) {
+    if ([PlutoProductHoverProbe]::IsWindowVisible($desk)) {
         throw 'Could not hide the Agent Desk before testing shell hover.'
     }
 
-    $folded = New-Object IslandProductHoverProbe+RECT
-    if (-not [IslandProductHoverProbe]::GetWindowRect($shell, [ref]$folded)) {
+    $folded = New-Object PlutoProductHoverProbe+RECT
+    if (-not [PlutoProductHoverProbe]::GetWindowRect($shell, [ref]$folded)) {
         throw 'Could not read the folded shell bounds.'
     }
     $foldedWidth = $folded.Right - $folded.Left
@@ -141,21 +141,21 @@ try {
     # waits for the whole spring at 100%, 125%, and 150% display scale.
     $expandedTargetWidth = [int][Math]::Floor($foldedWidth * (680.0 / 221.6))
     $expandedTargetHeight = [int][Math]::Floor($foldedHeight * (339.6 / 33.6))
-    $hoverPoint = New-Object IslandProductHoverProbe+POINT
+    $hoverPoint = New-Object PlutoProductHoverProbe+POINT
     $hoverPoint.X = [int](($folded.Left + $folded.Right) / 2)
     $hoverPoint.Y = [int](($folded.Top + $folded.Bottom) / 2)
-    if ([IslandProductHoverProbe]::WindowFromPhysicalPoint($hoverPoint) -ne $shell) {
+    if ([PlutoProductHoverProbe]::WindowFromPhysicalPoint($hoverPoint) -ne $shell) {
         throw 'The selected hover point is not an opaque shell pixel.'
     }
 
-    $foregroundBefore = [IslandProductHoverProbe]::GetForegroundWindow()
-    $sent = [IslandProductHoverProbe]::MovePointerWithSendInput($hoverPoint.X, $hoverPoint.Y)
+    $foregroundBefore = [PlutoProductHoverProbe]::GetForegroundWindow()
+    $sent = [PlutoProductHoverProbe]::MovePointerWithSendInput($hoverPoint.X, $hoverPoint.Y)
     if ($sent -ne 1) {
         "BLOCKED: Windows did not accept the SendInput pointer move to the shell; inserted $sent event(s). The app and original cursor position will be restored."
         return
     }
-    $cursorAtHover = New-Object IslandProductHoverProbe+POINT
-    [void][IslandProductHoverProbe]::GetCursorPos([ref]$cursorAtHover)
+    $cursorAtHover = New-Object PlutoProductHoverProbe+POINT
+    [void][PlutoProductHoverProbe]::GetCursorPos([ref]$cursorAtHover)
     if ([math]::Abs($cursorAtHover.X - $hoverPoint.X) -gt 1 -or
         [math]::Abs($cursorAtHover.Y - $hoverPoint.Y) -gt 1) {
         throw "The pointer did not reach the opaque shell point; actual=$($cursorAtHover.X),$($cursorAtHover.Y)."
@@ -165,9 +165,9 @@ try {
     $openSamples = New-Object 'System.Collections.Generic.List[object]'
     $openStartedAt = $null
     $previousOpenBounds = ''
-    $expanded = New-Object IslandProductHoverProbe+RECT
+    $expanded = New-Object PlutoProductHoverProbe+RECT
     do {
-        [void][IslandProductHoverProbe]::GetWindowRect($shell, [ref]$expanded)
+        [void][PlutoProductHoverProbe]::GetWindowRect($shell, [ref]$expanded)
         $width = $expanded.Right - $expanded.Left
         if ($width -gt ($foldedWidth + 1) -and $null -eq $openStartedAt) {
             $openStartedAt = $openWatch.Elapsed.TotalMilliseconds
@@ -193,10 +193,10 @@ try {
     if ($expandedWidth -lt $expandedTargetWidth -or $expandedHeight -lt $expandedTargetHeight) {
         throw "Real pointer hover did not expand the shell within ${TransitionTimeoutMs}ms; final=${expandedWidth}x${expandedHeight}."
     }
-    if ([IslandProductHoverProbe]::IsWindowVisible($desk)) {
+    if ([PlutoProductHoverProbe]::IsWindowVisible($desk)) {
         throw 'Hover unexpectedly opened the Agent Desk.'
     }
-    $foregroundAfterHover = [IslandProductHoverProbe]::GetForegroundWindow()
+    $foregroundAfterHover = [PlutoProductHoverProbe]::GetForegroundWindow()
     if ($foregroundAfterHover -ne $foregroundBefore) {
         throw 'Hover changed the foreground window; no-activate behavior regressed.'
     }
@@ -223,22 +223,22 @@ try {
     } else { 0 }
     $stepGaps = @($metrics | Where-Object { $_.ms -gt 33 }).Count
 
-    $virtualLeft = [IslandProductHoverProbe]::GetSystemMetrics(76)
-    $virtualTop = [IslandProductHoverProbe]::GetSystemMetrics(77)
-    $virtualWidth = [IslandProductHoverProbe]::GetSystemMetrics(78)
-    $virtualHeight = [IslandProductHoverProbe]::GetSystemMetrics(79)
+    $virtualLeft = [PlutoProductHoverProbe]::GetSystemMetrics(76)
+    $virtualTop = [PlutoProductHoverProbe]::GetSystemMetrics(77)
+    $virtualWidth = [PlutoProductHoverProbe]::GetSystemMetrics(78)
+    $virtualHeight = [PlutoProductHoverProbe]::GetSystemMetrics(79)
     $outsideX = $virtualLeft + 20
     $outsideY = $virtualTop + $virtualHeight - 20
     if ($outsideX -ge $expanded.Left -and $outsideX -le $expanded.Right -and
         $outsideY -ge $expanded.Top -and $outsideY -le $expanded.Bottom) {
         $outsideX = $virtualLeft + $virtualWidth - 20
     }
-    $sent = [IslandProductHoverProbe]::MovePointerWithSendInput($outsideX, $outsideY)
+    $sent = [PlutoProductHoverProbe]::MovePointerWithSendInput($outsideX, $outsideY)
     if ($sent -ne 1) { throw "SendInput could not move the pointer away; inserted $sent event(s)." }
     $closeWatch = [System.Diagnostics.Stopwatch]::StartNew()
-    $foldedAgain = New-Object IslandProductHoverProbe+RECT
+    $foldedAgain = New-Object PlutoProductHoverProbe+RECT
     do {
-        [void][IslandProductHoverProbe]::GetWindowRect($shell, [ref]$foldedAgain)
+        [void][PlutoProductHoverProbe]::GetWindowRect($shell, [ref]$foldedAgain)
         $width = $foldedAgain.Right - $foldedAgain.Left
         if ($width -le ($foldedWidth + 2)) { break }
         [void][System.Threading.Thread]::Yield()
@@ -248,7 +248,7 @@ try {
     if ($finalWidth -gt ($foldedWidth + 2)) {
         throw "The shell did not fold after pointer leave within ${TransitionTimeoutMs}ms; final width=$finalWidth."
     }
-    if ([IslandProductHoverProbe]::GetForegroundWindow() -ne $foregroundBefore) {
+    if ([PlutoProductHoverProbe]::GetForegroundWindow() -ne $foregroundBefore) {
         throw 'Pointer leave changed the foreground window.'
     }
 
@@ -259,7 +259,7 @@ finally {
     $probeProcess.PriorityClass = $originalPriority
     $env:LOCALAPPDATA = $originalLocalAppData
     if ($haveOriginalCursor) {
-        [void][IslandProductHoverProbe]::MovePointerWithSendInput($originalCursor.X, $originalCursor.Y)
+        [void][PlutoProductHoverProbe]::MovePointerWithSendInput($originalCursor.X, $originalCursor.Y)
     }
     if ($process -and -not $process.HasExited) {
         Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue

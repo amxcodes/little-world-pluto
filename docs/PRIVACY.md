@@ -1,10 +1,10 @@
 # Privacy and data handling
 
-Island Desktop runs as a local Windows app. Features that use microphone, screen, or files are subject to the Windows permissions and settings for the current user.
+Pluto runs as a local Windows app. Features that use microphone, screen, or files are subject to the Windows permissions and settings for the current user.
 
 ## Local storage
 
-App preferences and local workspace state are stored under `%LOCALAPPDATA%\Island`. MCP credentials and the speech API key are encrypted with Windows DPAPI for the current user. Secret values are not included in the interface state sent to the embedded WebView.
+App preferences and local workspace state are stored under `%LOCALAPPDATA%\Island (retained for upgrade compatibility)`. MCP credentials and the speech API key are encrypted with Windows DPAPI for the current user. Secret values are not included in the interface state sent to the embedded WebView.
 
 ## Speech and agents
 

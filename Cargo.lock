@@ -191,7 +191,7 @@ dependencies = [
  "parking_lot",
  "percent-encoding",
  "windows-sys 0.60.2",
- "x11rb 0.13.2",
+ "x11rb",
 ]
 
 [[package]]
@@ -1776,29 +1776,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "island-desktop"
-version = "0.1.0"
-dependencies = [
- "base64",
- "eframe",
- "gif",
- "image",
- "png",
- "quircs",
- "raw-window-handle",
- "rusqlite",
- "serde",
- "serde_json",
- "windows",
- "windows-collections",
- "windows-core",
- "windows-future",
- "windows-sys 0.61.2",
- "wry",
- "x11rb 0.14.0",
-]
-
-[[package]]
 name = "itertools"
 version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2745,6 +2722,28 @@ name = "plain"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4596b6d070b27117e987119b4dac604f3c58cfb0b191112e24771b2faeac1a6"
+
+[[package]]
+name = "pluto"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "eframe",
+ "gif",
+ "image",
+ "png",
+ "quircs",
+ "raw-window-handle",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "windows",
+ "windows-collections",
+ "windows-core",
+ "windows-future",
+ "windows-sys 0.61.2",
+ "wry",
+]
 
 [[package]]
 name = "png"
@@ -4609,7 +4608,7 @@ dependencies = [
  "web-time",
  "windows-sys 0.52.0",
  "x11-dl",
- "x11rb 0.13.2",
+ "x11rb",
  "xkbcommon-dl",
 ]
 
@@ -4703,18 +4702,7 @@ dependencies = [
  "libloading",
  "once_cell",
  "rustix 1.1.5",
- "x11rb-protocol 0.13.2",
-]
-
-[[package]]
-name = "x11rb"
-version = "0.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a8885a854a8bfdf87a301e53e41b17c5f8f33639903131338b997b1eb614f44"
-dependencies = [
- "gethostname",
- "rustix 1.1.5",
- "x11rb-protocol 0.14.0",
+ "x11rb-protocol",
 ]
 
 [[package]]
@@ -4722,12 +4710,6 @@ name = "x11rb-protocol"
 version = "0.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ea6fc2961e4ef194dcbfe56bb845534d0dc8098940c7e5c012a258bfec6701bd"
-
-[[package]]
-name = "x11rb-protocol"
-version = "0.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "acf4d1bc32aa46eec18caa634ec3cf4c05bfa151f12b93b510b15190f69a1ca8"
 
 [[package]]
 name = "xcursor"

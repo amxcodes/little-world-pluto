@@ -25,7 +25,7 @@ use windows_sys::Win32::UI::HiDpi::{
 use windows_sys::Win32::UI::WindowsAndMessaging::{MB_ICONERROR, MB_OK, MessageBoxW};
 
 pub fn report_startup_error(message: &str) {
-    let title = wide("Island failed to start");
+    let title = wide("Pluto failed to start");
     let body = wide(message);
     // SAFETY: both strings are nul-terminated UTF-16 buffers that live through
     // the call; a null owner is valid for a standalone error dialog.
@@ -50,7 +50,7 @@ pub fn enable_per_monitor_dpi_awareness() -> bool {
 }
 
 pub fn report_diagnostic(code: DiagnosticCode) {
-    let message: Vec<u16> = format!("Island diagnostic: {}\n", code.as_str())
+    let message: Vec<u16> = format!("Pluto diagnostic: {}\n", code.as_str())
         .encode_utf16()
         .chain([0])
         .collect();

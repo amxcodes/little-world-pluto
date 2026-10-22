@@ -1,6 +1,6 @@
 //! Native desktop selection surface for screen tools.
 //!
-//! The Island reference uses a desktop DIB and a native selection overlay. This
+//! The Pluto reference uses a desktop DIB and a native selection overlay. This
 //! module follows that model instead of asking WebView2 for a display stream.
 
 use std::cell::Cell;
@@ -163,7 +163,7 @@ pub fn launch(
     if result.is_err() {
         let _ = failure_sender.send(ResultEvent::Error {
             mode: Some(mode),
-            message: "Island could not start the desktop selector.".into(),
+            message: "Pluto could not start the desktop selector.".into(),
         });
         unsafe { PostMessageW(notify_window as HWND, WM_APP + 0x55, 0, 0) };
     }
@@ -270,7 +270,7 @@ fn run(
 
 fn run_window(overlay: &mut Box<Overlay>) -> Result<ResultEvent, String> {
     let class_name = wide(CLASS_NAME);
-    let title = wide("Island screen selection");
+    let title = wide("Pluto screen selection");
     let module = unsafe { GetModuleHandleW(null()) };
     let class = WNDCLASSW {
         style: CS_HREDRAW | CS_VREDRAW,
@@ -300,7 +300,7 @@ fn run_window(overlay: &mut Box<Overlay>) -> Result<ResultEvent, String> {
         )
     };
     if hwnd.is_null() {
-        return Err("Island could not open the desktop selection surface.".into());
+        return Err("Pluto could not open the desktop selection surface.".into());
     }
     overlay.hwnd = hwnd;
     let mut cursor = POINT::default();
@@ -318,7 +318,7 @@ fn run_window(overlay: &mut Box<Overlay>) -> Result<ResultEvent, String> {
             DestroyWindow(hwnd);
         }
         overlay.hwnd = null_mut();
-        return Err("Island could not make the screen selector transparent.".into());
+        return Err("Pluto could not make the screen selector transparent.".into());
     }
     // Exclude this top-level overlay from subsequent screen-recording frames.
     unsafe { SetWindowDisplayAffinity(hwnd, 0x11) };
@@ -488,7 +488,7 @@ fn create_color_preview(
         CreateWindowExW(
             WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE,
             class_name.as_ptr(),
-            wide("Island color preview").as_ptr(),
+            wide("Pluto color preview").as_ptr(),
             WS_POPUP,
             overlay.capture.origin.x + position.left,
             overlay.capture.origin.y + position.top,
@@ -501,13 +501,13 @@ fn create_color_preview(
         )
     };
     if hwnd.is_null() {
-        return Err("Island could not open the color preview.".into());
+        return Err("Pluto could not open the color preview.".into());
     }
     if unsafe { SetLayeredWindowAttributes(hwnd, TRANSPARENT_COLOR_KEY, 255, LWA_COLORKEY) } == 0 {
         unsafe {
             DestroyWindow(hwnd);
         }
-        return Err("Island could not make the color preview transparent.".into());
+        return Err("Pluto could not make the color preview transparent.".into());
     }
     unsafe {
         SetWindowDisplayAffinity(hwnd, 0x11);
@@ -569,7 +569,7 @@ impl MouseHookGuard {
         if hook.is_null() {
             SELECTOR_HWND.with(|active| active.set(0));
             return Err(
-                "Island could not install the temporary screen-selection input hook.".into(),
+                "Pluto could not install the temporary screen-selection input hook.".into(),
             );
         }
         Ok(Self(hook))
@@ -950,7 +950,7 @@ fn start_recording(overlay: &mut Overlay, rect: RECT) -> Result<(), String> {
         right: rect.right + overlay.capture.origin.x,
         bottom: rect.bottom + overlay.capture.origin.y,
     };
-    let output = downloads_path("Island-recording", "mp4")?;
+    let output = downloads_path("Pluto-recording", "mp4")?;
     let path = output.clone();
     let worker_path = path.clone();
     let (stop_tx, stop_rx) = channel();
@@ -987,7 +987,7 @@ fn start_recording(overlay: &mut Overlay, rect: RECT) -> Result<(), String> {
                 PostMessageW(notify_window as HWND, WM_APP + 0x55, 0, 0);
             }
         })
-        .map_err(|_| "Island could not start the screen recorder worker.".to_owned())?;
+        .map_err(|_| "Pluto could not start the screen recorder worker.".to_owned())?;
     overlay.record_stop = Some(stop_tx);
     overlay.record_start = Some(start_tx);
     overlay.record_path = Some(path.to_string_lossy().into_owned());
@@ -1415,10 +1415,10 @@ fn encode_png_region(capture: &Capture, rect: RECT, mode: Mode) -> Result<Vec<u8
         encoder.set_depth(png::BitDepth::Eight);
         let mut writer = encoder
             .write_header()
-            .map_err(|_| "Island could not encode the selected image.".to_owned())?;
+            .map_err(|_| "Pluto could not encode the selected image.".to_owned())?;
         writer
             .write_image_data(&rgba)
-            .map_err(|_| "Island could not finish the selected image.".to_owned())?;
+            .map_err(|_| "Pluto could not finish the selected image.".to_owned())?;
     }
     let limit = if mode == Mode::Qr {
         MAX_QR_IMAGE_BYTES
@@ -1471,10 +1471,10 @@ fn encode_preview_png(
         encoder.set_depth(png::BitDepth::Eight);
         let mut writer = encoder
             .write_header()
-            .map_err(|_| "Island could not prepare the screenshot preview.".to_owned())?;
+            .map_err(|_| "Pluto could not prepare the screenshot preview.".to_owned())?;
         writer
             .write_image_data(&rgba)
-            .map_err(|_| "Island could not encode the screenshot preview.".to_owned())?;
+            .map_err(|_| "Pluto could not encode the screenshot preview.".to_owned())?;
     }
     Ok(output)
 }
@@ -1869,7 +1869,7 @@ fn downloads_path(prefix: &str, extension: &str) -> Result<std::path::PathBuf, S
         .ok_or("The user profile folder is unavailable")?;
     let downloads = home.join("Downloads");
     std::fs::create_dir_all(&downloads)
-        .map_err(|_| "Island could not open the Downloads folder.".to_owned())?;
+        .map_err(|_| "Pluto could not open the Downloads folder.".to_owned())?;
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -1878,8 +1878,8 @@ fn downloads_path(prefix: &str, extension: &str) -> Result<std::path::PathBuf, S
 }
 
 pub fn save_png(png_bytes: &[u8]) -> Result<String, String> {
-    let path = downloads_path("Island-capture", "png")?;
+    let path = downloads_path("Pluto-capture", "png")?;
     std::fs::write(&path, png_bytes)
-        .map_err(|_| "Island could not save the screenshot in Downloads.".to_owned())?;
+        .map_err(|_| "Pluto could not save the screenshot in Downloads.".to_owned())?;
     Ok(path.to_string_lossy().into_owned())
 }

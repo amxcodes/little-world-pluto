@@ -10,7 +10,7 @@ use windows_sys::Win32::System::Registry::{
     RegCloseKey, RegCreateKeyExW, RegDeleteValueW, RegOpenKeyExW, RegQueryValueExW, RegSetValueExW,
 };
 
-const TASK_ID: &str = "IslandDesktopStartup";
+const TASK_ID: &str = "PlutoStartup";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StartupTaskStatus {
@@ -44,14 +44,14 @@ impl StartupTaskStatus {
     pub fn description(self) -> &'static str {
         match self {
             Self::Checking => "Reading Windows startup state…",
-            Self::Enabled => "Enabled in Windows. Island starts when you sign in.",
+            Self::Enabled => "Enabled in Windows. Pluto starts when you sign in.",
             Self::Disabled => "Disabled in Windows.",
             Self::DisabledByUser => {
                 "Windows disabled this app at your request. Re-enable it in Startup settings."
             }
             Self::DisabledByPolicy => "Startup is disabled by Windows policy.",
             Self::EnabledByPolicy => "Startup is enabled by Windows policy.",
-            Self::RegistryEnabled => "Enabled for this user. Island starts when you sign in.",
+            Self::RegistryEnabled => "Enabled for this user. Pluto starts when you sign in.",
             Self::RegistryDisabled => "Disabled for this user.",
             Self::Unavailable => {
                 "Windows is not exposing a registered startup task. Install the package and check Windows Startup settings."

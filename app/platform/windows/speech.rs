@@ -105,20 +105,20 @@ impl SpeechSettings {
 
     fn persist(&self) -> Result<(), String> {
         let local = std::env::var_os("LOCALAPPDATA")
-            .ok_or_else(|| "Island cannot find the local settings folder.".to_owned())?;
+            .ok_or_else(|| "Pluto cannot find the local settings folder.".to_owned())?;
         let path = std::path::PathBuf::from(local)
-            .join("Island")
+            .join("Pluto")
             .join("speech.json");
         let parent = path
             .parent()
-            .ok_or_else(|| "Island could not save speech settings.".to_owned())?;
+            .ok_or_else(|| "Pluto could not save speech settings.".to_owned())?;
         std::fs::create_dir_all(parent)
-            .map_err(|_| "Island could not save speech settings.".to_owned())?;
+            .map_err(|_| "Pluto could not save speech settings.".to_owned())?;
         let bytes = serde_json::to_vec(self)
-            .map_err(|_| "Island could not encode speech settings.".to_owned())?;
+            .map_err(|_| "Pluto could not encode speech settings.".to_owned())?;
         let temp = path.with_extension("json.tmp");
         std::fs::write(&temp, bytes)
-            .map_err(|_| "Island could not save speech settings.".to_owned())?;
+            .map_err(|_| "Pluto could not save speech settings.".to_owned())?;
         use std::os::windows::ffi::OsStrExt;
         use windows_sys::Win32::Storage::FileSystem::{
             MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH, MoveFileExW,
@@ -135,14 +135,14 @@ impl SpeechSettings {
             .then_some(())
             .ok_or_else(|| {
                 let _ = std::fs::remove_file(&temp);
-                "Island could not finish saving speech settings.".to_owned()
+                "Pluto could not finish saving speech settings.".to_owned()
             })
     }
 
     pub fn load() -> Self {
         let loaded = std::env::var_os("LOCALAPPDATA")
             .map(std::path::PathBuf::from)
-            .map(|local| local.join("Island").join("speech.json"))
+            .map(|local| local.join("Pluto").join("speech.json"))
             .and_then(|path| std::fs::read(path).ok())
             .filter(|bytes| bytes.len() <= 16 * 1024)
             .and_then(|bytes| serde_json::from_slice::<Self>(&bytes).ok());
@@ -394,7 +394,7 @@ fn send_multipart(
     headers: &[u16],
     body: &[u8],
 ) -> Result<(u32, Vec<u8>), String> {
-    let agent = wide("Island Speech/1.0");
+    let agent = wide("Pluto Speech/1.0");
     let host = wide(&endpoint.host);
     let request_path = wide(path);
     let post = wide("POST");

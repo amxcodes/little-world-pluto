@@ -8,7 +8,7 @@ pub const MOD_SHIFT: u8 = 4;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum ShortcutAction {
-    ToggleIsland = 0,
+    TogglePluto = 0,
     CommandBar = 1,
     AiChat = 2,
     VoiceToText = 3,
@@ -25,7 +25,7 @@ pub enum ShortcutAction {
 
 impl ShortcutAction {
     pub const ALL: [Self; SHORTCUT_COUNT] = [
-        Self::ToggleIsland,
+        Self::TogglePluto,
         Self::CommandBar,
         Self::AiChat,
         Self::VoiceToText,
@@ -46,7 +46,7 @@ impl ShortcutAction {
 
     pub const fn id(self) -> &'static str {
         match self {
-            Self::ToggleIsland => "toggle_island",
+            Self::TogglePluto => "toggle_island",
             Self::CommandBar => "command_bar",
             Self::AiChat => "ai_chat",
             Self::VoiceToText => "voice_to_text",
@@ -64,7 +64,7 @@ impl ShortcutAction {
 
     pub fn from_id(value: &str) -> Option<Self> {
         match value {
-            "toggle_island" => Some(Self::ToggleIsland),
+            "toggle_island" => Some(Self::TogglePluto),
             "command_bar" => Some(Self::CommandBar),
             "ai_chat" => Some(Self::AiChat),
             "voice_to_text" => Some(Self::VoiceToText),
@@ -160,7 +160,7 @@ impl Default for ShortcutSet {
         };
         Self([
             chord(
-                ShortcutAction::ToggleIsland,
+                ShortcutAction::TogglePluto,
                 MOD_CONTROL | MOD_ALT,
                 b'I' as u16,
             ),

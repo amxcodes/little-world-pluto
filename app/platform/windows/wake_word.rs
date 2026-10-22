@@ -425,9 +425,9 @@ fn speech_error(error: impl std::fmt::Display) -> String {
         "Windows speech recognition is unavailable. Install a speech language pack, then try again."
             .into()
     } else if detail.contains("0x80070005") {
-        "Allow microphone access for Island in Windows Privacy settings, then try again.".into()
+        "Allow microphone access for Pluto in Windows Privacy settings, then try again.".into()
     } else if detail.contains("0x80040154") || detail.contains("0x80073D54") {
-        "Local wake detection requires the installed Island release package. Run the MSIX build, then try again.".into()
+        "Local wake detection requires the installed Pluto release package. Run the MSIX build, then try again.".into()
     } else {
         format!(
             "Windows could not start local wake detection: {}",

@@ -2,7 +2,7 @@
 //!
 //! This reads only the current user's Windows capability-use timestamps. It
 //! never opens a media device or captures audio/video. The registry location
-//! and active timestamp rule are based on the reverse-engineered Island
+//! and active timestamp rule are based on the reverse-engineered Pluto
 //! reference recorded in `ISLAND_WINDOWING_RESEARCH.md`.
 
 use std::mem::size_of;
@@ -116,7 +116,7 @@ fn read_app_entry(parent: HKEY, key_name: &str, apps: &mut Vec<String>, external
             .is_some_and(|exe| exe.to_string_lossy().to_ascii_lowercase() == path);
         let own_package = key_name
             .to_ascii_lowercase()
-            .starts_with("littleworld.island.desktop_");
+            .starts_with("littleworld.pluto.desktop_");
         if !own_executable && !own_package {
             *external = true;
         }

@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 param(
     [string]$OutputDirectory = (Join-Path $PSScriptRoot '..\..\target\windows-package'),
-    [string]$BinaryPath = (Join-Path $PSScriptRoot '..\..\target\release\island-desktop.exe'),
+    [string]$BinaryPath = (Join-Path $PSScriptRoot '..\..\target\release\pluto.exe'),
     [switch]$SkipBuild
 )
 
@@ -23,9 +23,9 @@ $cargoVersionLine = Select-String -LiteralPath $cargoManifest -Pattern '^version
 if (-not $cargoVersionLine) { throw 'A three-part numeric package version was not found in Cargo.toml.' }
 $productVersion = $cargoVersionLine.Matches[0].Groups[1].Value
 $packageVersion = "$productVersion.0"
-$packagePath = Join-Path $outputRoot "Island-$packageVersion.msix"
-$publicCertificatePath = Join-Path $outputRoot 'Island-Developer.cer'
-$temporarySigningCertificatePath = Join-Path $outputRoot '.Island-Developer-temp.pfx'
+$packagePath = Join-Path $outputRoot "Pluto-$packageVersion.msix"
+$publicCertificatePath = Join-Path $outputRoot 'Pluto-Developer.cer'
+$temporarySigningCertificatePath = Join-Path $outputRoot '.Pluto-Developer-temp.pfx'
 $manifestTemplatePath = Join-Path $repoRoot 'packaging\windows\AppxManifest.xml'
 $binaryPath = [System.IO.Path]::GetFullPath($BinaryPath)
 $binaryPrefix = $targetRoot.TrimEnd('\') + '\'
@@ -69,46 +69,19 @@ New-Item -ItemType Directory -Path (Join-Path $staging 'Assets') -Force | Out-Nu
 
 try {
     if (-not $SkipBuild) {
-        & cargo build --release --offline --locked --features product-app --bin island-desktop
+        & cargo build --release --offline --locked --features product-app --bin pluto
         if ($LASTEXITCODE -ne 0) { throw "Cargo release build failed with exit code $LASTEXITCODE." }
     }
     if (-not (Test-Path -LiteralPath $binaryPath)) { throw "Product executable not found: $binaryPath" }
-    Copy-Item -LiteralPath $binaryPath -Destination (Join-Path $staging 'IslandDesktop.exe') -Force
+    Copy-Item -LiteralPath $binaryPath -Destination (Join-Path $staging 'Pluto.exe') -Force
 
-    Add-Type -AssemblyName System.Drawing
-    foreach ($asset in @(
-        @{ Name = 'StoreLogo.png'; Size = 50 },
-        @{ Name = 'Square150x150Logo.png'; Size = 150 },
-        @{ Name = 'Square44x44Logo.png'; Size = 44 }
-    )) {
-        $bitmap = [System.Drawing.Bitmap]::new($asset.Size, $asset.Size)
-        $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-        try {
-            $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
-            $graphics.Clear([System.Drawing.Color]::FromArgb(21, 23, 29))
-            $pillWidth = [int]($asset.Size * 0.68)
-            $pillHeight = [int]($asset.Size * 0.30)
-            $left = [int](($asset.Size - $pillWidth) / 2)
-            $top = [int]($asset.Size * 0.30)
-            $radius = [int]($pillHeight / 2)
-            $path = [System.Drawing.Drawing2D.GraphicsPath]::new()
-            try {
-                $path.AddArc($left, $top, 2 * $radius, 2 * $radius, 90, 180)
-                $path.AddArc($left + $pillWidth - 2 * $radius, $top, 2 * $radius, 2 * $radius, 270, 180)
-                $path.CloseFigure()
-                $graphics.FillPath([System.Drawing.Brushes]::Black, $path)
-            }
-            finally { $path.Dispose() }
-            $dotSize = [Math]::Max(2, [int]($asset.Size * 0.075))
-            $dotBrush = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::FromArgb(145, 162, 255))
-            try { $graphics.FillEllipse($dotBrush, [int]($asset.Size * 0.63), [int]($asset.Size * 0.395), $dotSize, $dotSize) }
-            finally { $dotBrush.Dispose() }
-            $bitmap.Save((Join-Path $staging "Assets\$($asset.Name)"), [System.Drawing.Imaging.ImageFormat]::Png)
+    $assetRoot = Join-Path $repoRoot 'packaging\windows\Assets'
+    foreach ($assetName in @('StoreLogo.png', 'Square150x150Logo.png', 'Square44x44Logo.png')) {
+        $assetPath = Join-Path $assetRoot $assetName
+        if (-not (Test-Path -LiteralPath $assetPath -PathType Leaf)) {
+            throw "Required Pluto package artwork is missing: $assetPath"
         }
-        finally {
-            $graphics.Dispose()
-            $bitmap.Dispose()
-        }
+        Copy-Item -LiteralPath $assetPath -Destination (Join-Path $staging "Assets\$assetName") -Force
     }
 
     $manifest = [System.IO.File]::ReadAllText($manifestTemplatePath)
@@ -120,7 +93,7 @@ try {
         [System.Text.UTF8Encoding]::new($false)
     )
 
-    $publisher = 'CN=Littleworld Island Desktop'
+    $publisher = 'CN=Littleworld Pluto'
     # Use an exportable ephemeral key. Creating a certificate in the Windows
     # personal store can fail in managed build environments without enrollment
     # rights, and the private key must never enter the MSIX staging directory.

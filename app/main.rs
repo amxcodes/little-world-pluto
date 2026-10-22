@@ -41,7 +41,7 @@ fn run() -> eframe::Result {
     let options = eframe::NativeOptions {
         renderer: eframe::Renderer::Glow,
         viewport: egui::ViewportBuilder::default()
-            .with_title("Island host")
+            .with_title("Pluto host")
             .with_inner_size([1.0, 1.0])
             .with_min_inner_size([1.0, 1.0])
             .with_position([-32000.0, -32000.0])
@@ -51,13 +51,13 @@ fn run() -> eframe::Result {
     };
 
     eframe::run_native(
-        "Island host",
+        "Pluto host",
         options,
-        Box::new(|context| Ok(Box::new(product::IslandApp::new(context)))),
+        Box::new(|context| Ok(Box::new(product::PlutoApp::new(context)))),
     )
 }
 
 #[cfg(not(windows))]
 fn main() {
-    eprintln!("Island Desktop's current product build targets Windows only.");
+    eprintln!("Pluto's current product build targets Windows only.");
 }

@@ -28,9 +28,9 @@ if ($metadataExitCode -ne 0) {
     throw 'cargo metadata failed; dependency target boundaries could not be verified.'
 }
 $metadata = ($metadataOutput -join "`n") | ConvertFrom-Json
-$package = $metadata.packages | Where-Object { $_.name -eq 'island-desktop' } | Select-Object -First 1
+$package = $metadata.packages | Where-Object { $_.name -eq 'pluto' } | Select-Object -First 1
 if (-not $package) {
-    throw 'cargo metadata did not return the island-desktop package.'
+    throw 'cargo metadata did not return the pluto package.'
 }
 
 foreach ($name in @('windows', 'windows-sys')) {
@@ -40,10 +40,5 @@ foreach ($name in @('windows', 'windows-sys')) {
     }
 }
 
-$x11 = $package.dependencies | Where-Object { $_.name -eq 'x11rb' } | Select-Object -First 1
-if (-not $x11 -or $x11.target -ne 'cfg(target_os = "linux")' -or -not $x11.optional) {
-    throw 'The archived X11 research dependency must remain optional and Linux-target-only.'
-}
-
 $sourceCount = @(Get-ChildItem -LiteralPath $sharedSource -Filter '*.rs' -File -Recurse).Count
-Write-Output "Shared-core boundary check passed: $sourceCount Rust files; no OS, network, storage, database, or FFI imports. Windows API dependencies are Windows-only; X11 research is optional and Linux-only."
+Write-Output "Shared-core boundary check passed: $sourceCount Rust files; no OS, network, storage, database, or FFI imports. Windows API dependencies are Windows-only."

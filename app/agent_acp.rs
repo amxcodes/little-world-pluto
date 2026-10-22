@@ -520,7 +520,7 @@ impl Worker {
                 let params = json!({
                     "protocolVersion": ACP_PROTOCOL_VERSION,
                     "clientCapabilities": client_capabilities,
-                    "clientInfo": {"name": "island", "title": "Island", "version": "0.1.0"}
+                    "clientInfo": {"name": "pluto", "title": "Pluto", "version": "0.1.0"}
                 });
                 self.request("initialize", params, Pending::Initialize);
             }
@@ -1382,11 +1382,11 @@ impl Worker {
                     self.fail_operation("start", "Connect the provider before starting a task.");
                     return;
                 }
-                let cwd = if system_prompt.starts_with("Island response mode: wake-answer\n") {
+                let cwd = if system_prompt.starts_with("Pluto response mode: wake-answer\n") {
                     let root = std::env::var_os("LOCALAPPDATA")
                         .map(PathBuf::from)
                         .unwrap_or_else(std::env::temp_dir)
-                        .join("Island")
+                        .join("Pluto")
                         .join("VoiceWorkspace");
                     if let Err(error) = std::fs::create_dir_all(&root) {
                         self.fail_operation(
@@ -1409,7 +1409,7 @@ impl Worker {
                     return;
                 }
                 let additional_directories =
-                    if system_prompt.starts_with("Island response mode: wake-answer\n") {
+                    if system_prompt.starts_with("Pluto response mode: wake-answer\n") {
                         Vec::new()
                     } else {
                         self.allowed_directories(additional_directories)
@@ -3106,7 +3106,7 @@ fn valid_config_value(option: &Value, value: &str) -> bool {
 }
 
 fn compose_prompt_text(system_prompt: &str, user_text: &str, hybrid_whiteboard: bool) -> String {
-    if let Some(style) = system_prompt.strip_prefix("Island response mode: wake-answer\n") {
+    if let Some(style) = system_prompt.strip_prefix("Pluto response mode: wake-answer\n") {
         let style: String = style.chars().take(6_000).collect();
         return format!(
             "This turn is a quick voice-assistant request in a compact desktop overlay. Answer the current request directly in concise natural plain text. Do not generate island-ui JSON, visual components, tables, diagrams, or code blocks. Do not perform coding-task startup checks: no git status, repository inspection, uncommitted-file checks, project discovery, plans, or edits unless the user explicitly requests code/project work. For a live desktop question, use only the minimal relevant app/process check needed; never inspect a repository to determine whether an app is running. Do not claim live status without evidence. Use tools only when needed to answer or perform the actual request. Follow all approval and safety requirements. Usually answer in 1–3 short sentences, with the result first.\n\nAnswer style:\n{style}\n\nUser request:\n{user_text}"
@@ -3114,7 +3114,7 @@ fn compose_prompt_text(system_prompt: &str, user_text: &str, hybrid_whiteboard: 
     }
     // Ask supplies a per-request mode header outside its editable instructions.
     // Do not append the visual-generation catalog to a teleprompter request.
-    if let Some(style) = system_prompt.strip_prefix("Island response mode: spoken-script\n") {
+    if let Some(style) = system_prompt.strip_prefix("Pluto response mode: spoken-script\n") {
         let style: String = style.chars().take(14_000).collect();
         return format!(
             "This turn is for Ask, a compact spoken-answer view. Follow these answer instructions and conversation context:\n{style}\n\nUser question:\n{user_text}"
@@ -3124,10 +3124,10 @@ fn compose_prompt_text(system_prompt: &str, user_text: &str, hybrid_whiteboard: 
     let mut prompt = String::new();
     if !instructions.is_empty() {
         prompt.push_str(&format!(
-            "Additional instructions configured in Island:\n{instructions}\n\n"
+            "Additional instructions configured in Pluto:\n{instructions}\n\n"
         ));
     }
-    prompt.push_str(r###"Island displays this answer in a narrow desktop panel with an optional full-answer view. Give the useful result first. Use ordinary Markdown prose for a simple answer. If verified information benefits from a visual, add at most one fenced `island-ui` JSON block after the prose. The JSON root is {"version":1,"title":"optional","elements":[...]}. Use 1–6 elements and short labels. The app chooses all layout, color, and animation; never emit HTML, CSS, JavaScript, URLs, actions, or image assets inside the JSON.
+    prompt.push_str(r###"Pluto displays this answer in a narrow desktop panel with an optional full-answer view. Give the useful result first. Use ordinary Markdown prose for a simple answer. If verified information benefits from a visual, add at most one fenced `island-ui` JSON block after the prose. The JSON root is {"version":1,"title":"optional","elements":[...]}. Use 1–6 elements and short labels. The app chooses all layout, color, and animation; never emit HTML, CSS, JavaScript, URLs, actions, or image assets inside the JSON.
 
 Presentation priority (apply by meaning, not decoration):
 1. Text for simple answers, fictional human movement, character descriptions and unsupported physical subjects. Superman flying, Iron Man, skeletons, poses and human figures must NOT automatically trigger visuals. Human rigs are unavailable, even when explicitly requested. An explicit request to visualize these may use a simple conceptual flow/relationship diagram, never a replacement figure assembled from blocks, curves or scribbles. Respect text-only requests.
