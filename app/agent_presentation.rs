@@ -438,21 +438,16 @@ pub enum SketchRole {
     Annotation,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SketchShape {
     #[serde(alias = "rect")]
+    #[default]
     Rectangle,
     #[serde(alias = "oval")]
     Ellipse,
     Circle,
     Diamond,
-}
-
-impl Default for SketchShape {
-    fn default() -> Self {
-        Self::Rectangle
-    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -1050,7 +1045,7 @@ fn valid_element(element: &PresentationElement, depth: usize, nodes: &mut usize)
                     text_ok(&figure.id, 40)
                         && figures[..index].iter().all(|other| other.id != figure.id)
                         && text_ok(&figure.label, 60)
-                        && figure.proportions.map_or(true, |values| {
+                        && figure.proportions.is_none_or(|values| {
                             values
                                 .iter()
                                 .all(|v| v.is_finite() && (0.8..=1.2).contains(v))
@@ -1079,7 +1074,7 @@ fn valid_element(element: &PresentationElement, depth: usize, nodes: &mut usize)
                                     .iter()
                                     .enumerate()
                                     .all(|(j, region)| !pose.focus[..j].contains(region))
-                                && pose.layers.as_ref().map_or(true, |layers| {
+                                && pose.layers.as_ref().is_none_or(|layers| {
                                     layers.len() <= 6
                                         && layers
                                             .iter()
