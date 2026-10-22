@@ -15,8 +15,8 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     GWLP_USERDATA, GetCursorPos, GetForegroundWindow, GetWindowLongPtrW, IDI_APPLICATION,
     LoadIconW, MF_STRING, PostMessageW, RegisterClassW, RegisterWindowMessageW,
     SetForegroundWindow, SetWindowLongPtrW, TPM_NONOTIFY, TPM_RETURNCMD, TPM_RIGHTBUTTON,
-    TrackPopupMenu, WM_APP, WM_CLOSE, WM_LBUTTONDBLCLK, WM_LBUTTONUP, WM_NCCREATE, WM_NULL, WM_RBUTTONUP,
-    WNDCLASSW,
+    TrackPopupMenu, WM_APP, WM_CLOSE, WM_LBUTTONDBLCLK, WM_LBUTTONUP, WM_NCCREATE, WM_NULL,
+    WM_RBUTTONUP, WNDCLASSW,
 };
 
 const CLASS_NAME: &str = "IslandDesktopTrayWindow";
@@ -141,7 +141,9 @@ impl TrayController {
     }
 
     pub fn set_root_window(&self, window: HWND) {
-        self._callbacks.root_window.store(window as isize, Ordering::Release);
+        self._callbacks
+            .root_window
+            .store(window as isize, Ordering::Release);
     }
 }
 
@@ -186,7 +188,6 @@ unsafe extern "system" fn tray_window_proc(
         }
         return 0;
     }
-
 
     if message == TRAY_MESSAGE {
         match lparam as u32 {

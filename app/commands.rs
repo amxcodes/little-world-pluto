@@ -22,11 +22,26 @@ impl FileEntry {
         use std::os::windows::ffi::OsStrExt;
         use windows_sys::Win32::UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL};
         let path = std::path::Path::new(&self.path);
-        if !path.is_absolute() || !path.exists() { return Err(LaunchError); }
+        if !path.is_absolute() || !path.exists() {
+            return Err(LaunchError);
+        }
         let verb: Vec<u16> = "open".encode_utf16().chain(Some(0)).collect();
         let target: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
-        let result = unsafe { ShellExecuteW(std::ptr::null_mut(), verb.as_ptr(), target.as_ptr(), std::ptr::null(), std::ptr::null(), SW_SHOWNORMAL) };
-        if result as isize <= 32 { Err(LaunchError) } else { Ok(()) }
+        let result = unsafe {
+            ShellExecuteW(
+                std::ptr::null_mut(),
+                verb.as_ptr(),
+                target.as_ptr(),
+                std::ptr::null(),
+                std::ptr::null(),
+                SW_SHOWNORMAL,
+            )
+        };
+        if result as isize <= 32 {
+            Err(LaunchError)
+        } else {
+            Ok(())
+        }
     }
 }
 
@@ -35,7 +50,9 @@ impl FileEntry {
 /// source as executable text. The worker only returns existing local paths.
 pub fn search_files(query: &str) -> Vec<FileEntry> {
     let query = query.trim();
-    if query.chars().count() < 2 || query.len() > 128 { return Vec::new(); }
+    if query.chars().count() < 2 || query.len() > 128 {
+        return Vec::new();
+    }
     let script = r#"
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
@@ -65,12 +82,17 @@ try {
         .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
         .output();
     #[derive(serde::Deserialize)]
-    struct SearchResponse { available: bool, results: Vec<FileEntry> }
+    struct SearchResponse {
+        available: bool,
+        results: Vec<FileEntry>,
+    }
     if let Ok(output) = output
         && let Ok(response) = serde_json::from_slice::<SearchResponse>(&output.stdout)
         && response.available
     {
-        let mut results = response.results.into_iter()
+        let mut results = response
+            .results
+            .into_iter()
             .filter(|item| std::path::Path::new(&item.path).is_absolute())
             .collect::<Vec<_>>();
         rank_file_results(&mut results, query);
@@ -83,29 +105,48 @@ try {
 /// Keep searching useful when Windows Search is disabled or inaccessible.
 /// Bounded traversal avoids an unexpected whole-disk walk.
 fn search_user_folders(query: &str) -> Vec<FileEntry> {
-    let Some(home) = std::env::var_os("USERPROFILE") else { return Vec::new(); };
+    let Some(home) = std::env::var_os("USERPROFILE") else {
+        return Vec::new();
+    };
     let home = std::path::PathBuf::from(home);
     let mut pending = ["Desktop", "Documents", "Downloads", "Pictures"]
-        .into_iter().map(|name| (home.join(name), 0_u8)).collect::<Vec<_>>();
+        .into_iter()
+        .map(|name| (home.join(name), 0_u8))
+        .collect::<Vec<_>>();
     let needle = query.to_lowercase();
     let mut visited = 0;
     let mut found = Vec::new();
     while let Some((folder, depth)) = pending.pop() {
-        let Ok(entries) = std::fs::read_dir(folder) else { continue; };
+        let Ok(entries) = std::fs::read_dir(folder) else {
+            continue;
+        };
         for entry in entries.flatten() {
             visited += 1;
-            if visited > 3_000 { break; }
+            if visited > 3_000 {
+                break;
+            }
             let path = entry.path();
             let name = entry.file_name().to_string_lossy().into_owned();
             if name.to_lowercase().contains(&needle) {
-                found.push(FileEntry { name, path: path.to_string_lossy().into_owned() });
-                if found.len() >= 16 { break; }
+                found.push(FileEntry {
+                    name,
+                    path: path.to_string_lossy().into_owned(),
+                });
+                if found.len() >= 16 {
+                    break;
+                }
             }
-            if depth < 3 && entry.file_type().is_ok_and(|kind| kind.is_dir() && !kind.is_symlink()) {
+            if depth < 3
+                && entry
+                    .file_type()
+                    .is_ok_and(|kind| kind.is_dir() && !kind.is_symlink())
+            {
                 pending.push((path, depth + 1));
             }
         }
-        if visited > 3_000 || found.len() >= 16 { break; }
+        if visited > 3_000 || found.len() >= 16 {
+            break;
+        }
     }
     rank_file_results(&mut found, query);
     found.truncate(8);
@@ -116,17 +157,30 @@ fn rank_file_results(results: &mut [FileEntry], query: &str) {
     let needle = query.to_lowercase();
     results.sort_by_key(|item| {
         let name = item.name.to_lowercase();
-        let stem = std::path::Path::new(&item.name).file_stem()
-            .and_then(|stem| stem.to_str()).unwrap_or(&item.name).to_lowercase();
+        let stem = std::path::Path::new(&item.name)
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .unwrap_or(&item.name)
+            .to_lowercase();
         let path = item.path.to_lowercase();
-        let match_rank = if stem == needle || name == needle { 0 }
-            else if stem.starts_with(&needle) { 1 }
-            else { 2 };
-        let location_rank = if path.contains("\\node_modules\\") || path.contains("\\.git\\") { 5 }
-            else if path.contains("\\desktop\\") { 0 }
-            else if path.contains("\\documents\\") || path.contains("\\downloads\\") { 1 }
-            else if path.contains("\\appdata\\") { 4 }
-            else { 2 };
+        let match_rank = if stem == needle || name == needle {
+            0
+        } else if stem.starts_with(&needle) {
+            1
+        } else {
+            2
+        };
+        let location_rank = if path.contains("\\node_modules\\") || path.contains("\\.git\\") {
+            5
+        } else if path.contains("\\desktop\\") {
+            0
+        } else if path.contains("\\documents\\") || path.contains("\\downloads\\") {
+            1
+        } else if path.contains("\\appdata\\") {
+            4
+        } else {
+            2
+        };
         (match_rank, location_rank, name.len(), path.len())
     });
 }

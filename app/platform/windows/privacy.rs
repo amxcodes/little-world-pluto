@@ -61,7 +61,11 @@ impl Capability {
 /// false activity during a transient registry error.
 pub fn read_current_activity() -> Result<PrivacyActivity, u32> {
     let (microphone_apps, external_microphone_active) = read_capability(Capability::Microphone)?;
-    Ok(PrivacyActivity { microphone_apps, external_microphone_active, camera_apps: read_capability(Capability::Camera)?.0 })
+    Ok(PrivacyActivity {
+        microphone_apps,
+        external_microphone_active,
+        camera_apps: read_capability(Capability::Camera)?.0,
+    })
 }
 
 fn read_capability(capability: Capability) -> Result<(Vec<String>, bool), u32> {
@@ -85,7 +89,6 @@ fn read_capability(capability: Capability) -> Result<(Vec<String>, bool), u32> {
         } else {
             read_app_entry(root.raw(), &entry, &mut apps, &mut external);
         }
-
     }
 
     apps.sort_by_key(|name| name.to_ascii_lowercase());
@@ -95,7 +98,6 @@ fn read_capability(capability: Capability) -> Result<(Vec<String>, bool), u32> {
 }
 
 fn read_app_entry(parent: HKEY, key_name: &str, apps: &mut Vec<String>, external: &mut bool) {
-
     let Ok(app_key) = RegistryKey::open(parent, key_name) else {
         // Per-application keys can disappear while an app exits. Skip that
         // race; the next bounded sample will reconcile the current state.
@@ -109,9 +111,15 @@ fn read_app_entry(parent: HKEY, key_name: &str, apps: &mut Vec<String>, external
         && let Some(name) = application_label(key_name)
     {
         let path = key_name.replace('#', "\\").to_ascii_lowercase();
-        let own_executable = std::env::current_exe().ok().is_some_and(|exe| exe.to_string_lossy().to_ascii_lowercase() == path);
-        let own_package = key_name.to_ascii_lowercase().starts_with("littleworld.island.desktop_");
-        if !own_executable && !own_package { *external = true; }
+        let own_executable = std::env::current_exe()
+            .ok()
+            .is_some_and(|exe| exe.to_string_lossy().to_ascii_lowercase() == path);
+        let own_package = key_name
+            .to_ascii_lowercase()
+            .starts_with("littleworld.island.desktop_");
+        if !own_executable && !own_package {
+            *external = true;
+        }
         apps.push(name);
     }
 }

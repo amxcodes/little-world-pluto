@@ -58,7 +58,9 @@ pub fn recognize_image(bytes: &[u8]) -> Result<String, String> {
         || height > MAX_DIMENSION
         || u64::from(width) * u64::from(height) > 8_294_400
     {
-        return Err("The captured image is outside the supported size. Select a smaller area.".into());
+        return Err(
+            "The captured image is outside the supported size. Select a smaller area.".into(),
+        );
     }
 
     let bitmap = decoder

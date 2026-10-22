@@ -1,15 +1,15 @@
-pub mod privacy;
 pub mod agent_library;
+pub mod privacy;
 pub mod screen_ocr;
-pub mod screen_qr;
 pub mod screen_overlay;
-pub mod speech;
-pub mod wake_word;
+pub mod screen_qr;
 #[allow(dead_code)] // DPAPI is verified now; credential controls arrive with their owning module.
 pub mod secrets;
 pub mod shell;
+pub mod speech;
 pub mod startup;
 pub mod tray;
+pub mod wake_word;
 
 use crate::diagnostics::DiagnosticCode;
 use windows_sys::Win32::System::Diagnostics::Debug::OutputDebugStringW;

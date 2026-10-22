@@ -1,12 +1,12 @@
+use std::collections::{HashMap, HashSet};
 use std::ffi::c_void;
 use std::mem::size_of;
 use std::num::NonZeroIsize;
 use std::os::windows::ffi::OsStrExt;
 use std::ptr::{null, null_mut};
-use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicPtr, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, Sender, SyncSender, TrySendError, sync_channel};
+use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 
 use crate::shortcuts::{
@@ -16,64 +16,73 @@ use eframe::egui;
 use island_desktop::motion::{COLLAPSE_SPRING, CONTENT_EXIT_DURATION, Spring, SpringMotion};
 use island_desktop::shell_state::{ShellEvent, ShellMode, ShellReducer};
 use island_desktop::visual::{
-    centered_pixel_origin, centered_pixel_width, EXPANDED_HEIGHT, FOLDED_HEIGHT, ShapeMode,
-    ShellLayout,
+    EXPANDED_HEIGHT, FOLDED_HEIGHT, ShapeMode, ShellLayout, centered_pixel_origin,
+    centered_pixel_width,
 };
 use raw_window_handle::{
     HandleError, HasWindowHandle, RawWindowHandle, Win32WindowHandle, WindowHandle,
 };
+use windows_core::implement;
+use windows_startup::Win32::System::Ole::{IDropSource, IDropTarget};
 use windows_sys::Win32::Foundation::{
-    CloseHandle, ERROR_CLASS_ALREADY_EXISTS, ERROR_NOT_ALL_ASSIGNED, GetLastError, HANDLE, HWND, LPARAM, LRESULT, POINT,
-    RECT, SIZE, SYSTEMTIME, SetLastError, WAIT_FAILED, WAIT_OBJECT_0, WPARAM,
+    CloseHandle, ERROR_CLASS_ALREADY_EXISTS, ERROR_NOT_ALL_ASSIGNED, GetLastError, HANDLE, HWND,
+    LPARAM, LRESULT, POINT, RECT, SIZE, SYSTEMTIME, SetLastError, WAIT_FAILED, WAIT_OBJECT_0,
+    WPARAM,
 };
 use windows_sys::Win32::Graphics::Dwm::{DWM_TIMING_INFO, DwmGetCompositionTimingInfo};
 use windows_sys::Win32::Graphics::Gdi::{
-    AC_SRC_ALPHA, AC_SRC_OVER, ANTIALIASED_QUALITY, BI_RGB, BITMAPINFO, BITMAPINFOHEADER,
+    AC_SRC_ALPHA, AC_SRC_OVER, ANTIALIASED_QUALITY, BI_RGB, BITMAP, BITMAPINFO, BITMAPINFOHEADER,
     CLIP_DEFAULT_PRECIS, CombineRgn, CreateCompatibleDC, CreateDIBSection, CreateFontW,
-    CreateRectRgn, CreateRoundRectRgn, CreateSolidBrush, FillRgn, HBRUSH, HRGN,
-    DEFAULT_CHARSET, DEFAULT_PITCH, DIB_RGB_COLORS, DeleteDC, DeleteObject, FF_DONTCARE,
-    FW_SEMIBOLD, GetDIBits, GetObjectW, GetTextExtentPoint32W, BITMAP, HBITMAP, HDC, HGDIOBJ,
-    OUT_DEFAULT_PRECIS, RGN_OR, SelectObject, SetBkMode, SetTextAlign, SetTextColor,
-    SetWindowRgn, TA_CENTER, TA_TOP, TRANSPARENT, TextOutW,
+    CreateRectRgn, CreateRoundRectRgn, CreateSolidBrush, DEFAULT_CHARSET, DEFAULT_PITCH,
+    DIB_RGB_COLORS, DeleteDC, DeleteObject, FF_DONTCARE, FW_SEMIBOLD, FillRgn, GetDIBits,
+    GetObjectW, GetTextExtentPoint32W, HBITMAP, HBRUSH, HDC, HGDIOBJ, HRGN, OUT_DEFAULT_PRECIS,
+    RGN_OR, SelectObject, SetBkMode, SetTextAlign, SetTextColor, SetWindowRgn, TA_CENTER, TA_TOP,
+    TRANSPARENT, TextOutW,
 };
-use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows_sys::Win32::System::Power::{GetSystemPowerStatus, SetSuspendState, SYSTEM_POWER_STATUS};
-use windows_sys::Win32::System::Shutdown::LockWorkStation;
+use windows_sys::Win32::Security::{
+    AdjustTokenPrivileges, LUID_AND_ATTRIBUTES, LookupPrivilegeValueW, SE_PRIVILEGE_ENABLED,
+    TOKEN_ADJUST_PRIVILEGES, TOKEN_PRIVILEGES, TOKEN_QUERY,
+};
 use windows_sys::Win32::System::Diagnostics::Debug::MessageBeep;
-use windows_sys::Win32::Security::{AdjustTokenPrivileges, LookupPrivilegeValueW, TOKEN_ADJUST_PRIVILEGES, TOKEN_QUERY, TOKEN_PRIVILEGES, LUID_AND_ATTRIBUTES, SE_PRIVILEGE_ENABLED};
-use windows_sys::Win32::System::SystemInformation::{GetLocalTime, GetSystemDirectoryW, OSVERSIONINFOW};
+use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows_sys::Win32::System::Power::{
+    GetSystemPowerStatus, SYSTEM_POWER_STATUS, SetSuspendState,
+};
+use windows_sys::Win32::System::Shutdown::LockWorkStation;
+use windows_sys::Win32::System::SystemInformation::{
+    GetLocalTime, GetSystemDirectoryW, OSVERSIONINFOW,
+};
 use windows_sys::Win32::System::Threading::{
     CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, CancelWaitableTimer, CreateWaitableTimerExW,
-    GetCurrentProcess, OpenProcess, OpenProcessToken, QueryFullProcessImageNameW,
-    PROCESS_QUERY_LIMITED_INFORMATION, SetWaitableTimer, TIMER_ALL_ACCESS,
+    GetCurrentProcess, OpenProcess, OpenProcessToken, PROCESS_QUERY_LIMITED_INFORMATION,
+    QueryFullProcessImageNameW, SetWaitableTimer, TIMER_ALL_ACCESS,
 };
 use windows_sys::Win32::UI::HiDpi::{GetDpiForSystem, GetDpiForWindow};
+use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+    GetAsyncKeyState, RegisterHotKey, TME_LEAVE, TRACKMOUSEEVENT, TrackMouseEvent,
+    UnregisterHotKey, VK_LBUTTON,
+};
 use windows_sys::Win32::UI::Input::{
-    GetRawInputData, RAWINPUT, RAWINPUTDEVICE, RIDEV_INPUTSINK, RIDEV_REMOVE, RID_INPUT,
+    GetRawInputData, RAWINPUT, RAWINPUTDEVICE, RID_INPUT, RIDEV_INPUTSINK, RIDEV_REMOVE,
     RIM_TYPEMOUSE, RegisterRawInputDevices,
 };
-use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-    GetAsyncKeyState, RegisterHotKey, TME_LEAVE, TRACKMOUSEEVENT, TrackMouseEvent, UnregisterHotKey, VK_LBUTTON,
-};
 use windows_sys::Win32::UI::Shell::{
-    DragAcceptFiles, DragFinish, DragQueryFileW, SHFILEINFOW, SHGetFileInfoW, SHGFI_ICON,
+    DragAcceptFiles, DragFinish, DragQueryFileW, SHFILEINFOW, SHGFI_ICON, SHGetFileInfoW,
     ShellExecuteW,
 };
-use windows_core::implement;
-use windows_startup::Win32::System::Ole::{IDropSource, IDropTarget};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyIcon, DestroyWindow, DI_NORMAL, DispatchMessageW,
-    DrawIconEx, EnumChildWindows, GWLP_USERDATA, GetClassNameW,
-    GetCursorPos, GetForegroundWindow, GetSystemMetrics, GetWindowLongPtrW, GetWindowRect,
-    GetWindowThreadProcessId, HWND_TOPMOST, IsChild, IsWindow, IsZoomed, KillTimer, MSG,
+    CreateWindowExW, DI_NORMAL, DefWindowProcW, DestroyIcon, DestroyWindow, DispatchMessageW,
+    DrawIconEx, EnumChildWindows, GWLP_USERDATA, GetClassNameW, GetCursorPos, GetForegroundWindow,
+    GetSystemMetrics, GetWindowLongPtrW, GetWindowRect, GetWindowThreadProcessId, HTTRANSPARENT,
+    HWND_TOPMOST, IsChild, IsWindow, IsZoomed, KillTimer, LWA_ALPHA, MB_OK, MSG,
     MWMO_INPUTAVAILABLE, MsgWaitForMultipleObjectsEx, PM_REMOVE, PeekMessageW, PostMessageW,
-    PostQuitMessage, QS_ALLINPUT, RegisterClassW, SM_CXSCREEN, SM_CYSCREEN, SW_HIDE,
-    SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_SHOWWINDOW, SetForegroundWindow,
-    SetLayeredWindowAttributes, SetTimer, SetWindowDisplayAffinity, SetWindowLongPtrW, SetWindowPos,
-    ShowWindow, TranslateMessage, ULW_ALPHA, UpdateLayeredWindow, HTTRANSPARENT, LWA_ALPHA,
-    WM_APP, WM_LBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_NCCREATE, WM_NCHITTEST, WM_QUIT,
-    WM_TIMER, WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, MB_OK,
-    WS_POPUP, WindowFromPoint, RI_MOUSE_LEFT_BUTTON_DOWN, RI_MOUSE_LEFT_BUTTON_UP, WM_INPUT,
+    PostQuitMessage, QS_ALLINPUT, RI_MOUSE_LEFT_BUTTON_DOWN, RI_MOUSE_LEFT_BUTTON_UP,
+    RegisterClassW, SM_CXSCREEN, SM_CYSCREEN, SW_HIDE, SW_SHOWNOACTIVATE, SWP_NOACTIVATE,
+    SWP_SHOWWINDOW, SetForegroundWindow, SetLayeredWindowAttributes, SetTimer,
+    SetWindowDisplayAffinity, SetWindowLongPtrW, SetWindowPos, ShowWindow, TranslateMessage,
+    ULW_ALPHA, UpdateLayeredWindow, WM_APP, WM_INPUT, WM_LBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEMOVE,
+    WM_NCCREATE, WM_NCHITTEST, WM_QUIT, WM_TIMER, WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE,
+    WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP, WindowFromPoint,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{SW_RESTORE, SW_SHOW, ShowWindowAsync};
 
@@ -81,59 +90,100 @@ const CLASS_NAME: &str = "IslandDesktopEdgeShell";
 
 fn wake_sensitivity() -> crate::platform::windows::wake_word::Sensitivity {
     let preferences = load_agent_preferences().unwrap_or_default();
-    crate::platform::windows::wake_word::Sensitivity::from_name(preferences["wakeSensitivity"].as_str().unwrap_or("balanced"))
+    crate::platform::windows::wake_word::Sensitivity::from_name(
+        preferences["wakeSensitivity"]
+            .as_str()
+            .unwrap_or("balanced"),
+    )
 }
 
 fn agent_preferences_path() -> Option<std::path::PathBuf> {
-    std::env::var_os("LOCALAPPDATA")
-        .map(|root| std::path::PathBuf::from(root).join("Island").join("agent-preferences.json"))
+    std::env::var_os("LOCALAPPDATA").map(|root| {
+        std::path::PathBuf::from(root)
+            .join("Island")
+            .join("agent-preferences.json")
+    })
 }
 
 fn load_agent_preferences() -> Option<serde_json::Value> {
     let path = agent_preferences_path()?;
-    if std::fs::metadata(&path).ok()?.len() > 64_000 { return None; }
+    if std::fs::metadata(&path).ok()?.len() > 64_000 {
+        return None;
+    }
     let value: serde_json::Value = serde_json::from_slice(&std::fs::read(path).ok()?).ok()?;
     value.as_object()?;
     Some(value)
 }
 
 fn save_agent_preferences(value: &serde_json::Value) {
-    if !matches!(value["defaultProvider"].as_str(), Some("opencode" | "codex"))
-        || !value["providerSetupComplete"].is_boolean() { return; }
-    let Ok(encoded) = serde_json::to_vec(value) else { return; };
-    if encoded.len() > 64_000 { return; }
-    let Some(path) = agent_preferences_path() else { return; };
+    if !matches!(
+        value["defaultProvider"].as_str(),
+        Some("opencode" | "codex")
+    ) || !value["providerSetupComplete"].is_boolean()
+    {
+        return;
+    }
+    let Ok(encoded) = serde_json::to_vec(value) else {
+        return;
+    };
+    if encoded.len() > 64_000 {
+        return;
+    }
+    let Some(path) = agent_preferences_path() else {
+        return;
+    };
     if let Some(parent) = path.parent() {
-        if std::fs::create_dir_all(parent).is_err() { return; }
+        if std::fs::create_dir_all(parent).is_err() {
+            return;
+        }
     }
     let _ = std::fs::write(path, encoded);
 }
 
 fn pick_opencode_folder(owner: HWND) -> Option<String> {
-    use windows_startup::Win32::System::Com::{CLSCTX_INPROC_SERVER, CoCreateInstance, CoTaskMemFree};
-    use windows_startup::Win32::UI::Shell::{FileOpenDialog, FOS_FORCEFILESYSTEM, FOS_PICKFOLDERS,
-        IFileOpenDialog, SIGDN_FILESYSPATH};
-    let dialog: IFileOpenDialog = unsafe { CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER).ok()? };
+    use windows_startup::Win32::System::Com::{
+        CLSCTX_INPROC_SERVER, CoCreateInstance, CoTaskMemFree,
+    };
+    use windows_startup::Win32::UI::Shell::{
+        FOS_FORCEFILESYSTEM, FOS_PICKFOLDERS, FileOpenDialog, IFileOpenDialog, SIGDN_FILESYSPATH,
+    };
+    let dialog: IFileOpenDialog =
+        unsafe { CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER).ok()? };
     let flags = unsafe { dialog.GetOptions().ok()? };
     unsafe {
-        dialog.SetOptions(flags | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM).ok()?;
-        dialog.Show(Some(windows_startup::Win32::Foundation::HWND(owner))).ok()?;
+        dialog
+            .SetOptions(flags | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM)
+            .ok()?;
+        dialog
+            .Show(Some(windows_startup::Win32::Foundation::HWND(owner)))
+            .ok()?;
     }
     let item = unsafe { dialog.GetResult().ok()? };
     let path = unsafe { item.GetDisplayName(SIGDN_FILESYSPATH).ok()? };
     let text = unsafe { path.to_string().ok() };
-    unsafe { CoTaskMemFree(Some(path.0.cast())); }
+    unsafe {
+        CoTaskMemFree(Some(path.0.cast()));
+    }
     text
 }
 fn pick_opencode_files(owner: HWND) -> Option<Vec<String>> {
-    use windows_startup::Win32::System::Com::{CLSCTX_INPROC_SERVER, CoCreateInstance, CoTaskMemFree};
-    use windows_startup::Win32::UI::Shell::{FileOpenDialog, FOS_ALLOWMULTISELECT,
-        FOS_FORCEFILESYSTEM, IFileOpenDialog, SIGDN_FILESYSPATH};
-    let dialog: IFileOpenDialog = unsafe { CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER).ok()? };
+    use windows_startup::Win32::System::Com::{
+        CLSCTX_INPROC_SERVER, CoCreateInstance, CoTaskMemFree,
+    };
+    use windows_startup::Win32::UI::Shell::{
+        FOS_ALLOWMULTISELECT, FOS_FORCEFILESYSTEM, FileOpenDialog, IFileOpenDialog,
+        SIGDN_FILESYSPATH,
+    };
+    let dialog: IFileOpenDialog =
+        unsafe { CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER).ok()? };
     let flags = unsafe { dialog.GetOptions().ok()? };
     unsafe {
-        dialog.SetOptions(flags | FOS_ALLOWMULTISELECT | FOS_FORCEFILESYSTEM).ok()?;
-        dialog.Show(Some(windows_startup::Win32::Foundation::HWND(owner))).ok()?;
+        dialog
+            .SetOptions(flags | FOS_ALLOWMULTISELECT | FOS_FORCEFILESYSTEM)
+            .ok()?;
+        dialog
+            .Show(Some(windows_startup::Win32::Foundation::HWND(owner)))
+            .ok()?;
     }
     let items = unsafe { dialog.GetResults().ok()? };
     let count = unsafe { items.GetCount().ok()? }.min(8);
@@ -142,8 +192,12 @@ fn pick_opencode_files(owner: HWND) -> Option<Vec<String>> {
         let item = unsafe { items.GetItemAt(index).ok()? };
         let path = unsafe { item.GetDisplayName(SIGDN_FILESYSPATH).ok()? };
         let text = unsafe { path.to_string().ok() };
-        unsafe { CoTaskMemFree(Some(path.0.cast())); }
-        if let Some(text) = text { paths.push(text); }
+        unsafe {
+            CoTaskMemFree(Some(path.0.cast()));
+        }
+        if let Some(text) = text {
+            paths.push(text);
+        }
     }
     Some(paths)
 }
@@ -171,8 +225,7 @@ const SCREEN_FEEDBACK_EXIT: std::time::Duration = std::time::Duration::from_mill
 const COMPACT_FEEDBACK_CAPACITY: usize = 12;
 const COMPACT_FEEDBACK_MAX_WAIT: std::time::Duration = std::time::Duration::from_secs(30);
 const REACT_CONTENT_REVEAL_MARGIN: f64 = 36.0;
-const REACT_COMPACT_RENDER_TIMEOUT: std::time::Duration =
-    std::time::Duration::from_millis(240);
+const REACT_COMPACT_RENDER_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(240);
 const IN_PLACE_LAYOUT_SPRING: Spring = Spring {
     stiffness: 420.0,
     damping: 42.0,
@@ -252,7 +305,10 @@ struct NoteBook {
 
 impl NoteBook {
     fn selected_text(&self) -> String {
-        self.folders.get(self.selected).map(|folder| folder.text.clone()).unwrap_or_default()
+        self.folders
+            .get(self.selected)
+            .map(|folder| folder.text.clone())
+            .unwrap_or_default()
     }
 }
 
@@ -287,9 +343,15 @@ impl PartialEq for MediaSnapshot {
     fn eq(&self, other: &Self) -> bool {
         self.session_id == other.session_id
             && self.sessions.len() == other.sessions.len()
-            && self.sessions.iter().zip(&other.sessions).all(|(left, right)| {
-                left.id == right.id && left.source == right.source && left.playing == right.playing
-            })
+            && self
+                .sessions
+                .iter()
+                .zip(&other.sessions)
+                .all(|(left, right)| {
+                    left.id == right.id
+                        && left.source == right.source
+                        && left.playing == right.playing
+                })
             && self.title == other.title
             && self.artist == other.artist
             && self.source == other.source
@@ -304,26 +366,50 @@ impl PartialEq for MediaSnapshot {
     }
 }
 
-enum MediaAction { Refresh, Toggle, Previous, Next, SeekToMs(u64), Select(String) }
+enum MediaAction {
+    Refresh,
+    Toggle,
+    Previous,
+    Next,
+    SeekToMs(u64),
+    Select(String),
+}
 
 fn queue_media_refresh(sender: &Sender<MediaAction>, pending: &AtomicBool) {
-    if pending.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire).is_ok()
+    if pending
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .is_ok()
         && sender.send(MediaAction::Refresh).is_err()
     {
         pending.store(false, Ordering::Release);
     }
 }
 
-fn media_artwork(properties: &windows_startup::Media::Control::GlobalSystemMediaTransportControlsSessionMediaProperties) -> Option<Arc<str>> {
+fn media_artwork(
+    properties: &windows_startup::Media::Control::GlobalSystemMediaTransportControlsSessionMediaProperties,
+) -> Option<Arc<str>> {
     use base64::Engine;
     use windows_startup::Storage::Streams::DataReader;
-    let stream = properties.Thumbnail().ok()?.OpenReadAsync().ok()?.join().ok()?;
-    let mime = stream.ContentType().map(|value| value.to_string()).unwrap_or_default();
+    let stream = properties
+        .Thumbnail()
+        .ok()?
+        .OpenReadAsync()
+        .ok()?
+        .join()
+        .ok()?;
+    let mime = stream
+        .ContentType()
+        .map(|value| value.to_string())
+        .unwrap_or_default();
     let length = usize::try_from(stream.Size().ok()?).ok()?;
-    if length == 0 || length > 2 * 1024 * 1024 { return None; }
+    if length == 0 || length > 2 * 1024 * 1024 {
+        return None;
+    }
     let reader = DataReader::CreateDataReader(&stream.GetInputStreamAt(0).ok()?).ok()?;
     let loaded = reader.LoadAsync(length as u32).ok()?.join().ok()? as usize;
-    if loaded == 0 || loaded > length { return None; }
+    if loaded == 0 || loaded > length {
+        return None;
+    }
     let mut bytes = vec![0; loaded];
     reader.ReadBytes(&mut bytes).ok()?;
     // Browser SMTC thumbnails are commonly backed by an in-memory stream
@@ -339,26 +425,44 @@ fn media_artwork(properties: &windows_startup::Media::Control::GlobalSystemMedia
         Some("image/bmp")
     } else if bytes.len() >= 12 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP" {
         Some("image/webp")
-    } else if bytes.len() >= 12 && &bytes[4..8] == b"ftyp" && (&bytes[8..12] == b"avif" || &bytes[8..12] == b"avis") {
+    } else if bytes.len() >= 12
+        && &bytes[4..8] == b"ftyp"
+        && (&bytes[8..12] == b"avif" || &bytes[8..12] == b"avis")
+    {
         Some("image/avif")
     } else {
         None
     };
-    let declared_mime = mime.split(';').next().unwrap_or_default().trim().to_ascii_lowercase();
+    let declared_mime = mime
+        .split(';')
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase();
     let mime = detected_mime.or_else(|| match declared_mime.as_str() {
-        "image/jpeg" | "image/png" | "image/webp" | "image/bmp" | "image/gif" | "image/avif" => Some(declared_mime.as_str()),
+        "image/jpeg" | "image/png" | "image/webp" | "image/bmp" | "image/gif" | "image/avif" => {
+            Some(declared_mime.as_str())
+        }
         _ => None,
     })?;
-    Some(Arc::from(format!("data:{mime};base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes))))
+    Some(Arc::from(format!(
+        "data:{mime};base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    )))
 }
 
 fn spawn_media_observer() -> (Sender<MediaAction>, Receiver<Option<MediaSnapshot>>) {
-    use windows_startup::Media::Control::GlobalSystemMediaTransportControlsSessionManager as Manager;
-    use windows_startup::Media::Control::GlobalSystemMediaTransportControlsSession as Session;
-    use windows_startup::Media::Control::{CurrentSessionChangedEventArgs, MediaPropertiesChangedEventArgs, PlaybackInfoChangedEventArgs, SessionsChangedEventArgs, TimelinePropertiesChangedEventArgs};
-    use windows_startup::Media::Control::GlobalSystemMediaTransportControlsSessionPlaybackStatus as Playback;
     use windows_startup::Foundation::TypedEventHandler;
-    use windows_startup::Win32::System::WinRT::{RO_INIT_MULTITHREADED, RoInitialize, RoUninitialize};
+    use windows_startup::Media::Control::GlobalSystemMediaTransportControlsSession as Session;
+    use windows_startup::Media::Control::GlobalSystemMediaTransportControlsSessionManager as Manager;
+    use windows_startup::Media::Control::GlobalSystemMediaTransportControlsSessionPlaybackStatus as Playback;
+    use windows_startup::Media::Control::{
+        CurrentSessionChangedEventArgs, MediaPropertiesChangedEventArgs,
+        PlaybackInfoChangedEventArgs, SessionsChangedEventArgs, TimelinePropertiesChangedEventArgs,
+    };
+    use windows_startup::Win32::System::WinRT::{
+        RO_INIT_MULTITHREADED, RoInitialize, RoUninitialize,
+    };
     // Transport actions must not be dropped while a WinRT command is completing.
     // The worker serializes the small command stream; refresh requests remain coalesced.
     let (command_sender, command_receiver) = std::sync::mpsc::channel();
@@ -368,7 +472,9 @@ fn spawn_media_observer() -> (Sender<MediaAction>, Receiver<Option<MediaSnapshot
     let refresh_pending = Arc::new(AtomicBool::new(false));
     let worker_sender = command_sender.clone();
     thread::spawn(move || {
-        if unsafe { RoInitialize(RO_INIT_MULTITHREADED) }.is_err() { return; }
+        if unsafe { RoInitialize(RO_INIT_MULTITHREADED) }.is_err() {
+            return;
+        }
         let mut manager = None;
         let mut manager_event_tokens: Option<(Option<i64>, Option<i64>)> = None;
         let mut observed_session: Option<Session> = None;
@@ -387,80 +493,130 @@ fn spawn_media_observer() -> (Sender<MediaAction>, Receiver<Option<MediaSnapshot
                 let current_wake = worker_sender.clone();
                 let current_dirty = metadata_dirty.clone();
                 let current_pending = refresh_pending.clone();
-                let current_handler = TypedEventHandler::<Manager, CurrentSessionChangedEventArgs>::new(move |_, _| {
-                    current_dirty.store(true, Ordering::Release);
-                    queue_media_refresh(&current_wake, &current_pending);
-                    Ok(())
-                });
+                let current_handler =
+                    TypedEventHandler::<Manager, CurrentSessionChangedEventArgs>::new(
+                        move |_, _| {
+                            current_dirty.store(true, Ordering::Release);
+                            queue_media_refresh(&current_wake, &current_pending);
+                            Ok(())
+                        },
+                    );
                 let sessions_wake = worker_sender.clone();
                 let sessions_dirty = metadata_dirty.clone();
                 let sessions_pending = refresh_pending.clone();
-                let sessions_handler = TypedEventHandler::<Manager, SessionsChangedEventArgs>::new(move |_, _| {
-                    sessions_dirty.store(true, Ordering::Release);
-                    queue_media_refresh(&sessions_wake, &sessions_pending);
-                    Ok(())
-                });
+                let sessions_handler =
+                    TypedEventHandler::<Manager, SessionsChangedEventArgs>::new(move |_, _| {
+                        sessions_dirty.store(true, Ordering::Release);
+                        queue_media_refresh(&sessions_wake, &sessions_pending);
+                        Ok(())
+                    });
                 manager_event_tokens = Some((
                     next_manager.CurrentSessionChanged(&current_handler).ok(),
                     next_manager.SessionsChanged(&sessions_handler).ok(),
                 ));
                 manager = Some(next_manager);
             }
-            let available_sessions = manager.as_ref().map(|manager| {
-                let Ok(sessions) = manager.GetSessions() else { return Vec::new(); };
-                let count = sessions.Size().unwrap_or(0);
-                let mut available = Vec::with_capacity(count as usize);
-                let mut source_occurrences = HashMap::<String, usize>::new();
-                for index in 0..count {
-                    let Ok(candidate) = sessions.GetAt(index) else { continue; };
-                    let source = candidate.SourceAppUserModelId()
-                        .map(|value| value.to_string()).unwrap_or_default();
-                    let occurrence = source_occurrences.entry(source.clone()).or_default();
-                    *occurrence += 1;
-                    // The occurrence suffix distinguishes separate sessions
-                    // from the same app without depending on list ordering
-                    // across different apps.
-                    let id = format!("{source}#{occurrence}");
-                    let playing = candidate.GetPlaybackInfo()
-                        .and_then(|info| info.PlaybackStatus())
-                        .is_ok_and(|status| status == Playback::Playing);
-                    available.push((id, source, candidate, playing));
-                }
-                available
-            }).unwrap_or_default();
-            let current_session = manager.as_ref().and_then(|manager| manager.GetCurrentSession().ok());
+            let available_sessions = manager
+                .as_ref()
+                .map(|manager| {
+                    let Ok(sessions) = manager.GetSessions() else {
+                        return Vec::new();
+                    };
+                    let count = sessions.Size().unwrap_or(0);
+                    let mut available = Vec::with_capacity(count as usize);
+                    let mut source_occurrences = HashMap::<String, usize>::new();
+                    for index in 0..count {
+                        let Ok(candidate) = sessions.GetAt(index) else {
+                            continue;
+                        };
+                        let source = candidate
+                            .SourceAppUserModelId()
+                            .map(|value| value.to_string())
+                            .unwrap_or_default();
+                        let occurrence = source_occurrences.entry(source.clone()).or_default();
+                        *occurrence += 1;
+                        // The occurrence suffix distinguishes separate sessions
+                        // from the same app without depending on list ordering
+                        // across different apps.
+                        let id = format!("{source}#{occurrence}");
+                        let playing = candidate
+                            .GetPlaybackInfo()
+                            .and_then(|info| info.PlaybackStatus())
+                            .is_ok_and(|status| status == Playback::Playing);
+                        available.push((id, source, candidate, playing));
+                    }
+                    available
+                })
+                .unwrap_or_default();
+            let current_session = manager
+                .as_ref()
+                .and_then(|manager| manager.GetCurrentSession().ok());
             if selected_session_id.as_ref().is_some_and(|selected| {
-                !available_sessions.iter().any(|(id, _, _, _)| id == selected)
+                !available_sessions
+                    .iter()
+                    .any(|(id, _, _, _)| id == selected)
             }) {
                 selected_session_id = None;
             }
             // A paused preference must not mask another source that is playing.
             // Among playing sources, retain the explicit choice, then the
             // currently displayed source, before Windows' active preference.
-            let preferred = selected_session_id.as_ref()
-                .and_then(|id| available_sessions.iter().find(|(candidate_id, _, _, _)| candidate_id == id));
-            let selected = preferred.filter(|(_, _, _, playing)| *playing)
-                .or_else(|| observed_session.as_ref().and_then(|current| {
-                    available_sessions.iter().find(|(_, _, candidate, playing)| candidate == current && *playing)
-                }))
-                .or_else(|| current_session.as_ref().and_then(|current| {
-                    available_sessions.iter().find(|(_, _, candidate, playing)| candidate == current && *playing)
-                }))
-                .or_else(|| available_sessions.iter().find(|(_, _, _, playing)| *playing))
+            let preferred = selected_session_id.as_ref().and_then(|id| {
+                available_sessions
+                    .iter()
+                    .find(|(candidate_id, _, _, _)| candidate_id == id)
+            });
+            let selected = preferred
+                .filter(|(_, _, _, playing)| *playing)
+                .or_else(|| {
+                    observed_session.as_ref().and_then(|current| {
+                        available_sessions
+                            .iter()
+                            .find(|(_, _, candidate, playing)| candidate == current && *playing)
+                    })
+                })
+                .or_else(|| {
+                    current_session.as_ref().and_then(|current| {
+                        available_sessions
+                            .iter()
+                            .find(|(_, _, candidate, playing)| candidate == current && *playing)
+                    })
+                })
+                .or_else(|| {
+                    available_sessions
+                        .iter()
+                        .find(|(_, _, _, playing)| *playing)
+                })
                 .or(preferred)
-                .or_else(|| current_session.as_ref().and_then(|current| {
-                    available_sessions.iter().find(|(_, _, candidate, _)| candidate == current)
-                }))
+                .or_else(|| {
+                    current_session.as_ref().and_then(|current| {
+                        available_sessions
+                            .iter()
+                            .find(|(_, _, candidate, _)| candidate == current)
+                    })
+                })
                 .or_else(|| available_sessions.first());
-            let (session_id, session) = selected.map(|(id, _, session, _)| {
-                (Some(id.clone()), Some(session.clone()))
-            }).unwrap_or_else(|| current_session.map(|session| {
-                let source = session.SourceAppUserModelId().map(|value| value.to_string()).unwrap_or_default();
-                (Some(format!("{source}#1")), Some(session))
-            }).unwrap_or_default());
-            let media_sessions = available_sessions.iter().map(|(id, source, _, playing)| {
-                MediaSessionOption { id: id.clone(), source: source.clone(), playing: *playing }
-            }).collect::<Vec<_>>();
+            let (session_id, session) = selected
+                .map(|(id, _, session, _)| (Some(id.clone()), Some(session.clone())))
+                .unwrap_or_else(|| {
+                    current_session
+                        .map(|session| {
+                            let source = session
+                                .SourceAppUserModelId()
+                                .map(|value| value.to_string())
+                                .unwrap_or_default();
+                            (Some(format!("{source}#1")), Some(session))
+                        })
+                        .unwrap_or_default()
+                });
+            let media_sessions = available_sessions
+                .iter()
+                .map(|(id, source, _, playing)| MediaSessionOption {
+                    id: id.clone(),
+                    source: source.clone(),
+                    playing: *playing,
+                })
+                .collect::<Vec<_>>();
             let session_changed = match (&observed_session, &session) {
                 (Some(previous), Some(current)) => previous != current,
                 (None, Some(_)) | (Some(_), None) => true,
@@ -472,30 +628,45 @@ fn spawn_media_observer() -> (Sender<MediaAction>, Receiver<Option<MediaSnapshot
                 if let (Some(previous), Some((playback, media, timeline))) =
                     (observed_session.take(), session_event_tokens.take())
                 {
-                    if let Some(token) = playback { let _ = previous.RemovePlaybackInfoChanged(token); }
-                    if let Some(token) = media { let _ = previous.RemoveMediaPropertiesChanged(token); }
-                    if let Some(token) = timeline { let _ = previous.RemoveTimelinePropertiesChanged(token); }
+                    if let Some(token) = playback {
+                        let _ = previous.RemovePlaybackInfoChanged(token);
+                    }
+                    if let Some(token) = media {
+                        let _ = previous.RemoveMediaPropertiesChanged(token);
+                    }
+                    if let Some(token) = timeline {
+                        let _ = previous.RemoveTimelinePropertiesChanged(token);
+                    }
                 }
                 if let Some(current) = session.as_ref() {
                     let playback_wake = worker_sender.clone();
                     let playback_pending = refresh_pending.clone();
-                    let playback_handler = TypedEventHandler::<Session, PlaybackInfoChangedEventArgs>::new(move |_, _| {
-                        queue_media_refresh(&playback_wake, &playback_pending);
-                        Ok(())
-                    });
+                    let playback_handler =
+                        TypedEventHandler::<Session, PlaybackInfoChangedEventArgs>::new(
+                            move |_, _| {
+                                queue_media_refresh(&playback_wake, &playback_pending);
+                                Ok(())
+                            },
+                        );
                     let media_wake = worker_sender.clone();
                     let media_dirty = metadata_dirty.clone();
                     let media_artwork_dirty = artwork_dirty.clone();
                     let media_pending = refresh_pending.clone();
-                    let media_handler = TypedEventHandler::<Session, MediaPropertiesChangedEventArgs>::new(move |_, _| {
-                        media_dirty.store(true, Ordering::Release);
-                        media_artwork_dirty.store(true, Ordering::Release);
-                        queue_media_refresh(&media_wake, &media_pending);
-                        Ok(())
-                    });
+                    let media_handler =
+                        TypedEventHandler::<Session, MediaPropertiesChangedEventArgs>::new(
+                            move |_, _| {
+                                media_dirty.store(true, Ordering::Release);
+                                media_artwork_dirty.store(true, Ordering::Release);
+                                queue_media_refresh(&media_wake, &media_pending);
+                                Ok(())
+                            },
+                        );
                     let timeline_wake = worker_sender.clone();
                     let timeline_pending = refresh_pending.clone();
-                    let timeline_handler = TypedEventHandler::<Session, TimelinePropertiesChangedEventArgs>::new(move |_, _| {
+                    let timeline_handler = TypedEventHandler::<
+                        Session,
+                        TimelinePropertiesChangedEventArgs,
+                    >::new(move |_, _| {
                         queue_media_refresh(&timeline_wake, &timeline_pending);
                         Ok(())
                     });
@@ -510,34 +681,58 @@ fn spawn_media_observer() -> (Sender<MediaAction>, Receiver<Option<MediaSnapshot
             let artwork_was_updated = artwork_dirty.swap(false, Ordering::AcqRel);
             let snapshot = session.as_ref().and_then(|session: &Session| {
                 let session_id = session_id.as_ref()?;
-                let source = session.SourceAppUserModelId().map(|value| value.to_string()).unwrap_or_default();
+                let source = session
+                    .SourceAppUserModelId()
+                    .map(|value| value.to_string())
+                    .unwrap_or_default();
                 let now = std::time::Instant::now();
-                let source_changed = cached_metadata.as_ref().is_none_or(|(cached_source, _, _, _, _)| cached_source != &source);
+                let source_changed = cached_metadata
+                    .as_ref()
+                    .is_none_or(|(cached_source, _, _, _, _)| cached_source != &source);
                 if source_changed || now >= refresh_metadata_at {
-                    if let Ok(properties) = session.TryGetMediaPropertiesAsync().and_then(|request| request.join()) {
-                        let title = properties.Title().map(|value| value.to_string()).unwrap_or_default();
-                        let artist = properties.Artist().map(|value| value.to_string()).unwrap_or_default();
+                    if let Ok(properties) = session
+                        .TryGetMediaPropertiesAsync()
+                        .and_then(|request| request.join())
+                    {
+                        let title = properties
+                            .Title()
+                            .map(|value| value.to_string())
+                            .unwrap_or_default();
+                        let artist = properties
+                            .Artist()
+                            .map(|value| value.to_string())
+                            .unwrap_or_default();
                         if !title.is_empty() {
-                            let track_changed = cached_metadata.as_ref().is_none_or(|(old_source, old_title, old_artist, _, _)| {
-                                old_source != &source || old_title != &title || old_artist != &artist
-                            });
-                            let cached_artwork = cached_metadata.as_ref().and_then(|(_, _, _, artwork, _)| artwork.as_ref());
-                            let artwork = if track_changed || artwork_was_updated || cached_artwork.is_none() {
-                                // Some browser sessions publish metadata before their thumbnail is ready.
-                                // Retry on the existing metadata refresh cadence until artwork arrives.
-                                media_artwork(&properties)
-                            } else {
-                                cached_artwork.cloned()
-                            };
-                            let artwork_changed = cached_artwork.map(|old| old.as_ref())
-                                != artwork.as_deref();
+                            let track_changed = cached_metadata.as_ref().is_none_or(
+                                |(old_source, old_title, old_artist, _, _)| {
+                                    old_source != &source
+                                        || old_title != &title
+                                        || old_artist != &artist
+                                },
+                            );
+                            let cached_artwork = cached_metadata
+                                .as_ref()
+                                .and_then(|(_, _, _, artwork, _)| artwork.as_ref());
+                            let artwork =
+                                if track_changed || artwork_was_updated || cached_artwork.is_none()
+                                {
+                                    // Some browser sessions publish metadata before their thumbnail is ready.
+                                    // Retry on the existing metadata refresh cadence until artwork arrives.
+                                    media_artwork(&properties)
+                                } else {
+                                    cached_artwork.cloned()
+                                };
+                            let artwork_changed =
+                                cached_artwork.map(|old| old.as_ref()) != artwork.as_deref();
                             if track_changed || artwork_changed {
                                 artwork_revision = artwork_revision.wrapping_add(1).max(1);
                             }
-                            cached_metadata = Some((source.clone(), title, artist, artwork, artwork_revision));
+                            cached_metadata =
+                                Some((source.clone(), title, artist, artwork, artwork_revision));
                         }
                     }
-                    let retry_delay = if cached_metadata.as_ref()
+                    let retry_delay = if cached_metadata
+                        .as_ref()
                         .is_some_and(|(_, _, _, artwork, _)| artwork.is_none())
                     {
                         std::time::Duration::from_millis(500)
@@ -549,45 +744,83 @@ fn spawn_media_observer() -> (Sender<MediaAction>, Receiver<Option<MediaSnapshot
                 // Keep the card populated while a newly selected session is
                 // still publishing its first track metadata. The React view
                 // can show the provider name until a title arrives.
-                if cached_metadata.as_ref().is_none_or(|(cached_source, _, _, _, _)| cached_source != &source) {
-                    cached_metadata = Some((source.clone(), String::new(), String::new(), None, artwork_revision));
+                if cached_metadata
+                    .as_ref()
+                    .is_none_or(|(cached_source, _, _, _, _)| cached_source != &source)
+                {
+                    cached_metadata = Some((
+                        source.clone(),
+                        String::new(),
+                        String::new(),
+                        None,
+                        artwork_revision,
+                    ));
                 }
-                let (cached_source, title, artist, artwork, artwork_revision) = cached_metadata.as_ref()?;
-                if cached_source != &source { return None; }
+                let (cached_source, title, artist, artwork, artwork_revision) =
+                    cached_metadata.as_ref()?;
+                if cached_source != &source {
+                    return None;
+                }
                 let playback = session.GetPlaybackInfo().ok();
-                let playing = playback.as_ref().and_then(|info| info.PlaybackStatus().ok())
+                let playing = playback
+                    .as_ref()
+                    .and_then(|info| info.PlaybackStatus().ok())
                     .is_some_and(|status| status == Playback::Playing);
                 let timeline = session.GetTimelineProperties().ok();
                 // GSMTC reports a timeline with explicit start/end bounds.
                 // Using EndTime as a duration is wrong for sessions with a
                 // non-zero start offset; normalize both values to that range.
-                let start_ticks = timeline.as_ref().and_then(|value| value.StartTime().ok()).map(|value| value.Duration).unwrap_or(0);
-                let duration_ms = timeline.as_ref().and_then(|value| value.EndTime().ok())
+                let start_ticks = timeline
+                    .as_ref()
+                    .and_then(|value| value.StartTime().ok())
+                    .map(|value| value.Duration)
+                    .unwrap_or(0);
+                let duration_ms = timeline
+                    .as_ref()
+                    .and_then(|value| value.EndTime().ok())
                     .and_then(|value| value.Duration.checked_sub(start_ticks))
                     .and_then(|ticks| u64::try_from(ticks).ok())
                     .map(|ticks| ticks / 10_000)
                     .filter(|duration| *duration > 0);
-                let sampled_position_ms = timeline.as_ref().and_then(|value| value.Position().ok())
+                let sampled_position_ms = timeline
+                    .as_ref()
+                    .and_then(|value| value.Position().ok())
                     .and_then(|value| value.Duration.checked_sub(start_ticks))
                     .and_then(|ticks| u64::try_from(ticks).ok())
                     .map(|ticks| ticks / 10_000);
-                let now_unix_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
-                    .map(|elapsed| elapsed.as_millis() as i128).unwrap_or(0);
-                let sampled_age_ms = timeline.as_ref()
+                let now_unix_ms = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|elapsed| elapsed.as_millis() as i128)
+                    .unwrap_or(0);
+                let sampled_age_ms = timeline
+                    .as_ref()
                     .and_then(|value| value.LastUpdatedTime().ok())
-                    .map(|updated| (i128::from(updated.UniversalTime) - 116_444_736_000_000_000i128) / 10_000)
-                    .and_then(|updated_ms| u64::try_from(now_unix_ms.saturating_sub(updated_ms)).ok());
+                    .map(|updated| {
+                        (i128::from(updated.UniversalTime) - 116_444_736_000_000_000i128) / 10_000
+                    })
+                    .and_then(|updated_ms| {
+                        u64::try_from(now_unix_ms.saturating_sub(updated_ms)).ok()
+                    });
                 let position_ms = sampled_position_ms.map(|position| {
-                    let current = if playing { position.saturating_add(sampled_age_ms.unwrap_or(0)) } else { position };
+                    let current = if playing {
+                        position.saturating_add(sampled_age_ms.unwrap_or(0))
+                    } else {
+                        position
+                    };
                     duration_ms.map_or(current, |duration| current.min(duration))
                 });
                 let controls = playback.as_ref().and_then(|info| info.Controls().ok());
                 let can_toggle = controls.as_ref().is_some_and(|controls| {
                     controls.IsPlayPauseToggleEnabled().unwrap_or(false)
-                        || if playing { controls.IsPauseEnabled().unwrap_or(false) }
-                           else { controls.IsPlayEnabled().unwrap_or(false) }
+                        || if playing {
+                            controls.IsPauseEnabled().unwrap_or(false)
+                        } else {
+                            controls.IsPlayEnabled().unwrap_or(false)
+                        }
                 });
-                let can_seek = controls.as_ref().is_some_and(|controls| controls.IsPlaybackPositionEnabled().unwrap_or(false))
+                let can_seek = controls
+                    .as_ref()
+                    .is_some_and(|controls| controls.IsPlaybackPositionEnabled().unwrap_or(false))
                     && duration_ms.is_some();
                 Some(MediaSnapshot {
                     session_id: session_id.clone(),
@@ -601,8 +834,12 @@ fn spawn_media_observer() -> (Sender<MediaAction>, Receiver<Option<MediaSnapshot
                     position_ms,
                     duration_ms,
                     can_toggle,
-                    can_previous: controls.as_ref().is_some_and(|controls| controls.IsPreviousEnabled().unwrap_or(false)),
-                    can_next: controls.as_ref().is_some_and(|controls| controls.IsNextEnabled().unwrap_or(false)),
+                    can_previous: controls
+                        .as_ref()
+                        .is_some_and(|controls| controls.IsPreviousEnabled().unwrap_or(false)),
+                    can_next: controls
+                        .as_ref()
+                        .is_some_and(|controls| controls.IsNextEnabled().unwrap_or(false)),
                     can_seek,
                 })
             });
@@ -613,9 +850,14 @@ fn spawn_media_observer() -> (Sender<MediaAction>, Receiver<Option<MediaSnapshot
             };
             let _ = snapshot_sender.try_send(snapshot);
             match command_receiver.recv_timeout(wait) {
-                Ok(MediaAction::Refresh) => { refresh_pending.store(false, Ordering::Release); }
+                Ok(MediaAction::Refresh) => {
+                    refresh_pending.store(false, Ordering::Release);
+                }
                 Ok(MediaAction::Select(id)) => {
-                    if available_sessions.iter().any(|(candidate_id, _, _, _)| candidate_id == &id) {
+                    if available_sessions
+                        .iter()
+                        .any(|(candidate_id, _, _, _)| candidate_id == &id)
+                    {
                         selected_session_id = Some(id);
                         metadata_dirty.store(true, Ordering::Release);
                         artwork_dirty.store(true, Ordering::Release);
@@ -631,14 +873,22 @@ fn spawn_media_observer() -> (Sender<MediaAction>, Receiver<Option<MediaSnapshot
                             MediaAction::Previous => session.TrySkipPreviousAsync(),
                             MediaAction::Next => session.TrySkipNextAsync(),
                             MediaAction::SeekToMs(position_ms) => {
-                                let start_ticks = session.GetTimelineProperties().ok()
+                                let start_ticks = session
+                                    .GetTimelineProperties()
+                                    .ok()
                                     .and_then(|timeline| timeline.StartTime().ok())
                                     .map_or(0, |start| start.Duration);
-                                let relative_ticks = i64::try_from(position_ms.saturating_mul(10_000)).unwrap_or(i64::MAX);
-                                session.TryChangePlaybackPositionAsync(start_ticks.saturating_add(relative_ticks))
+                                let relative_ticks =
+                                    i64::try_from(position_ms.saturating_mul(10_000))
+                                        .unwrap_or(i64::MAX);
+                                session.TryChangePlaybackPositionAsync(
+                                    start_ticks.saturating_add(relative_ticks),
+                                )
                             }
                         };
-                        if let Ok(request) = request { let _ = request.join(); }
+                        if let Ok(request) = request {
+                            let _ = request.join();
+                        }
                     }
                 }
                 Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
@@ -648,13 +898,23 @@ fn spawn_media_observer() -> (Sender<MediaAction>, Receiver<Option<MediaSnapshot
         if let (Some(session), Some((playback, media, timeline))) =
             (observed_session, session_event_tokens)
         {
-            if let Some(token) = playback { let _ = session.RemovePlaybackInfoChanged(token); }
-            if let Some(token) = media { let _ = session.RemoveMediaPropertiesChanged(token); }
-            if let Some(token) = timeline { let _ = session.RemoveTimelinePropertiesChanged(token); }
+            if let Some(token) = playback {
+                let _ = session.RemovePlaybackInfoChanged(token);
+            }
+            if let Some(token) = media {
+                let _ = session.RemoveMediaPropertiesChanged(token);
+            }
+            if let Some(token) = timeline {
+                let _ = session.RemoveTimelinePropertiesChanged(token);
+            }
         }
         if let (Some(manager), Some((current, sessions))) = (manager, manager_event_tokens) {
-            if let Some(token) = current { let _ = manager.RemoveCurrentSessionChanged(token); }
-            if let Some(token) = sessions { let _ = manager.RemoveSessionsChanged(token); }
+            if let Some(token) = current {
+                let _ = manager.RemoveCurrentSessionChanged(token);
+            }
+            if let Some(token) = sessions {
+                let _ = manager.RemoveSessionsChanged(token);
+            }
         }
         unsafe { RoUninitialize() };
     });
@@ -676,91 +936,150 @@ struct AudioSnapshot {
     selected_device_id: Option<String>,
 }
 
-enum AudioAction { SetVolume(u8), SelectDevice(Option<String>) }
+enum AudioAction {
+    SetVolume(u8),
+    SelectDevice(Option<String>),
+}
 
 fn audio_device_id(device: &windows_startup::Win32::Media::Audio::IMMDevice) -> Option<String> {
     use windows_startup::Win32::System::Com::CoTaskMemFree;
     let id = unsafe { device.GetId().ok()? };
     let value = unsafe { id.to_string().ok() };
-    unsafe { CoTaskMemFree(Some(id.0.cast())); }
+    unsafe {
+        CoTaskMemFree(Some(id.0.cast()));
+    }
     value
 }
 
 fn audio_device_name(device: &windows_startup::Win32::Media::Audio::IMMDevice) -> Option<String> {
     use windows_startup::Win32::Devices::FunctionDiscovery::PKEY_Device_FriendlyName;
-    use windows_startup::Win32::System::Com::StructuredStorage::{PropVariantClear, PropVariantToStringAlloc};
+    use windows_startup::Win32::System::Com::StructuredStorage::{
+        PropVariantClear, PropVariantToStringAlloc,
+    };
     use windows_startup::Win32::System::Com::{CoTaskMemFree, STGM_READ};
     let store = unsafe { device.OpenPropertyStore(STGM_READ).ok()? };
     let mut value = unsafe { store.GetValue(&PKEY_Device_FriendlyName).ok()? };
     let name = unsafe { PropVariantToStringAlloc(&value) };
-    unsafe { let _ = PropVariantClear(&mut value); }
+    unsafe {
+        let _ = PropVariantClear(&mut value);
+    }
     let name = name.ok()?;
     let result = unsafe { name.to_string().ok() };
-    unsafe { CoTaskMemFree(Some(name.0.cast())); }
+    unsafe {
+        CoTaskMemFree(Some(name.0.cast()));
+    }
     result.filter(|name| !name.trim().is_empty())
 }
 
-fn audio_device_for_id(id: Option<&str>) -> Option<windows_startup::Win32::Media::Audio::IMMDevice> {
-    use windows_startup::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
+fn audio_device_for_id(
+    id: Option<&str>,
+) -> Option<windows_startup::Win32::Media::Audio::IMMDevice> {
     use windows_startup::Win32::Media::Audio::{IMMDeviceEnumerator, MMDeviceEnumerator};
+    use windows_startup::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
     let id = id?;
-    let enumerator: IMMDeviceEnumerator = unsafe { CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).ok()? };
+    let enumerator: IMMDeviceEnumerator =
+        unsafe { CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).ok()? };
     let wide: Vec<u16> = id.encode_utf16().chain(Some(0)).collect();
-    let device = unsafe { enumerator.GetDevice(windows_startup::core::PCWSTR(wide.as_ptr())).ok()? };
+    let device = unsafe {
+        enumerator
+            .GetDevice(windows_startup::core::PCWSTR(wide.as_ptr()))
+            .ok()?
+    };
     Some(device)
 }
 
 fn output_devices() -> (Vec<AudioDevice>, Option<String>) {
-    use windows_startup::Win32::Media::Audio::{DEVICE_STATE_ACTIVE, IMMDeviceEnumerator, MMDeviceEnumerator, eMultimedia, eRender};
-    use windows_startup::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
-    let enumerator: IMMDeviceEnumerator = match unsafe { CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL) } {
-        Ok(enumerator) => enumerator,
-        Err(_) => return (Vec::new(), None),
+    use windows_startup::Win32::Media::Audio::{
+        DEVICE_STATE_ACTIVE, IMMDeviceEnumerator, MMDeviceEnumerator, eMultimedia, eRender,
     };
-    let default_id = unsafe { enumerator.GetDefaultAudioEndpoint(eRender, eMultimedia).ok() }
-        .and_then(|device| audio_device_id(&device));
-    let devices = unsafe { enumerator.EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE).ok() }
-        .and_then(|collection| {
-            let count = unsafe { collection.GetCount().ok()? };
-            Some((0..count).filter_map(|index| {
-                let device = unsafe { collection.Item(index).ok()? };
-                Some(AudioDevice { id: audio_device_id(&device)?, name: audio_device_name(&device)? })
-            }).collect())
-        }).unwrap_or_default();
+    use windows_startup::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
+    let enumerator: IMMDeviceEnumerator =
+        match unsafe { CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL) } {
+            Ok(enumerator) => enumerator,
+            Err(_) => return (Vec::new(), None),
+        };
+    let default_id = unsafe {
+        enumerator
+            .GetDefaultAudioEndpoint(eRender, eMultimedia)
+            .ok()
+    }
+    .and_then(|device| audio_device_id(&device));
+    let devices = unsafe {
+        enumerator
+            .EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE)
+            .ok()
+    }
+    .and_then(|collection| {
+        let count = unsafe { collection.GetCount().ok()? };
+        Some(
+            (0..count)
+                .filter_map(|index| {
+                    let device = unsafe { collection.Item(index).ok()? };
+                    Some(AudioDevice {
+                        id: audio_device_id(&device)?,
+                        name: audio_device_name(&device)?,
+                    })
+                })
+                .collect(),
+        )
+    })
+    .unwrap_or_default();
     (devices, default_id)
 }
 
-fn output_volume_for_device(device_id: Option<&str>) -> Option<windows_startup::Win32::Media::Audio::Endpoints::IAudioEndpointVolume> {
+fn output_volume_for_device(
+    device_id: Option<&str>,
+) -> Option<windows_startup::Win32::Media::Audio::Endpoints::IAudioEndpointVolume> {
+    use windows_startup::Win32::Media::Audio::{IMMDeviceEnumerator, MMDeviceEnumerator};
     use windows_startup::Win32::Media::Audio::{eMultimedia, eRender};
     use windows_startup::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
-    use windows_startup::Win32::Media::Audio::{IMMDeviceEnumerator, MMDeviceEnumerator};
     let device = if let Some(id) = device_id {
         audio_device_for_id(Some(id))
     } else {
-        let enumerator: IMMDeviceEnumerator = unsafe { CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).ok()? };
-        unsafe { enumerator.GetDefaultAudioEndpoint(eRender, eMultimedia).ok() }
+        let enumerator: IMMDeviceEnumerator =
+            unsafe { CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).ok()? };
+        unsafe {
+            enumerator
+                .GetDefaultAudioEndpoint(eRender, eMultimedia)
+                .ok()
+        }
     }?;
     unsafe { device.Activate(CLSCTX_ALL, None).ok() }
 }
 
-fn output_meter_for_device(device_id: Option<&str>) -> Option<windows_startup::Win32::Media::Audio::Endpoints::IAudioMeterInformation> {
-    use windows_startup::Win32::Media::Audio::{eMultimedia, eRender, IMMDeviceEnumerator, MMDeviceEnumerator};
+fn output_meter_for_device(
+    device_id: Option<&str>,
+) -> Option<windows_startup::Win32::Media::Audio::Endpoints::IAudioMeterInformation> {
+    use windows_startup::Win32::Media::Audio::{
+        IMMDeviceEnumerator, MMDeviceEnumerator, eMultimedia, eRender,
+    };
     use windows_startup::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
     let device = if let Some(id) = device_id {
         audio_device_for_id(Some(id))
     } else {
-        let enumerator: IMMDeviceEnumerator = unsafe { CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).ok()? };
-        unsafe { enumerator.GetDefaultAudioEndpoint(eRender, eMultimedia).ok() }
+        let enumerator: IMMDeviceEnumerator =
+            unsafe { CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).ok()? };
+        unsafe {
+            enumerator
+                .GetDefaultAudioEndpoint(eRender, eMultimedia)
+                .ok()
+        }
     }?;
     unsafe { device.Activate(CLSCTX_ALL, None).ok() }
 }
 
-fn spawn_output_observer(media_playing: Arc<AtomicBool>) -> (SyncSender<AudioAction>, Receiver<AudioSnapshot>) {
-    use windows_startup::Win32::System::WinRT::{RO_INIT_MULTITHREADED, RoInitialize, RoUninitialize};
+fn spawn_output_observer(
+    media_playing: Arc<AtomicBool>,
+) -> (SyncSender<AudioAction>, Receiver<AudioSnapshot>) {
+    use windows_startup::Win32::System::WinRT::{
+        RO_INIT_MULTITHREADED, RoInitialize, RoUninitialize,
+    };
     let (command_sender, command_receiver) = sync_channel(8);
     let (snapshot_sender, snapshot_receiver) = sync_channel(2);
     thread::spawn(move || {
-        if unsafe { RoInitialize(RO_INIT_MULTITHREADED) }.is_err() { return; }
+        if unsafe { RoInitialize(RO_INIT_MULTITHREADED) }.is_err() {
+            return;
+        }
         let mut selected_device_id: Option<String> = None;
         let mut endpoint = output_volume_for_device(None);
         let mut meter = output_meter_for_device(None);
@@ -777,7 +1096,8 @@ fn spawn_output_observer(media_playing: Arc<AtomicBool>) -> (SyncSender<AudioAct
                 match action {
                     AudioAction::SetVolume(level) => latest_volume = Some(level),
                     AudioAction::SelectDevice(device_id) => {
-                        let next = device_id.filter(|id| devices.iter().any(|device| &device.id == id));
+                        let next =
+                            device_id.filter(|id| devices.iter().any(|device| &device.id == id));
                         if selected_device_id != next {
                             selected_device_id = next;
                             selected_device_changed = true;
@@ -788,12 +1108,17 @@ fn spawn_output_observer(media_playing: Arc<AtomicBool>) -> (SyncSender<AudioAct
             let now = std::time::Instant::now();
             if now >= refresh_devices_at {
                 let refreshed = output_devices();
-                if refreshed.1 != default_device_id { selected_device_changed = true; }
+                if refreshed.1 != default_device_id {
+                    selected_device_changed = true;
+                }
                 devices = refreshed.0;
                 default_device_id = refreshed.1;
                 refresh_devices_at = now + std::time::Duration::from_secs(2);
             }
-            if selected_device_id.as_ref().is_some_and(|id| !devices.iter().any(|device| &device.id == id)) {
+            if selected_device_id
+                .as_ref()
+                .is_some_and(|id| !devices.iter().any(|device| &device.id == id))
+            {
                 selected_device_id = None;
                 selected_device_changed = true;
             }
@@ -804,15 +1129,23 @@ fn spawn_output_observer(media_playing: Arc<AtomicBool>) -> (SyncSender<AudioAct
             if let Some(level) = latest_volume
                 && let Some(endpoint) = endpoint.as_ref()
             {
-                let _ = unsafe { endpoint.SetMasterVolumeLevelScalar(f32::from(level) / 100.0, null()) };
+                let _ = unsafe {
+                    endpoint.SetMasterVolumeLevelScalar(f32::from(level) / 100.0, null())
+                };
             }
-            let level = endpoint.as_ref().and_then(|endpoint| unsafe { endpoint.GetMasterVolumeLevelScalar().ok() })
+            let level = endpoint
+                .as_ref()
+                .and_then(|endpoint| unsafe { endpoint.GetMasterVolumeLevelScalar().ok() })
                 .map(|level| (level.clamp(0.0, 1.0) * 100.0).round() as u8);
             if !media_playing.load(Ordering::Relaxed) {
                 sampled_peak = 0;
             } else if now.duration_since(last_peak_sample) >= std::time::Duration::from_millis(33) {
-                sampled_peak = meter.as_ref().and_then(|meter| unsafe { meter.GetPeakValue().ok() })
-                    .map_or(0, |value| ((value.clamp(0.0, 1.0).sqrt() * 100.0).round() as u8 / 4) * 4);
+                sampled_peak = meter
+                    .as_ref()
+                    .and_then(|meter| unsafe { meter.GetPeakValue().ok() })
+                    .map_or(0, |value| {
+                        ((value.clamp(0.0, 1.0).sqrt() * 100.0).round() as u8 / 4) * 4
+                    });
                 last_peak_sample = now;
             }
             let snapshot = AudioSnapshot {
@@ -835,11 +1168,15 @@ fn spawn_output_observer(media_playing: Arc<AtomicBool>) -> (SyncSender<AudioAct
                 Ok(action) => match action {
                     AudioAction::SetVolume(level) => {
                         if let Some(endpoint) = endpoint.as_ref() {
-                            let _ = unsafe { endpoint.SetMasterVolumeLevelScalar(f32::from(level) / 100.0, null()) };
+                            let _ = unsafe {
+                                endpoint
+                                    .SetMasterVolumeLevelScalar(f32::from(level) / 100.0, null())
+                            };
                         }
                     }
                     AudioAction::SelectDevice(device_id) => {
-                        selected_device_id = device_id.filter(|id| previous.devices.iter().any(|device| &device.id == id));
+                        selected_device_id = device_id
+                            .filter(|id| previous.devices.iter().any(|device| &device.id == id));
                         endpoint = output_volume_for_device(selected_device_id.as_deref());
                         meter = output_meter_for_device(selected_device_id.as_deref());
                     }
@@ -933,7 +1270,10 @@ pub enum WeatherUnits {
 }
 
 #[derive(Clone, Copy)]
-enum RadioToggle { Wifi, Bluetooth }
+enum RadioToggle {
+    Wifi,
+    Bluetooth,
+}
 
 #[derive(Clone, Default, PartialEq, serde::Serialize)]
 struct RadioSnapshot {
@@ -944,51 +1284,94 @@ struct RadioSnapshot {
 
 fn desktop_wifi(toggle: bool) -> Result<Option<bool>, String> {
     use windows_sys::Win32::NetworkManagement::WiFi::{
-        WlanCloseHandle, WlanEnumInterfaces, WlanFreeMemory, WlanOpenHandle,
-        WlanQueryInterface, WlanSetInterface, WLAN_INTERFACE_INFO_LIST, WLAN_PHY_RADIO_STATE,
-        WLAN_RADIO_STATE, dot11_radio_state_off, dot11_radio_state_on,
-        wlan_intf_opcode_radio_state,
+        WLAN_INTERFACE_INFO_LIST, WLAN_PHY_RADIO_STATE, WLAN_RADIO_STATE, WlanCloseHandle,
+        WlanEnumInterfaces, WlanFreeMemory, WlanOpenHandle, WlanQueryInterface, WlanSetInterface,
+        dot11_radio_state_off, dot11_radio_state_on, wlan_intf_opcode_radio_state,
     };
     let mut version = 0;
     let mut handle = std::ptr::null_mut();
     let status = unsafe { WlanOpenHandle(2, null(), &mut version, &mut handle) };
-    if status != 0 { return Err(format!("Wi-Fi service error {status}")); }
+    if status != 0 {
+        return Err(format!("Wi-Fi service error {status}"));
+    }
     let result = (|| {
         let mut list: *mut WLAN_INTERFACE_INFO_LIST = null_mut();
         let status = unsafe { WlanEnumInterfaces(handle, null(), &mut list) };
-        if status != 0 { return Err(format!("Wi-Fi adapter error {status}")); }
+        if status != 0 {
+            return Err(format!("Wi-Fi adapter error {status}"));
+        }
         let result = (|| {
-            if list.is_null() { return Ok(None); }
+            if list.is_null() {
+                return Ok(None);
+            }
             let count = unsafe { (*list).dwNumberOfItems } as usize;
             let mut states = Vec::new();
             for index in 0..count {
                 let interface = unsafe { &*((*list).InterfaceInfo.as_ptr().add(index)) };
                 let mut size = 0;
                 let mut data = null_mut();
-                let status = unsafe { WlanQueryInterface(handle, &interface.InterfaceGuid, wlan_intf_opcode_radio_state, null(), &mut size, &mut data, null_mut()) };
-                if status != 0 { continue; }
+                let status = unsafe {
+                    WlanQueryInterface(
+                        handle,
+                        &interface.InterfaceGuid,
+                        wlan_intf_opcode_radio_state,
+                        null(),
+                        &mut size,
+                        &mut data,
+                        null_mut(),
+                    )
+                };
+                if status != 0 {
+                    continue;
+                }
                 if !data.is_null() {
                     let radio = unsafe { &*(data as *const WLAN_RADIO_STATE) };
-                    for phy in radio.PhyRadioState.iter().take(radio.dwNumberOfPhys.min(64) as usize) {
+                    for phy in radio
+                        .PhyRadioState
+                        .iter()
+                        .take(radio.dwNumberOfPhys.min(64) as usize)
+                    {
                         states.push((interface.InterfaceGuid, *phy));
                     }
                     unsafe { WlanFreeMemory(data) };
                 }
             }
-            if states.is_empty() { return Ok(None); }
-            let enabled = states.iter().any(|(_, phy)| phy.dot11SoftwareRadioState == dot11_radio_state_on && phy.dot11HardwareRadioState == dot11_radio_state_on);
+            if states.is_empty() {
+                return Ok(None);
+            }
+            let enabled = states.iter().any(|(_, phy)| {
+                phy.dot11SoftwareRadioState == dot11_radio_state_on
+                    && phy.dot11HardwareRadioState == dot11_radio_state_on
+            });
             if toggle {
-                let next = if enabled { dot11_radio_state_off } else { dot11_radio_state_on };
+                let next = if enabled {
+                    dot11_radio_state_off
+                } else {
+                    dot11_radio_state_on
+                };
                 for (guid, mut phy) in states {
                     phy.dot11SoftwareRadioState = next;
-                    let status = unsafe { WlanSetInterface(handle, &guid, wlan_intf_opcode_radio_state, std::mem::size_of::<WLAN_PHY_RADIO_STATE>() as u32, &phy as *const _ as *const _, null()) };
-                    if status != 0 { return Err(format!("Windows refused Wi-Fi change (error {status})")); }
+                    let status = unsafe {
+                        WlanSetInterface(
+                            handle,
+                            &guid,
+                            wlan_intf_opcode_radio_state,
+                            std::mem::size_of::<WLAN_PHY_RADIO_STATE>() as u32,
+                            &phy as *const _ as *const _,
+                            null(),
+                        )
+                    };
+                    if status != 0 {
+                        return Err(format!("Windows refused Wi-Fi change (error {status})"));
+                    }
                 }
                 return Ok(Some(!enabled));
             }
             Ok(Some(enabled))
         })();
-        if !list.is_null() { unsafe { WlanFreeMemory(list as *const _) }; }
+        if !list.is_null() {
+            unsafe { WlanFreeMemory(list as *const _) };
+        }
         result
     })();
     unsafe { WlanCloseHandle(handle, null()) };
@@ -997,15 +1380,23 @@ fn desktop_wifi(toggle: bool) -> Result<Option<bool>, String> {
 
 fn read_radios(toggle: Option<RadioToggle>, cached: RadioSnapshot) -> RadioSnapshot {
     use windows_startup::Devices::Radios::{Radio, RadioAccessStatus, RadioKind, RadioState};
-    use windows_startup::Win32::System::WinRT::{RO_INIT_MULTITHREADED, RoInitialize, RoUninitialize};
+    use windows_startup::Win32::System::WinRT::{
+        RO_INIT_MULTITHREADED, RoInitialize, RoUninitialize,
+    };
     if matches!(toggle, Some(RadioToggle::Wifi)) {
         return match desktop_wifi(true) {
             Ok(wifi) => RadioSnapshot {
                 wifi,
                 bluetooth: cached.bluetooth,
-                message: wifi.is_none().then(|| "No controllable Wi-Fi adapter was found. Open Windows Wi-Fi settings.".into()),
+                message: wifi.is_none().then(|| {
+                    "No controllable Wi-Fi adapter was found. Open Windows Wi-Fi settings.".into()
+                }),
             },
-            Err(message) => RadioSnapshot { wifi: cached.wifi, bluetooth: cached.bluetooth, message: Some(message) },
+            Err(message) => RadioSnapshot {
+                wifi: cached.wifi,
+                bluetooth: cached.bluetooth,
+                message: Some(message),
+            },
         };
     }
     // Bluetooth changes don't need a Wi-Fi adapter scan. That scan can block on
@@ -1019,24 +1410,44 @@ fn read_radios(toggle: Option<RadioToggle>, cached: RadioSnapshot) -> RadioSnaps
         }
     };
     if unsafe { RoInitialize(RO_INIT_MULTITHREADED) }.is_err() {
-        return RadioSnapshot { wifi, bluetooth: cached.bluetooth, message: Some("Windows Bluetooth radio service is unavailable.".into()), ..Default::default() };
+        return RadioSnapshot {
+            wifi,
+            bluetooth: cached.bluetooth,
+            message: Some("Windows Bluetooth radio service is unavailable.".into()),
+            ..Default::default()
+        };
     }
     let result = (|| -> windows_core::Result<RadioSnapshot> {
         let radios = Radio::GetRadiosAsync()?.join()?;
         let count = radios.Size()?;
         let mut items = Vec::new();
-        for index in 0..count { items.push(radios.GetAt(index)?); }
+        for index in 0..count {
+            items.push(radios.GetAt(index)?);
+        }
         let mut message = wifi_error;
         let mut requested_bluetooth_state = None;
         if let Some(RadioToggle::Bluetooth) = toggle {
             let kind = RadioKind::Bluetooth;
-            let matches: Vec<_> = items.iter().filter(|radio| radio.Kind().ok() == Some(kind)).collect();
+            let matches: Vec<_> = items
+                .iter()
+                .filter(|radio| radio.Kind().ok() == Some(kind))
+                .collect();
             if matches.is_empty() {
                 message = Some("No matching radio was found on this PC.".to_owned());
             } else if Radio::RequestAccessAsync()?.join()? != RadioAccessStatus::Allowed {
-                message = Some("Windows did not allow radio control. Check app permissions or system policy.".to_owned());
+                message = Some(
+                    "Windows did not allow radio control. Check app permissions or system policy."
+                        .to_owned(),
+                );
             } else {
-                let target = if matches.iter().any(|radio| radio.State().ok() == Some(RadioState::On)) { RadioState::Off } else { RadioState::On };
+                let target = if matches
+                    .iter()
+                    .any(|radio| radio.State().ok() == Some(RadioState::On))
+                {
+                    RadioState::Off
+                } else {
+                    RadioState::On
+                };
                 let mut state_change_allowed = true;
                 for radio in matches {
                     if radio.SetStateAsync(target)?.join()? != RadioAccessStatus::Allowed {
@@ -1049,17 +1460,34 @@ fn read_radios(toggle: Option<RadioToggle>, cached: RadioSnapshot) -> RadioSnaps
                 }
             }
         }
-        let mut snapshot = RadioSnapshot { wifi, message, ..Default::default() };
+        let mut snapshot = RadioSnapshot {
+            wifi,
+            message,
+            ..Default::default()
+        };
         for radio in &items {
             let state = radio.State().ok();
-            let value = match state { Some(RadioState::On) => Some(true), Some(RadioState::Off) => Some(false), _ => None };
-            if radio.Kind().ok() == Some(RadioKind::Bluetooth) { snapshot.bluetooth = value.or(snapshot.bluetooth); }
+            let value = match state {
+                Some(RadioState::On) => Some(true),
+                Some(RadioState::Off) => Some(false),
+                _ => None,
+            };
+            if radio.Kind().ok() == Some(RadioKind::Bluetooth) {
+                snapshot.bluetooth = value.or(snapshot.bluetooth);
+            }
         }
-        if let Some(state) = requested_bluetooth_state { snapshot.bluetooth = Some(state); }
+        if let Some(state) = requested_bluetooth_state {
+            snapshot.bluetooth = Some(state);
+        }
         Ok(snapshot)
     })();
     unsafe { RoUninitialize() };
-    result.unwrap_or_else(|error| RadioSnapshot { wifi, bluetooth: cached.bluetooth, message: Some(format!("Bluetooth radio unavailable ({error}).")), ..Default::default() })
+    result.unwrap_or_else(|error| RadioSnapshot {
+        wifi,
+        bluetooth: cached.bluetooth,
+        message: Some(format!("Bluetooth radio unavailable ({error}).")),
+        ..Default::default()
+    })
 }
 
 #[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
@@ -1146,7 +1574,9 @@ struct OleDropTargetApartment {
 impl OleDropTargetApartment {
     fn initialize() -> Self {
         Self {
-            initialized: unsafe { windows_startup::Win32::System::Ole::OleInitialize(None).is_ok() },
+            initialized: unsafe {
+                windows_startup::Win32::System::Ole::OleInitialize(None).is_ok()
+            },
         }
     }
 }
@@ -1166,7 +1596,11 @@ fn trace_drop(message: std::fmt::Arguments<'_>) {
         return;
     };
     use std::io::Write;
-    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
         let _ = writeln!(file, "{:?} {message}", std::time::SystemTime::now());
     }
 }
@@ -1181,9 +1615,7 @@ impl windows_startup::Win32::System::Ole::IDropSource_Impl for SignatureDropSour
         escape_pressed: windows_core::BOOL,
         key_state: windows_startup::Win32::System::SystemServices::MODIFIERKEYS_FLAGS,
     ) -> windows_core::HRESULT {
-        use windows_startup::Win32::Foundation::{
-            DRAGDROP_S_CANCEL, DRAGDROP_S_DROP, S_OK,
-        };
+        use windows_startup::Win32::Foundation::{DRAGDROP_S_CANCEL, DRAGDROP_S_DROP, S_OK};
         use windows_startup::Win32::System::SystemServices::MK_LBUTTON;
 
         if escape_pressed.as_bool() {
@@ -1206,17 +1638,19 @@ impl windows_startup::Win32::System::Ole::IDropSource_Impl for SignatureDropSour
 /// Start a genuine Windows file drag so browser canvases and native apps receive
 /// a CF_HDROP file, rather than only script-created WebView drag text formats.
 fn start_signature_file_drag(hwnd: HWND, png: &[u8]) -> Result<bool, String> {
-    use windows_startup::Win32::System::Com::{CoTaskMemFree, IDataObject, IBindCtx};
+    use windows_startup::Win32::System::Com::{CoTaskMemFree, IBindCtx, IDataObject};
     use windows_startup::Win32::System::Ole::DROPEFFECT_COPY;
-    use windows_startup::Win32::UI::Shell::{
-        ILClone, ILFindLastID, ILRemoveLastID, SHCreateDataObject, SHDoDragDrop,
-        SHParseDisplayName,
-    };
     use windows_startup::Win32::UI::Shell::Common::ITEMIDLIST;
+    use windows_startup::Win32::UI::Shell::{
+        ILClone, ILFindLastID, ILRemoveLastID, SHCreateDataObject, SHDoDragDrop, SHParseDisplayName,
+    };
 
     const PNG_SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
     const MAX_PNG_BYTES: usize = 4 * 1024 * 1024;
-    if png.len() < PNG_SIGNATURE.len() || png.len() > MAX_PNG_BYTES || !png.starts_with(PNG_SIGNATURE) {
+    if png.len() < PNG_SIGNATURE.len()
+        || png.len() > MAX_PNG_BYTES
+        || !png.starts_with(PNG_SIGNATURE)
+    {
         return Err("The signature PNG is invalid or too large.".into());
     }
 
@@ -1241,7 +1675,9 @@ fn start_signature_file_drag(hwnd: HWND, png: &[u8]) -> Result<bool, String> {
             None,
         )
     } {
-        return Err(format!("Could not prepare the signature file for dragging: {error}"));
+        return Err(format!(
+            "Could not prepare the signature file for dragging: {error}"
+        ));
     }
     if pidl.is_null() {
         return Err("Could not prepare the signature file for dragging.".into());
@@ -1276,16 +1712,23 @@ fn start_signature_file_drag(hwnd: HWND, png: &[u8]) -> Result<bool, String> {
             Some(&child_items),
             None::<&IDataObject>,
         )
-            .map_err(|error| format!("Could not prepare the signature drag data: {error}"))?
+        .map_err(|error| format!("Could not prepare the signature drag data: {error}"))?
     };
     let source: IDropSource = SignatureDropSource.into();
     let effect = match unsafe {
-        SHDoDragDrop(Some(windows_startup::Win32::Foundation::HWND(hwnd as _)), &data, &source, DROPEFFECT_COPY)
+        SHDoDragDrop(
+            Some(windows_startup::Win32::Foundation::HWND(hwnd as _)),
+            &data,
+            &source,
+            DROPEFFECT_COPY,
+        )
     } {
         Ok(effect) => effect,
         Err(error) => {
             let _ = std::fs::remove_file(&path);
-            return Err(format!("Windows could not start the signature drag: {error}"));
+            return Err(format!(
+                "Windows could not start the signature drag: {error}"
+            ));
         }
     };
     let dropped = effect.0 & DROPEFFECT_COPY.0 != 0;
@@ -1307,14 +1750,30 @@ struct ShelfDropTarget {
 fn resolve_drop_intent(callbacks: &ShellCallbacks, x: i32, y: i32, release: bool) -> i32 {
     let window = callbacks.window.load(Ordering::Acquire) as HWND;
     let mut rect = RECT::default();
-    if window.is_null() || unsafe { GetWindowRect(window, &mut rect) } == 0
-        || x < rect.left || x >= rect.right || y < rect.top || y >= rect.bottom { return 0; }
+    if window.is_null()
+        || unsafe { GetWindowRect(window, &mut rect) } == 0
+        || x < rect.left
+        || x >= rect.right
+        || y < rect.top
+        || y >= rect.bottom
+    {
+        return 0;
+    }
     let center = rect.left + (rect.right - rect.left) / 2;
     let previous = callbacks.drop_intent.load(Ordering::Acquire);
-    let intent = if !release && (x - center).abs() < 5 && previous != 0 { previous }
-        else if x < center {
-            if callbacks.drop_convertible.load(Ordering::Acquire) { 1 } else { 3 }
-        } else if callbacks.shelf_enabled.load(Ordering::Acquire) { 2 } else { 4 };
+    let intent = if !release && (x - center).abs() < 5 && previous != 0 {
+        previous
+    } else if x < center {
+        if callbacks.drop_convertible.load(Ordering::Acquire) {
+            1
+        } else {
+            3
+        }
+    } else if callbacks.shelf_enabled.load(Ordering::Acquire) {
+        2
+    } else {
+        4
+    };
     if callbacks.drop_intent.swap(intent, Ordering::AcqRel) != intent {
         post_shell_tick(window, callbacks);
     }
@@ -1347,10 +1806,7 @@ impl ShelfDropTarget {
         // advertise only MOVE for same-volume shortcuts; rejecting that mask
         // makes an otherwise valid .lnk show the blocked cursor. Like Wry's
         // WebView2 drop target, translate a supported file operation to COPY.
-        if offered
-            & (DROPEFFECT_COPY.0 | DROPEFFECT_LINK.0 | DROPEFFECT_MOVE.0)
-            != 0
-        {
+        if offered & (DROPEFFECT_COPY.0 | DROPEFFECT_LINK.0 | DROPEFFECT_MOVE.0) != 0 {
             DROPEFFECT_COPY
         } else {
             DROPEFFECT_NONE
@@ -1452,7 +1908,11 @@ impl ShelfDropTarget {
         if paths.is_empty() || !matches!(intent, 1 | 2) {
             return;
         }
-        let queue = if intent == 1 { &self.callbacks.pending_conversion_drops } else { &self.callbacks.pending_shelf_drops };
+        let queue = if intent == 1 {
+            &self.callbacks.pending_conversion_drops
+        } else {
+            &self.callbacks.pending_shelf_drops
+        };
         let mut pending = queue
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -1473,10 +1933,13 @@ impl windows_startup::Win32::System::Ole::IDropTarget_Impl for ShelfDropTarget_I
         use windows_startup::Win32::System::Ole::DROPEFFECT_NONE;
 
         let selected_effect = ShelfDropTarget::effect_from_offered(effect);
-        let offered_effect = if effect.is_null() { 0 } else { unsafe { (*effect).0 } };
+        let offered_effect = if effect.is_null() {
+            0
+        } else {
+            unsafe { (*effect).0 }
+        };
         let has_files = ShelfDropTarget::has_file_drop(&data);
-        let accepts = selected_effect.0 != DROPEFFECT_NONE.0
-            && has_files;
+        let accepts = selected_effect.0 != DROPEFFECT_NONE.0 && has_files;
         let paths = if accepts {
             ShelfDropTarget::paths_from_drop(&data).unwrap_or_default()
         } else {
@@ -1488,12 +1951,21 @@ impl windows_startup::Win32::System::Ole::IDropTarget_Impl for ShelfDropTarget_I
             self.callbacks.shelf_enabled.load(Ordering::Acquire),
             paths.len(),
         ));
-        self.callbacks.drop_convertible.store(!paths.is_empty() && paths.iter().all(|p| crate::conversion::could_convert(p)), Ordering::Release);
+        self.callbacks.drop_convertible.store(
+            !paths.is_empty() && paths.iter().all(|p| crate::conversion::could_convert(p)),
+            Ordering::Release,
+        );
         self.replace_dragged_paths(paths);
         let intent = resolve_drop_intent(&self.callbacks, point.x, point.y, false);
         self.accepts_files.store(accepts, Ordering::Release);
         if !effect.is_null() {
-            unsafe { *effect = if accepts && matches!(intent, 1 | 2) { selected_effect } else { DROPEFFECT_NONE } };
+            unsafe {
+                *effect = if accepts && matches!(intent, 1 | 2) {
+                    selected_effect
+                } else {
+                    DROPEFFECT_NONE
+                }
+            };
         }
         self.set_drag_state(accepts);
         Ok(())
@@ -1508,11 +1980,17 @@ impl windows_startup::Win32::System::Ole::IDropTarget_Impl for ShelfDropTarget_I
         use windows_startup::Win32::System::Ole::DROPEFFECT_NONE;
 
         let selected_effect = ShelfDropTarget::effect_from_offered(effect);
-        let accepts = self.accepts_files.load(Ordering::Acquire)
-            && selected_effect.0 != DROPEFFECT_NONE.0;
+        let accepts =
+            self.accepts_files.load(Ordering::Acquire) && selected_effect.0 != DROPEFFECT_NONE.0;
         let intent = resolve_drop_intent(&self.callbacks, point.x, point.y, false);
         if !effect.is_null() {
-            unsafe { *effect = if accepts && matches!(intent, 1 | 2) { selected_effect } else { DROPEFFECT_NONE } };
+            unsafe {
+                *effect = if accepts && matches!(intent, 1 | 2) {
+                    selected_effect
+                } else {
+                    DROPEFFECT_NONE
+                }
+            };
         }
         self.set_drag_state(accepts);
         Ok(())
@@ -1563,7 +2041,10 @@ impl windows_startup::Win32::System::Ole::IDropTarget_Impl for ShelfDropTarget_I
                 post_shell_tick(window, &self.callbacks);
             }
         }
-        trace_drop(format_args!("Drop accepted={dropped} paths={}", paths.len()));
+        trace_drop(format_args!(
+            "Drop accepted={dropped} paths={}",
+            paths.len()
+        ));
         if dropped {
             self.queue_drop(paths, intent);
             let window = self.callbacks.window.load(Ordering::Acquire) as HWND;
@@ -1572,13 +2053,22 @@ impl windows_startup::Win32::System::Ole::IDropTarget_Impl for ShelfDropTarget_I
             }
         }
         if !effect.is_null() {
-            unsafe { *effect = if dropped { selected_effect } else { DROPEFFECT_NONE } };
+            unsafe {
+                *effect = if dropped {
+                    selected_effect
+                } else {
+                    DROPEFFECT_NONE
+                }
+            };
         }
         Ok(())
     }
 }
 
-unsafe extern "system" fn collect_drop_child(hwnd: HWND, parameter: LPARAM) -> windows_sys::core::BOOL {
+unsafe extern "system" fn collect_drop_child(
+    hwnd: HWND,
+    parameter: LPARAM,
+) -> windows_sys::core::BOOL {
     if parameter != 0 {
         let children = unsafe { &mut *(parameter as *mut Vec<HWND>) };
         children.push(hwnd);
@@ -1657,23 +2147,50 @@ struct ForegroundAppSnapshot {
     fullscreen: bool,
 }
 
-fn foreground_app_snapshot(shell_window: HWND, fallback_window: HWND) -> Option<ForegroundAppSnapshot> {
+fn foreground_app_snapshot(
+    shell_window: HWND,
+    fallback_window: HWND,
+) -> Option<ForegroundAppSnapshot> {
     let current = unsafe { GetForegroundWindow() };
-    let foreground = if current.is_null() || current == shell_window || unsafe { IsChild(shell_window, current) } != 0 {
-        if !fallback_window.is_null() && unsafe { IsWindow(fallback_window) } != 0 { fallback_window } else { return None; }
-    } else { current };
+    let foreground = if current.is_null()
+        || current == shell_window
+        || unsafe { IsChild(shell_window, current) } != 0
+    {
+        if !fallback_window.is_null() && unsafe { IsWindow(fallback_window) } != 0 {
+            fallback_window
+        } else {
+            return None;
+        }
+    } else {
+        current
+    };
     let mut process_id = 0;
-    unsafe { GetWindowThreadProcessId(foreground, &mut process_id); }
-    if process_id == 0 { return None; }
+    unsafe {
+        GetWindowThreadProcessId(foreground, &mut process_id);
+    }
+    if process_id == 0 {
+        return None;
+    }
     let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, process_id) };
-    if process.is_null() { return None; }
+    if process.is_null() {
+        return None;
+    }
     let mut path = [0u16; 1024];
     let mut length = path.len() as u32;
-    let queried = unsafe { QueryFullProcessImageNameW(process, 0, path.as_mut_ptr(), &mut length) } != 0;
-    unsafe { CloseHandle(process); }
-    if !queried || length == 0 { return None; }
+    let queried =
+        unsafe { QueryFullProcessImageNameW(process, 0, path.as_mut_ptr(), &mut length) } != 0;
+    unsafe {
+        CloseHandle(process);
+    }
+    if !queried || length == 0 {
+        return None;
+    }
     let image = String::from_utf16_lossy(&path[..(length as usize).min(path.len())]);
-    let executable = image.rsplit(['\\', '/']).next().unwrap_or(&image).to_owned();
+    let executable = image
+        .rsplit(['\\', '/'])
+        .next()
+        .unwrap_or(&image)
+        .to_owned();
     let id = executable.to_ascii_lowercase();
     let (name, kind) = match id.as_str() {
         "helium.exe" => ("Helium".to_owned(), "browser"),
@@ -1715,7 +2232,10 @@ fn foreground_app_snapshot(shell_window: HWND, fallback_window: HWND) -> Option<
         "mpv.exe" => ("mpv".to_owned(), "media"),
         "wmplayer.exe" | "music.ui.exe" => ("Media Player".to_owned(), "media"),
         _ => {
-            let stem = std::path::Path::new(&executable).file_stem()?.to_string_lossy().into_owned();
+            let stem = std::path::Path::new(&executable)
+                .file_stem()?
+                .to_string_lossy()
+                .into_owned();
             (stem, "other")
         }
     };
@@ -1786,7 +2306,11 @@ struct CommandFileResult {
 
 impl CommandFileResult {
     fn launch(&self) -> Result<(), crate::commands::LaunchError> {
-        crate::commands::FileEntry { name: self.name.clone(), path: self.path.clone() }.launch()
+        crate::commands::FileEntry {
+            name: self.name.clone(),
+            path: self.path.clone(),
+        }
+        .launch()
     }
 }
 
@@ -1847,7 +2371,11 @@ pub struct EdgeShell {
     react_messages: Receiver<String>,
     screen_overlay_sender: Sender<crate::platform::windows::screen_overlay::ResultEvent>,
     screen_overlay_receiver: Receiver<crate::platform::windows::screen_overlay::ResultEvent>,
-    pending_screen_overlay: Option<(crate::platform::windows::screen_overlay::Mode, bool, crate::platform::windows::screen_overlay::RecordQuality)>,
+    pending_screen_overlay: Option<(
+        crate::platform::windows::screen_overlay::Mode,
+        bool,
+        crate::platform::windows::screen_overlay::RecordQuality,
+    )>,
     screen_overlay_active: bool,
     screen_overlay_feedback_kind: Option<&'static str>,
     compact_feedbacks: Vec<CompactScreenFeedback>,
@@ -2018,7 +2546,10 @@ fn register_shortcuts(
 ) -> [bool; SHORTCUT_COUNT] {
     let mut registered = [false; SHORTCUT_COUNT];
     for binding in shortcuts.bindings() {
-        if !matches!(binding.action, ShortcutAction::ToggleIsland | ShortcutAction::CommandBar) {
+        if !matches!(
+            binding.action,
+            ShortcutAction::ToggleIsland | ShortcutAction::CommandBar
+        ) {
             continue;
         }
         let mut modifiers = HOTKEY_MOD_NOREPEAT;
@@ -2057,10 +2588,7 @@ fn unregister_shortcuts(window: HWND, registered: &[bool; SHORTCUT_COUNT]) {
 }
 
 impl ShellController {
-    pub fn new(
-        context: &egui::Context,
-        startup: ShellStartup,
-    ) -> Result<Self, String> {
+    pub fn new(context: &egui::Context, startup: ShellStartup) -> Result<Self, String> {
         let callbacks = Arc::new(ShellCallbacks {
             window: AtomicPtr::new(null_mut()),
             desk_window: AtomicPtr::new(null_mut()),
@@ -2177,7 +2705,9 @@ impl ShellController {
     }
 
     pub fn take_preference_changes(&self) -> Vec<ShellPreferenceChange> {
-        self.callbacks.preference_changes.lock()
+        self.callbacks
+            .preference_changes
+            .lock()
             .map(|mut changes| std::mem::take(&mut *changes))
             .unwrap_or_default()
     }
@@ -2231,7 +2761,6 @@ impl ShellController {
                     .store(previous, Ordering::Release)
             })
     }
-
 }
 
 impl Drop for ShellController {
@@ -2388,7 +2917,9 @@ impl EdgeShell {
         let shelf_items = load_shelf_paths();
         let home_actions = load_home_actions();
         let modules = load_module_settings();
-        callbacks.shelf_enabled.store(modules.shelf, Ordering::Release);
+        callbacks
+            .shelf_enabled
+            .store(modules.shelf, Ordering::Release);
         let (shelf_icon_sender, shelf_icon_receiver) = sync_channel(64);
         let (media_actions, media_receiver) = spawn_media_observer();
         let media_playing = Arc::new(AtomicBool::new(false));
@@ -2557,7 +3088,10 @@ impl EdgeShell {
             note_dirty: false,
             weather_city,
             weather_units,
-            weather_lines: cached_weather.as_ref().map(|cache| cache.lines.clone()).unwrap_or_default(),
+            weather_lines: cached_weather
+                .as_ref()
+                .map(|cache| cache.lines.clone())
+                .unwrap_or_default(),
             weather_data: cached_weather.as_ref().map(|cache| cache.data.clone()),
             weather_error: None,
             weather_updated_at: cached_weather.as_ref().map(|cache| cache.fetched_at),
@@ -2635,7 +3169,10 @@ impl EdgeShell {
         let shelf_paths = shell.shelf_items.clone();
         thread::spawn(move || {
             for (index, path) in shelf_paths.into_iter().enumerate() {
-                if shelf_icon_sender.send((0, index, shelf_item_visual_data_url(&path))).is_err() {
+                if shelf_icon_sender
+                    .send((0, index, shelf_item_visual_data_url(&path)))
+                    .is_err()
+                {
                     break;
                 }
             }
@@ -2675,7 +3212,10 @@ impl EdgeShell {
         shell.raw_input_registered = unsafe {
             RegisterRawInputDevices(&mouse_device, 1, size_of::<RAWINPUTDEVICE>() as u32)
         } != 0;
-        trace_drop(format_args!("raw mouse registration={}", shell.raw_input_registered));
+        trace_drop(format_args!(
+            "raw mouse registration={}",
+            shell.raw_input_registered
+        ));
         shell.drag_hover_worker = thread::Builder::new()
             .name("island-drag-hover".into())
             .spawn({
@@ -2714,9 +3254,7 @@ impl EdgeShell {
             // Another WebView2 component may have registered its own target
             // before the child became part of this view. This view owns every
             // descendant of our shell HWND, so Island replaces that target.
-            let _ = unsafe {
-                windows_startup::Win32::System::Ole::RevokeDragDrop(child_window)
-            };
+            let _ = unsafe { windows_startup::Win32::System::Ole::RevokeDragDrop(child_window) };
             if unsafe {
                 windows_startup::Win32::System::Ole::RegisterDragDrop(child_window, &target)
             }
@@ -2771,7 +3309,10 @@ impl EdgeShell {
             )
         };
         if catcher.is_null() {
-            eprintln!("Island drop catcher creation failed: {}", std::io::Error::last_os_error());
+            eprintln!(
+                "Island drop catcher creation failed: {}",
+                std::io::Error::last_os_error()
+            );
             return;
         }
         // Alpha 1 participates in OLE hit testing without painting a visible
@@ -2809,22 +3350,27 @@ impl EdgeShell {
             unsafe { ShowWindow(catcher, SW_HIDE) };
             return;
         }
-        let body_width = self.width_motion.value().clamp(
-            self.folded_target_width(),
-            self.expanded_body_width,
-        );
-        let body_height = self.height_motion.value().clamp(f64::from(FOLDED_HEIGHT), MAX_EXPANDED_BODY_HEIGHT);
+        let body_width = self
+            .width_motion
+            .value()
+            .clamp(self.folded_target_width(), self.expanded_body_width);
+        let body_height = self
+            .height_motion
+            .value()
+            .clamp(f64::from(FOLDED_HEIGHT), MAX_EXPANDED_BODY_HEIGHT);
         let left = (f64::from(self.shape.body_inset()) * self.scale).round() as i32;
         let top = (f64::from(self.shape.top_gap()) * self.scale).round() as i32;
         let right = left + (body_width * self.scale).round() as i32;
         let bottom = top + (body_height * self.scale).round() as i32;
-        let radius = (f64::from(self.shape.lower_radius(
-            body_height as f32,
-            body_height > f64::from(FOLDED_HEIGHT),
-        )) * self.scale).round() as i32;
+        let radius = (f64::from(
+            self.shape
+                .lower_radius(body_height as f32, body_height > f64::from(FOLDED_HEIGHT)),
+        ) * self.scale)
+            .round() as i32;
         let geometry = (left, top, right, bottom, radius, self.shape);
         if self.drop_catcher_region != Some(geometry) {
-            let round = unsafe { CreateRoundRectRgn(left, top, right, bottom, radius * 2, radius * 2) };
+            let round =
+                unsafe { CreateRoundRectRgn(left, top, right, bottom, radius * 2, radius * 2) };
             if round.is_null() {
                 unsafe { ShowWindow(catcher, SW_HIDE) };
                 return;
@@ -2869,7 +3415,8 @@ impl EdgeShell {
         let profile = std::env::var_os("LOCALAPPDATA")
             .map(std::path::PathBuf::from)
             .unwrap_or_else(std::env::temp_dir)
-            .join("Island").join("WebView2");
+            .join("Island")
+            .join("WebView2");
         std::fs::create_dir_all(&profile).map_err(|error| error.to_string())?;
         let mut web_context = wry::WebContext::new(Some(profile));
         let bootstrap = load_agent_preferences().unwrap_or(serde_json::Value::Null);
@@ -2917,7 +3464,9 @@ impl EdgeShell {
                 self.refresh_react_drop_targets();
                 Ok(())
             }
-            Err(error) => Err(format!("Island needs WebView2 to show its React interface: {error}")),
+            Err(error) => Err(format!(
+                "Island needs WebView2 to show its React interface: {error}"
+            )),
         }
     }
 
@@ -2934,7 +3483,9 @@ impl EdgeShell {
         });
         let mut power = SYSTEM_POWER_STATUS::default();
         let power_available = unsafe { GetSystemPowerStatus(&mut power) } != 0;
-        let battery_percent = power_available.then(|| battery_percentage(power.BatteryFlag, power.BatteryLifePercent)).flatten();
+        let battery_percent = power_available
+            .then(|| battery_percentage(power.BatteryFlag, power.BatteryLifePercent))
+            .flatten();
         let battery_plugged = battery_percent.is_some() && power.ACLineStatus == 1;
         let battery_charging = battery_percent.is_some() && power.BatteryFlag & 0x08 != 0;
         let mut state = serde_json::json!({
@@ -2995,27 +3546,58 @@ impl EdgeShell {
         state["foregroundApp"] = serde_json::json!(self.foreground_app);
         state["conversion"] = serde_json::json!(self.converter.state);
         state["dropIntent"] = serde_json::json!(self.callbacks.drop_intent.load(Ordering::Acquire));
-        state["dropActive"] = serde_json::json!(self.callbacks.shelf_drag_active.load(Ordering::Acquire));
+        state["dropActive"] =
+            serde_json::json!(self.callbacks.shelf_drag_active.load(Ordering::Acquire));
         state["dropHandoffId"] = serde_json::json!(self.drop_handoff_sequence);
-        state["agents"] = serde_json::json!({"opencode": self.acp_opencode, "codex": self.acp_codex});
+        state["agents"] =
+            serde_json::json!({"opencode": self.acp_opencode, "codex": self.acp_codex});
         let approvals = [(&self.acp_opencode, "opencode"), (&self.acp_codex, "codex")];
-        let approval_count = approvals.iter().map(|(snapshot, _)| snapshot.permissions.len() + snapshot.questions.len()).sum::<usize>();
+        let approval_count = approvals
+            .iter()
+            .map(|(snapshot, _)| snapshot.permissions.len() + snapshot.questions.len())
+            .sum::<usize>();
         let mut waiting = Vec::new();
         for (snapshot, provider) in approvals {
-            waiting.extend(snapshot.permissions.iter().map(|item| (provider, item.action.as_str(), item.owner_session_id.as_str(), "approval", item.raised_at)));
-            waiting.extend(snapshot.questions.iter().map(|item| (provider, item.message.as_str(), item.owner_session_id.as_str(), "question", item.raised_at)));
+            waiting.extend(snapshot.permissions.iter().map(|item| {
+                (
+                    provider,
+                    item.action.as_str(),
+                    item.owner_session_id.as_str(),
+                    "approval",
+                    item.raised_at,
+                )
+            }));
+            waiting.extend(snapshot.questions.iter().map(|item| {
+                (
+                    provider,
+                    item.message.as_str(),
+                    item.owner_session_id.as_str(),
+                    "question",
+                    item.raised_at,
+                )
+            }));
         }
         state["agentApproval"] = waiting.into_iter().min_by_key(|item| item.4)
             .map(|(provider, action, session_id, kind, _)| serde_json::json!({"provider":provider,"action":action,"sessionId":session_id,"kind":kind,"count":approval_count}))
             .unwrap_or(serde_json::Value::Null);
         state["homeActions"] = serde_json::json!(&self.home_actions);
-        state["shelfKinds"] = serde_json::json!(self.shelf_items.iter().map(|path| shelf_item_kind(path)).collect::<Vec<_>>());
+        state["shelfKinds"] = serde_json::json!(
+            self.shelf_items
+                .iter()
+                .map(|path| shelf_item_kind(path))
+                .collect::<Vec<_>>()
+        );
         state["accentGradient"] = serde_json::json!(self.accent_gradient.as_str());
         state["mediaCardStyle"] = serde_json::json!(self.media_card_style.as_str());
         state["compactFaded"] = serde_json::json!(self.react_compact_faded);
         state["clipboardCaptureEnabled"] = serde_json::json!(self.clipboard_history_enabled);
         state["clipboardHistoryLimit"] = serde_json::json!(self.clipboard_limit);
-        state["weatherUnits"] = serde_json::json!(if self.weather_units == WeatherUnits::Imperial { "imperial" } else { "metric" });
+        state["weatherUnits"] =
+            serde_json::json!(if self.weather_units == WeatherUnits::Imperial {
+                "imperial"
+            } else {
+                "metric"
+            });
         state["startup"] = serde_json::json!({
             "status": format!("{:?}", self.startup_status),
             "enabled": self.startup_status.is_enabled(),
@@ -3074,23 +3656,42 @@ impl EdgeShell {
         state["clockLabel"] = serde_json::json!(current_clock_label());
         state["clockEnabled"] = serde_json::json!(self.clock_indicator_enabled);
         state["batteryEnabled"] = serde_json::json!(self.battery_indicator_enabled);
-        state["homeClipboard"] = serde_json::json!(self.clipboard_items.iter()
-            .filter(|item| !self.screen_clipboard_values.contains(*item))
-            .take(3).collect::<Vec<_>>());
-        state["commandApps"] = serde_json::json!(self.command_app_results.iter().map(|name| serde_json::json!({
-            "name": name,
-            "icon": self.command_app_icons.get(name).and_then(Option::as_deref),
-        })).collect::<Vec<_>>());
+        state["homeClipboard"] = serde_json::json!(
+            self.clipboard_items
+                .iter()
+                .filter(|item| !self.screen_clipboard_values.contains(*item))
+                .take(3)
+                .collect::<Vec<_>>()
+        );
+        state["commandApps"] = serde_json::json!(
+            self.command_app_results
+                .iter()
+                .map(|name| serde_json::json!({
+                    "name": name,
+                    "icon": self.command_app_icons.get(name).and_then(Option::as_deref),
+                }))
+                .collect::<Vec<_>>()
+        );
         state["commandAppsLoading"] = serde_json::json!(self.command_apps_loading);
         state["commandFiles"] = serde_json::json!(&self.command_file_results);
-        state["commandFilesLoading"] = serde_json::json!(!self.command_file_query.is_empty() && self.command_file_receiver.is_some());
+        state["commandFilesLoading"] = serde_json::json!(
+            !self.command_file_query.is_empty() && self.command_file_receiver.is_some()
+        );
         if let (Some(media), Some(media_state)) = (
             self.media.as_ref(),
-            state.get_mut("media").and_then(serde_json::Value::as_object_mut),
+            state
+                .get_mut("media")
+                .and_then(serde_json::Value::as_object_mut),
         ) {
-            media_state.insert("artworkRevision".to_owned(), serde_json::json!(media.artwork_revision));
+            media_state.insert(
+                "artworkRevision".to_owned(),
+                serde_json::json!(media.artwork_revision),
+            );
             if include_media_artwork {
-                media_state.insert("artwork".to_owned(), serde_json::json!(media.artwork.as_deref()));
+                media_state.insert(
+                    "artwork".to_owned(),
+                    serde_json::json!(media.artwork.as_deref()),
+                );
             }
         }
         if include_shelf_icons {
@@ -3104,9 +3705,10 @@ impl EdgeShell {
             return;
         }
         let media_artwork_revision = self.media.as_ref().map(|media| media.artwork_revision);
-        let include_media_artwork = self.media.as_ref().is_some_and(|media| {
-            self.last_react_artwork_revision != Some(media.artwork_revision)
-        });
+        let include_media_artwork = self
+            .media
+            .as_ref()
+            .is_some_and(|media| self.last_react_artwork_revision != Some(media.artwork_revision));
         let include_shelf_icons = self.last_react_shelf_revision != Some(self.shelf_revision);
         let state = self.react_state(include_media_artwork, include_shelf_icons);
         if state == self.last_react_state {
@@ -3128,17 +3730,17 @@ impl EdgeShell {
             return;
         }
         let media_revision = self.media.as_ref().map(|media| media.artwork_revision);
-        let include_artwork = self.media.as_ref().is_some_and(|media| {
-            self.last_react_artwork_revision != Some(media.artwork_revision)
-        });
-        let mut media_state = self.media.as_ref().map_or(
-            serde_json::Value::Null,
-            |media| serde_json::to_value(media).unwrap_or(serde_json::Value::Null),
-        );
-        if let (Some(media), Some(fields)) = (
-            self.media.as_ref(),
-            media_state.as_object_mut(),
-        ) {
+        let include_artwork = self
+            .media
+            .as_ref()
+            .is_some_and(|media| self.last_react_artwork_revision != Some(media.artwork_revision));
+        let mut media_state = self
+            .media
+            .as_ref()
+            .map_or(serde_json::Value::Null, |media| {
+                serde_json::to_value(media).unwrap_or(serde_json::Value::Null)
+            });
+        if let (Some(media), Some(fields)) = (self.media.as_ref(), media_state.as_object_mut()) {
             fields.insert(
                 "artworkRevision".to_owned(),
                 serde_json::json!(media.artwork_revision),
@@ -3171,9 +3773,7 @@ impl EdgeShell {
         // Keep the WebView at its final size while the native contour moves.
         // Repeated child HWND resizes compete with painting and delay content.
         let content_height = self.expanded_layout_height();
-        let height = ((content_height - 32.0) * self.scale)
-            .round()
-            .max(1.0) as u32;
+        let height = ((content_height - 32.0) * self.scale).round().max(1.0) as u32;
         (x, y, width, height)
     }
 
@@ -3215,7 +3815,9 @@ impl EdgeShell {
         // and recreate it between compact and expanded states.
         let now = std::time::Instant::now();
         let expansion_active = self.wants_expanded_without_exit()
-            || self.content_exit_deadline.is_some_and(|deadline| now < deadline);
+            || self
+                .content_exit_deadline
+                .is_some_and(|deadline| now < deadline);
         let content_can_enter = body_width
             >= self.expanded_body_width - REACT_CONTENT_REVEAL_MARGIN
             && body_height >= self.expanded_layout_height() - REACT_CONTENT_REVEAL_MARGIN;
@@ -3224,9 +3826,12 @@ impl EdgeShell {
             && expansion_active
             && (self.react_visible || content_can_enter);
         let compact_visible = self.react_ready
-            && (self.reducer.snapshot().mode != ShellMode::Tucked || self.tuck_motion.value() < 0.999)
+            && (self.reducer.snapshot().mode != ShellMode::Tucked
+                || self.tuck_motion.value() < 0.999)
             && !visible
-            && self.shelf_drop_transition_at.is_none_or(|at| at.elapsed() >= DROP_HANDOFF_DURATION)
+            && self
+                .shelf_drop_transition_at
+                .is_none_or(|at| at.elapsed() >= DROP_HANDOFF_DURATION)
             && !self.callbacks.shelf_drag_active.load(Ordering::Acquire)
             && !self.callbacks.shelf_drag_hover_hint.load(Ordering::Acquire)
             && !self.fullscreen_hidden;
@@ -3241,16 +3846,12 @@ impl EdgeShell {
         // A stale compact render must never resize a newly expanded surface.
         if visible && self.pending_react_compact_render.take().is_some() {
             self.pending_react_compact_since = None;
-            self.react_compact_render_generation = self
-                .react_compact_render_generation
-                .wrapping_add(1)
-                .max(1);
+            self.react_compact_render_generation =
+                self.react_compact_render_generation.wrapping_add(1).max(1);
         }
         if entering_compact {
-            self.react_compact_render_generation = self
-                .react_compact_render_generation
-                .wrapping_add(1)
-                .max(1);
+            self.react_compact_render_generation =
+                self.react_compact_render_generation.wrapping_add(1).max(1);
             self.pending_react_compact_render = Some(self.react_compact_render_generation);
             self.pending_react_compact_since = Some(now);
         } else if !visible && !compact_visible {
@@ -3260,7 +3861,8 @@ impl EdgeShell {
         }
         // Keep the expanded-size WebView centered while React commits the
         // compact tree. Shrinking first can expose a blank frame in WebView2.
-        let awaiting_compact_render = compact_visible && self.pending_react_compact_render.is_some();
+        let awaiting_compact_render =
+            compact_visible && self.pending_react_compact_render.is_some();
         let bounds = if awaiting_compact_render && self.react_visible {
             self.react_panel_bounds_at_width(body_width)
         } else if compact_visible || self.reducer.snapshot().mode == ShellMode::Tucked {
@@ -3281,14 +3883,16 @@ impl EdgeShell {
         }
         // Do not reveal compact content while the native silhouette is still
         // too tall to clip the centered, fixed-size child surface.
-        let compact_faded = compact_visible
-            && (awaiting_compact_render || body_height > 72.0);
+        let compact_faded = compact_visible && (awaiting_compact_render || body_height > 72.0);
         // Visibility belongs to the same snapshot as the compact tree. An
         // independent fire-and-forget setter can leave a committed tree faded.
         let compact_fade_changed = compact_faded != self.react_compact_faded;
         self.react_compact_faded = compact_faded;
         if visible != self.react_visible || compact_visible != self.react_compact_visible {
-            trace_drop(format_args!("react expanded={visible} compact={compact_visible} light={}", !self.dark_theme));
+            trace_drop(format_args!(
+                "react expanded={visible} compact={compact_visible} light={}",
+                !self.dark_theme
+            ));
             // Queue the state transition while the WebView is still hidden.
             // Revealing first can expose one compositor frame of the previous
             // expanded React tree inside the compact viewport (a blank pill).
@@ -3306,7 +3910,8 @@ impl EdgeShell {
             if entering_compact {
                 self.refresh_react_drop_targets();
                 self.drop_targets_refresh_attempts = 2;
-                self.next_drop_targets_refresh = std::time::Instant::now() + std::time::Duration::from_millis(120);
+                self.next_drop_targets_refresh =
+                    std::time::Instant::now() + std::time::Duration::from_millis(120);
             }
             if visible {
                 self.react_ever_visible = true;
@@ -3330,9 +3935,10 @@ impl EdgeShell {
                 self.content_exit_deadline = None;
             }
         }
-        if compact_fade_changed || ((visible || compact_visible)
-            && self.width_motion.is_settled()
-            && self.height_motion.is_settled())
+        if compact_fade_changed
+            || ((visible || compact_visible)
+                && self.width_motion.is_settled()
+                && self.height_motion.is_settled())
         {
             self.push_react_state();
         }
@@ -3367,20 +3973,27 @@ impl EdgeShell {
                 "conversionPick" => {
                     if !self.converter.state.busy {
                         if let Some(paths) = pick_opencode_files(self.window) {
-                            self.open_conversion(paths.into_iter().map(std::path::PathBuf::from).collect(), false);
+                            self.open_conversion(
+                                paths.into_iter().map(std::path::PathBuf::from).collect(),
+                                false,
+                            );
                         }
                     }
                 }
                 "conversionDestination" => {
                     if !self.converter.state.busy {
-                        if let Some(path) = pick_opencode_folder(self.window) { self.converter.destination(path); }
+                        if let Some(path) = pick_opencode_folder(self.window) {
+                            self.converter.destination(path);
+                        }
                     }
                 }
                 "conversionDestinationClear" => self.converter.destination(String::new()),
                 "conversionEngine" => {
                     if !self.converter.state.busy {
                         if let Some(paths) = pick_opencode_files(self.window) {
-                            if let Some(path) = paths.first() { self.converter.engine(path.into()); }
+                            if let Some(path) = paths.first() {
+                                self.converter.engine(path.into());
+                            }
                         }
                     }
                 }
@@ -3389,39 +4002,65 @@ impl EdgeShell {
                 "conversionEngineRemove" => self.converter.remove_engine(),
                 "conversionEngineForget" => self.converter.forget_engine(),
                 "systemUpdate" => match value["component"].as_str() {
-                    Some("ffmpeg") if self.converter.state.update_available => self.converter.install_engine(),
-                    Some("opencode") if self.opencode.update_available && self.opencode.active_count == 0 && self.acp_opencode.active_count == 0 => {
-                        let _ = self.opencode_actions.send(crate::opencode_control::Action::Update);
+                    Some("ffmpeg") if self.converter.state.update_available => {
+                        self.converter.install_engine()
                     }
-                    Some("codex") if self.acp_codex.update_available && self.acp_codex.active_count == 0 => {
-                        let _ = self.acp_codex_actions.send(crate::agent_acp::Action::Install);
+                    Some("opencode")
+                        if self.opencode.update_available
+                            && self.opencode.active_count == 0
+                            && self.acp_opencode.active_count == 0 =>
+                    {
+                        let _ = self
+                            .opencode_actions
+                            .send(crate::opencode_control::Action::Update);
                     }
-                    _ => {},
+                    Some("codex")
+                        if self.acp_codex.update_available && self.acp_codex.active_count == 0 =>
+                    {
+                        let _ = self
+                            .acp_codex_actions
+                            .send(crate::agent_acp::Action::Install);
+                    }
+                    _ => {}
                 },
                 "conversionStart" => {
                     if let Ok(profile) = serde_json::from_value(value["profile"].clone()) {
-                        let ids = value["ids"].as_array().map(|ids| ids.iter().filter_map(|v| v.as_u64()).collect::<Vec<_>>()).unwrap_or_default();
+                        let ids = value["ids"]
+                            .as_array()
+                            .map(|ids| ids.iter().filter_map(|v| v.as_u64()).collect::<Vec<_>>())
+                            .unwrap_or_default();
                         self.converter.start(profile, &ids);
                     }
                 }
                 "conversionCancel" => self.converter.cancel(),
                 "conversionRemove" => self.converter.remove(value["id"].as_u64().unwrap_or(0)),
                 "conversionOpen" => {
-                    if let Some(path) = self.converter.output(value["id"].as_u64().unwrap_or(0)) { open_shelf_path(self.window, &path); }
+                    if let Some(path) = self.converter.output(value["id"].as_u64().unwrap_or(0)) {
+                        open_shelf_path(self.window, &path);
+                    }
                 }
                 "conversionShelf" => {
-                    if let Some(path) = self.converter.output(value["id"].as_u64().unwrap_or(0)) { self.accept_dropped_paths(vec![path]); }
+                    if let Some(path) = self.converter.output(value["id"].as_u64().unwrap_or(0)) {
+                        self.accept_dropped_paths(vec![path]);
+                    }
                 }
                 "compactContext" => {
                     self.compact_context_tools = if self.click_to_open {
                         value["count"].as_u64().unwrap_or(0).min(5) as usize
-                    } else { 0 };
+                    } else {
+                        0
+                    };
                     self.request_tick();
                     redraw = false;
                 }
                 "compactPointer" => {
-                    self.callbacks.pointer_inside.store(value["inside"].as_bool().unwrap_or(false), Ordering::Release);
-                    self.callbacks.pointer_poll_needed.store(true, Ordering::Release);
+                    self.callbacks.pointer_inside.store(
+                        value["inside"].as_bool().unwrap_or(false),
+                        Ordering::Release,
+                    );
+                    self.callbacks
+                        .pointer_poll_needed
+                        .store(true, Ordering::Release);
                     redraw = false;
                 }
                 "compactRenderReady" => {
@@ -3436,7 +4075,8 @@ impl EdgeShell {
                 }
                 "compactResync" => {
                     if value["generation"].as_u64() == Some(self.react_compact_render_generation)
-                        && self.react_compact_visible && !self.wants_expanded_without_exit()
+                        && self.react_compact_visible
+                        && !self.wants_expanded_without_exit()
                     {
                         self.last_react_state.clear();
                         self.react_compact_render_ready = true;
@@ -3445,8 +4085,9 @@ impl EdgeShell {
                     redraw = false;
                 }
                 "compactOpen" => {
-                    if let Some(page) = value["page"].as_str().and_then(|name| ShellPage::ALL.into_iter().find(|page| page.title() == name))
-                        && page.enabled(&self.modules)
+                    if let Some(page) = value["page"].as_str().and_then(|name| {
+                        ShellPage::ALL.into_iter().find(|page| page.title() == name)
+                    }) && page.enabled(&self.modules)
                     {
                         self.page = page;
                     }
@@ -3459,10 +4100,14 @@ impl EdgeShell {
                     let presentation_visible = value["visible"].as_bool().unwrap_or(true);
                     let valid_id = !id.is_empty()
                         && id.len() <= 48
-                        && id.bytes().all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-');
+                        && id.bytes().all(|byte| {
+                            byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-'
+                        });
                     if valid_id {
                         self.compact_status_visible = id.to_owned();
-                        if id == "updates" { self.hover_intent_deadline = None; }
+                        if id == "updates" {
+                            self.hover_intent_deadline = None;
+                        }
                         self.compact_feedback_visible_id = feedback_id;
                         self.compact_status_presentation_visible = presentation_visible;
                         self.sync_compact_feedback_clocks();
@@ -3471,9 +4116,15 @@ impl EdgeShell {
                     redraw = false;
                 }
                 "compactFeedbackCopy" => {
-                    let feedback_id = value["feedbackId"].as_u64().or(self.compact_feedback_visible_id);
+                    let feedback_id = value["feedbackId"]
+                        .as_u64()
+                        .or(self.compact_feedback_visible_id);
                     if let Some(value) = feedback_id
-                        .and_then(|id| self.compact_feedbacks.iter().find(|feedback| feedback.id == id))
+                        .and_then(|id| {
+                            self.compact_feedbacks
+                                .iter()
+                                .find(|feedback| feedback.id == id)
+                        })
                         .and_then(|feedback| feedback.copy_value.as_ref())
                     {
                         let _ = write_clipboard_text(value);
@@ -3481,10 +4132,18 @@ impl EdgeShell {
                     redraw = false;
                 }
                 "reminderNoticed" => {
-                    let feedback_id = value["feedbackId"].as_u64().or(self.compact_feedback_visible_id);
-                    if let Some(index) = feedback_id.and_then(|id| self.compact_feedbacks.iter().position(|feedback| feedback.id == id && feedback.kind == "reminder")) {
+                    let feedback_id = value["feedbackId"]
+                        .as_u64()
+                        .or(self.compact_feedback_visible_id);
+                    if let Some(index) = feedback_id.and_then(|id| {
+                        self.compact_feedbacks
+                            .iter()
+                            .position(|feedback| feedback.id == id && feedback.kind == "reminder")
+                    }) {
                         self.compact_feedbacks.remove(index);
-                        if self.compact_feedback_visible_id == feedback_id { self.compact_feedback_visible_id = None; }
+                        if self.compact_feedback_visible_id == feedback_id {
+                            self.compact_feedback_visible_id = None;
+                        }
                         self.sync_compact_feedback_clocks();
                         self.push_react_state();
                     }
@@ -3499,22 +4158,52 @@ impl EdgeShell {
                 "agentPreferencesSave" => {
                     let previous_sensitivity = wake_sensitivity();
                     save_agent_preferences(&value["preferences"]);
-                    if previous_sensitivity != wake_sensitivity() && matches!(self.wake_word_status.as_str(), "arming" | "listening") {
-                        match self.wake_word.arm(&self.wake_word_phrase, wake_sensitivity()) {
-                            Ok(_) => { self.wake_word_status = "arming".into(); self.wake_word_error = None; }
-                            Err(error) => { self.wake_word_status = "error".into(); self.wake_word_error = Some(error); }
+                    if previous_sensitivity != wake_sensitivity()
+                        && matches!(self.wake_word_status.as_str(), "arming" | "listening")
+                    {
+                        match self
+                            .wake_word
+                            .arm(&self.wake_word_phrase, wake_sensitivity())
+                        {
+                            Ok(_) => {
+                                self.wake_word_status = "arming".into();
+                                self.wake_word_error = None;
+                            }
+                            Err(error) => {
+                                self.wake_word_status = "error".into();
+                                self.wake_word_error = Some(error);
+                            }
                         }
                         self.push_react_state();
                     }
                     redraw = false;
                 }
-                "holdSpaceBegin" => { unsafe { SetTimer(self.window, HOLD_SPACE_TIMER_ID, 30, None); } redraw = false; }
-                "holdSpaceEnd" => { unsafe { KillTimer(self.window, HOLD_SPACE_TIMER_ID); } redraw = false; }
-                "wakeCaptureReady" => { unsafe { let _ = MessageBeep(MB_OK); } redraw = false; }
+                "holdSpaceBegin" => {
+                    unsafe {
+                        SetTimer(self.window, HOLD_SPACE_TIMER_ID, 30, None);
+                    }
+                    redraw = false;
+                }
+                "holdSpaceEnd" => {
+                    unsafe {
+                        KillTimer(self.window, HOLD_SPACE_TIMER_ID);
+                    }
+                    redraw = false;
+                }
+                "wakeCaptureReady" => {
+                    unsafe {
+                        let _ = MessageBeep(MB_OK);
+                    }
+                    redraw = false;
+                }
                 "voiceSurface" => {
                     self.wake_surface = value["open"].as_bool().unwrap_or(false);
-                    if !self.wake_surface { self.set_expanded_body_width(self.wide_layout);
-                        if value["dismiss"].as_bool().unwrap_or(false) { self.reducer.dispatch(ShellEvent::Close, std::time::Instant::now()); }
+                    if !self.wake_surface {
+                        self.set_expanded_body_width(self.wide_layout);
+                        if value["dismiss"].as_bool().unwrap_or(false) {
+                            self.reducer
+                                .dispatch(ShellEvent::Close, std::time::Instant::now());
+                        }
                     }
                     self.push_react_state();
                     self.request_tick();
@@ -3543,7 +4232,9 @@ impl EdgeShell {
                     redraw = false;
                 }
                 "wakeWordResume" => {
-                    if self.wake_word_status != "triggered" { return; }
+                    if self.wake_word_status != "triggered" {
+                        return;
+                    }
                     let phrase = value["phrase"].as_str().unwrap_or(&self.wake_word_phrase);
                     match self.wake_word.arm(phrase, wake_sensitivity()) {
                         Ok(phrase) => {
@@ -3574,89 +4265,230 @@ impl EdgeShell {
                         }
                     }
                 }
-                "opencodeRefresh" => { let _ = self.opencode_actions.send(crate::opencode_control::Action::Refresh); }
-                "opencodeMore" => { let _ = self.opencode_actions.send(crate::opencode_control::Action::More); }
-                "opencodeAgentsRefresh" => { let _ = self.opencode_actions.send(crate::opencode_control::Action::RefreshAgents); }
+                "opencodeRefresh" => {
+                    let _ = self
+                        .opencode_actions
+                        .send(crate::opencode_control::Action::Refresh);
+                }
+                "opencodeMore" => {
+                    let _ = self
+                        .opencode_actions
+                        .send(crate::opencode_control::Action::More);
+                }
+                "opencodeAgentsRefresh" => {
+                    let _ = self
+                        .opencode_actions
+                        .send(crate::opencode_control::Action::RefreshAgents);
+                }
                 "opencodeSaveAgent" => {
                     if let (Some(id), Some(description), Some(mode), Some(model), Some(system)) = (
-                        value["id"].as_str(), value["description"].as_str(), value["mode"].as_str(), value["model"].as_str(), value["system"].as_str())
-                        && id.len() <= 48 && description.len() <= 2_000 && system.len() <= 100_000 && model.len() <= 200 {
-                        let _ = self.opencode_actions.send(crate::opencode_control::Action::SaveAgent {
-                            id: id.into(), description: description.into(), mode: mode.into(), model: model.into(), system: system.into(),
-                        });
+                        value["id"].as_str(),
+                        value["description"].as_str(),
+                        value["mode"].as_str(),
+                        value["model"].as_str(),
+                        value["system"].as_str(),
+                    ) && id.len() <= 48
+                        && description.len() <= 2_000
+                        && system.len() <= 100_000
+                        && model.len() <= 200
+                    {
+                        let _ = self.opencode_actions.send(
+                            crate::opencode_control::Action::SaveAgent {
+                                id: id.into(),
+                                description: description.into(),
+                                mode: mode.into(),
+                                model: model.into(),
+                                system: system.into(),
+                            },
+                        );
                     }
                 }
                 "opencodeDeleteAgent" => {
-                    if let Some(id) = value["id"].as_str() && id.len() <= 48 {
-                        let _ = self.opencode_actions.send(crate::opencode_control::Action::DeleteAgent { id: id.into() });
+                    if let Some(id) = value["id"].as_str()
+                        && id.len() <= 48
+                    {
+                        let _ = self
+                            .opencode_actions
+                            .send(crate::opencode_control::Action::DeleteAgent { id: id.into() });
                     }
                 }
                 "opencodeSelect" => {
-                    if let Some(id) = value["sessionId"].as_str() && id.len() <= 128 {
-                        let _ = self.opencode_actions.send(crate::opencode_control::Action::Select(id.into()));
+                    if let Some(id) = value["sessionId"].as_str()
+                        && id.len() <= 128
+                    {
+                        let _ = self
+                            .opencode_actions
+                            .send(crate::opencode_control::Action::Select(id.into()));
                     }
                 }
-                "opencodeInstall" => { let _ = self.opencode_actions.send(crate::opencode_control::Action::Install); }
-                "opencodeUpdate" => { let _ = self.opencode_actions.send(crate::opencode_control::Action::Update); }
-                "opencodeCheckUpdate" => { let _ = self.opencode_actions.send(crate::opencode_control::Action::CheckUpdate); }
+                "opencodeInstall" => {
+                    let _ = self
+                        .opencode_actions
+                        .send(crate::opencode_control::Action::Install);
+                }
+                "opencodeUpdate" => {
+                    let _ = self
+                        .opencode_actions
+                        .send(crate::opencode_control::Action::Update);
+                }
+                "opencodeCheckUpdate" => {
+                    let _ = self
+                        .opencode_actions
+                        .send(crate::opencode_control::Action::CheckUpdate);
+                }
                 "opencodeCatalog" => {
-                    let directory = value["directory"].as_str().filter(|s| !s.is_empty() && s.len() <= 1024).map(str::to_owned);
-                    let _ = self.opencode_actions.send(crate::opencode_control::Action::Catalog(directory));
+                    let directory = value["directory"]
+                        .as_str()
+                        .filter(|s| !s.is_empty() && s.len() <= 1024)
+                        .map(str::to_owned);
+                    let _ = self
+                        .opencode_actions
+                        .send(crate::opencode_control::Action::Catalog(directory));
                 }
                 "opencodePickFolder" => {
                     if let Some(folder) = pick_opencode_folder(self.window) {
                         if let Some(view) = self.react_view.as_ref() {
                             if let Ok(encoded) = serde_json::to_string(&folder) {
-                                let _ = view.evaluate_script(&format!("window.islandFolderPicked?.({encoded});"));
+                                let _ = view.evaluate_script(&format!(
+                                    "window.islandFolderPicked?.({encoded});"
+                                ));
                             }
                         }
                     }
-                    self.reducer.dispatch(ShellEvent::Open, std::time::Instant::now());
+                    self.reducer
+                        .dispatch(ShellEvent::Open, std::time::Instant::now());
                     self.request_tick();
                 }
                 "opencodePickFiles" => {
                     if let Some(paths) = pick_opencode_files(self.window) {
                         if let Some(view) = self.react_view.as_ref() {
                             if let Ok(encoded) = serde_json::to_string(&paths) {
-                                let _ = view.evaluate_script(&format!("window.islandFilesPicked?.({encoded});"));
+                                let _ = view.evaluate_script(&format!(
+                                    "window.islandFilesPicked?.({encoded});"
+                                ));
                             }
                         }
                     }
-                    self.reducer.dispatch(ShellEvent::Open, std::time::Instant::now());
+                    self.reducer
+                        .dispatch(ShellEvent::Open, std::time::Instant::now());
                     self.request_tick();
                 }
                 "opencodeStart" => {
-                    if let Some(text) = value["text"].as_str() && text.len() <= 400_000 {
-                        let directory = value["directory"].as_str().filter(|s| !s.is_empty() && s.len() <= 1024).map(str::to_owned);
-                        let model = value["model"].as_str().filter(|s| !s.is_empty() && s.len() <= 200).map(str::to_owned);
-                        let agent = value["agent"].as_str().filter(|s| !s.is_empty() && s.len() <= 48).map(str::to_owned);
-                        let files = value["files"].as_array().map(|items| items.iter().take(8).filter_map(|item| item.as_str().filter(|path| path.len() <= 4096).map(str::to_owned)).collect()).unwrap_or_default();
-                        let _ = self.opencode_actions.send(crate::opencode_control::Action::Start { directory, text: text.into(), model, agent, files });
+                    if let Some(text) = value["text"].as_str()
+                        && text.len() <= 400_000
+                    {
+                        let directory = value["directory"]
+                            .as_str()
+                            .filter(|s| !s.is_empty() && s.len() <= 1024)
+                            .map(str::to_owned);
+                        let model = value["model"]
+                            .as_str()
+                            .filter(|s| !s.is_empty() && s.len() <= 200)
+                            .map(str::to_owned);
+                        let agent = value["agent"]
+                            .as_str()
+                            .filter(|s| !s.is_empty() && s.len() <= 48)
+                            .map(str::to_owned);
+                        let files = value["files"]
+                            .as_array()
+                            .map(|items| {
+                                items
+                                    .iter()
+                                    .take(8)
+                                    .filter_map(|item| {
+                                        item.as_str()
+                                            .filter(|path| path.len() <= 4096)
+                                            .map(str::to_owned)
+                                    })
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+                        let _ =
+                            self.opencode_actions
+                                .send(crate::opencode_control::Action::Start {
+                                    directory,
+                                    text: text.into(),
+                                    model,
+                                    agent,
+                                    files,
+                                });
                     }
                 }
                 "opencodeSetModel" => {
-                    if let (Some(session_id), Some(model)) = (value["sessionId"].as_str(), value["model"].as_str())
-                        && session_id.len() <= 128 && !model.is_empty() && model.len() <= 200 {
-                        let _ = self.opencode_actions.send(crate::opencode_control::Action::SetModel { session_id: session_id.into(), model: model.into() });
+                    if let (Some(session_id), Some(model)) =
+                        (value["sessionId"].as_str(), value["model"].as_str())
+                        && session_id.len() <= 128
+                        && !model.is_empty()
+                        && model.len() <= 200
+                    {
+                        let _ =
+                            self.opencode_actions
+                                .send(crate::opencode_control::Action::SetModel {
+                                    session_id: session_id.into(),
+                                    model: model.into(),
+                                });
                     }
                 }
                 "opencodePrompt" => {
-                    if let (Some(session_id), Some(text)) = (value["sessionId"].as_str(), value["text"].as_str())
-                        && session_id.len() <= 128 && text.len() <= 400_000 {
-                        let agent = value["agent"].as_str().filter(|s| !s.is_empty() && s.len() <= 48).map(str::to_owned);
-                        let files = value["files"].as_array().map(|items| items.iter().take(8).filter_map(|item| item.as_str().filter(|path| path.len() <= 4096).map(str::to_owned)).collect()).unwrap_or_default();
-                        let _ = self.opencode_actions.send(crate::opencode_control::Action::Prompt { session_id: session_id.into(), text: text.into(), agent, files });
+                    if let (Some(session_id), Some(text)) =
+                        (value["sessionId"].as_str(), value["text"].as_str())
+                        && session_id.len() <= 128
+                        && text.len() <= 400_000
+                    {
+                        let agent = value["agent"]
+                            .as_str()
+                            .filter(|s| !s.is_empty() && s.len() <= 48)
+                            .map(str::to_owned);
+                        let files = value["files"]
+                            .as_array()
+                            .map(|items| {
+                                items
+                                    .iter()
+                                    .take(8)
+                                    .filter_map(|item| {
+                                        item.as_str()
+                                            .filter(|path| path.len() <= 4096)
+                                            .map(str::to_owned)
+                                    })
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+                        let _ =
+                            self.opencode_actions
+                                .send(crate::opencode_control::Action::Prompt {
+                                    session_id: session_id.into(),
+                                    text: text.into(),
+                                    agent,
+                                    files,
+                                });
                     }
                 }
                 "opencodeAbort" => {
-                    if let Some(session_id) = value["sessionId"].as_str() && session_id.len() <= 128 {
-                        let _ = self.opencode_actions.send(crate::opencode_control::Action::Abort { session_id: session_id.into() });
+                    if let Some(session_id) = value["sessionId"].as_str()
+                        && session_id.len() <= 128
+                    {
+                        let _ =
+                            self.opencode_actions
+                                .send(crate::opencode_control::Action::Abort {
+                                    session_id: session_id.into(),
+                                });
                     }
                 }
                 "opencodeReply" => {
-                    if let (Some(session_id), Some(request_id), Some(allow)) = (value["sessionId"].as_str(), value["requestId"].as_str(), value["allow"].as_bool())
-                        && session_id.len() <= 128 && request_id.len() <= 128 {
-                        let _ = self.opencode_actions.send(crate::opencode_control::Action::Reply { session_id: session_id.into(), request_id: request_id.into(), allow });
+                    if let (Some(session_id), Some(request_id), Some(allow)) = (
+                        value["sessionId"].as_str(),
+                        value["requestId"].as_str(),
+                        value["allow"].as_bool(),
+                    ) && session_id.len() <= 128
+                        && request_id.len() <= 128
+                    {
+                        let _ =
+                            self.opencode_actions
+                                .send(crate::opencode_control::Action::Reply {
+                                    session_id: session_id.into(),
+                                    request_id: request_id.into(),
+                                    allow,
+                                });
                     }
                 }
                 "agentAction" => {
@@ -3668,26 +4500,43 @@ impl EdgeShell {
                         _ => None,
                     };
                     if let Some(sender) = sender {
-                        let short = |key: &str, max: usize| value[key].as_str().filter(|item| item.len() <= max).map(str::to_owned);
+                        let short = |key: &str, max: usize| {
+                            value[key]
+                                .as_str()
+                                .filter(|item| item.len() <= max)
+                                .map(str::to_owned)
+                        };
                         let session = short("sessionId", 256);
                         let action = match value["action"].as_str() {
                             Some("connect") => Some(Action::Connect),
-                            Some("install") if value["provider"] == "codex" => Some(Action::Install),
-                            Some("checkUpdate") if value["provider"] == "codex" => Some(Action::CheckUpdate),
+                            Some("install") if value["provider"] == "codex" => {
+                                Some(Action::Install)
+                            }
+                            Some("checkUpdate") if value["provider"] == "codex" => {
+                                Some(Action::CheckUpdate)
+                            }
                             Some("install") if value["provider"] == "opencode" => {
-                                if self.acp_opencode.active_count > 0 || self.opencode.active_count > 0 || self.opencode.installing {
-                                    self.acp_opencode.notice = "Finish active OpenCode tasks before updating.".into();
+                                if self.acp_opencode.active_count > 0
+                                    || self.opencode.active_count > 0
+                                    || self.opencode.installing
+                                {
+                                    self.acp_opencode.notice =
+                                        "Finish active OpenCode tasks before updating.".into();
                                     self.acp_opencode.notice_severity = "warning".into();
                                     push_agent_state = true;
                                 } else {
-                                    let _ = self.opencode_actions.send(crate::opencode_control::Action::Install);
+                                    let _ = self
+                                        .opencode_actions
+                                        .send(crate::opencode_control::Action::Install);
                                 }
                                 None
-                            },
+                            }
                             Some("checkUpdate") if value["provider"] == "opencode" => {
-                                let _ = self.opencode_actions.send(crate::opencode_control::Action::CheckUpdate);
+                                let _ = self
+                                    .opencode_actions
+                                    .send(crate::opencode_control::Action::CheckUpdate);
                                 None
-                            },
+                            }
                             Some("refresh") => Some(Action::Refresh),
                             Some("more") => Some(Action::More),
                             Some("login") => short("methodId", 128).map(Action::Authenticate),
@@ -3695,79 +4544,244 @@ impl EdgeShell {
                             Some("select") => session.map(Action::Select),
                             Some("prepare") => Some(Action::Prepare {
                                 directory: short("directory", 4096).unwrap_or_default(),
-                                additional_directories: value["additionalDirectories"].as_array().map(|items| items.iter().take(6).filter_map(|item| item.as_str().filter(|path| path.len() <= 4096).map(str::to_owned)).collect()).unwrap_or_default(),
-                                config: value["config"].as_array().map(|items| items.iter().take(12).filter_map(|item| {
-                                    let id = item["id"].as_str()?;
-                                    let selected = item["value"].as_str().map(str::to_owned).or_else(|| item["value"].as_bool().map(|value| value.to_string()))?;
-                                    (id.len() <= 128 && selected.len() <= 256).then(|| (id.into(), selected))
-                                }).collect()).unwrap_or_default(),
+                                additional_directories: value["additionalDirectories"]
+                                    .as_array()
+                                    .map(|items| {
+                                        items
+                                            .iter()
+                                            .take(6)
+                                            .filter_map(|item| {
+                                                item.as_str()
+                                                    .filter(|path| path.len() <= 4096)
+                                                    .map(str::to_owned)
+                                            })
+                                            .collect()
+                                    })
+                                    .unwrap_or_default(),
+                                config: value["config"]
+                                    .as_array()
+                                    .map(|items| {
+                                        items
+                                            .iter()
+                                            .take(12)
+                                            .filter_map(|item| {
+                                                let id = item["id"].as_str()?;
+                                                let selected = item["value"]
+                                                    .as_str()
+                                                    .map(str::to_owned)
+                                                    .or_else(|| {
+                                                        item["value"]
+                                                            .as_bool()
+                                                            .map(|value| value.to_string())
+                                                    })?;
+                                                (id.len() <= 128 && selected.len() <= 256)
+                                                    .then(|| (id.into(), selected))
+                                            })
+                                            .collect()
+                                    })
+                                    .unwrap_or_default(),
                             }),
                             Some("start") => short("text", 400_000).and_then(|text| {
                                 let directory = short("directory", 4096).unwrap_or_default();
-                                let system_prompt = short("systemPrompt", 24_000).unwrap_or_default();
-                                let additional_directories = value["additionalDirectories"].as_array().map(|items| items.iter().take(6).filter_map(|item| item.as_str().filter(|path| path.len() <= 4096).map(str::to_owned)).collect()).unwrap_or_default();
-                                let config = value["config"].as_array().map(|items| items.iter().take(12).filter_map(|item| {
-                                    let id = item["id"].as_str()?;
-                                    let selected = item["value"].as_str().map(str::to_owned).or_else(|| item["value"].as_bool().map(|value| value.to_string()))?;
-                                    (id.len() <= 128 && selected.len() <= 256).then(|| (id.into(), selected))
-                                }).collect()).unwrap_or_default();
-                                let files: Vec<String> = value["files"].as_array().map(|items| items.iter().take(8).filter_map(|item| item.as_str().filter(|path| path.len() <= 4096).map(str::to_owned)).collect()).unwrap_or_default();
-                                if text.trim().is_empty() && files.is_empty() { return None; }
-                                Some(Action::Start { directory, additional_directories, text, config, files, system_prompt, hybrid_whiteboard: value["hybridWhiteboard"] == true })
+                                let system_prompt =
+                                    short("systemPrompt", 24_000).unwrap_or_default();
+                                let additional_directories = value["additionalDirectories"]
+                                    .as_array()
+                                    .map(|items| {
+                                        items
+                                            .iter()
+                                            .take(6)
+                                            .filter_map(|item| {
+                                                item.as_str()
+                                                    .filter(|path| path.len() <= 4096)
+                                                    .map(str::to_owned)
+                                            })
+                                            .collect()
+                                    })
+                                    .unwrap_or_default();
+                                let config = value["config"]
+                                    .as_array()
+                                    .map(|items| {
+                                        items
+                                            .iter()
+                                            .take(12)
+                                            .filter_map(|item| {
+                                                let id = item["id"].as_str()?;
+                                                let selected = item["value"]
+                                                    .as_str()
+                                                    .map(str::to_owned)
+                                                    .or_else(|| {
+                                                        item["value"]
+                                                            .as_bool()
+                                                            .map(|value| value.to_string())
+                                                    })?;
+                                                (id.len() <= 128 && selected.len() <= 256)
+                                                    .then(|| (id.into(), selected))
+                                            })
+                                            .collect()
+                                    })
+                                    .unwrap_or_default();
+                                let files: Vec<String> = value["files"]
+                                    .as_array()
+                                    .map(|items| {
+                                        items
+                                            .iter()
+                                            .take(8)
+                                            .filter_map(|item| {
+                                                item.as_str()
+                                                    .filter(|path| path.len() <= 4096)
+                                                    .map(str::to_owned)
+                                            })
+                                            .collect()
+                                    })
+                                    .unwrap_or_default();
+                                if text.trim().is_empty() && files.is_empty() {
+                                    return None;
+                                }
+                                Some(Action::Start {
+                                    directory,
+                                    additional_directories,
+                                    text,
+                                    config,
+                                    files,
+                                    system_prompt,
+                                    hybrid_whiteboard: value["hybridWhiteboard"] == true,
+                                })
                             }),
-                            Some("prompt") => session.zip(short("text", 400_000)).map(|(session_id, text)| {
-                                let files = value["files"].as_array().map(|items| items.iter().take(8).filter_map(|item| item.as_str().filter(|path| path.len() <= 4096).map(str::to_owned)).collect()).unwrap_or_default();
-                                let system_prompt = short("systemPrompt", 24_000).unwrap_or_default();
-                                Action::Prompt { session_id, text, files, system_prompt, hybrid_whiteboard: value["hybridWhiteboard"] == true }
-                            }),
+                            Some("prompt") => {
+                                session
+                                    .zip(short("text", 400_000))
+                                    .map(|(session_id, text)| {
+                                        let files = value["files"]
+                                            .as_array()
+                                            .map(|items| {
+                                                items
+                                                    .iter()
+                                                    .take(8)
+                                                    .filter_map(|item| {
+                                                        item.as_str()
+                                                            .filter(|path| path.len() <= 4096)
+                                                            .map(str::to_owned)
+                                                    })
+                                                    .collect()
+                                            })
+                                            .unwrap_or_default();
+                                        let system_prompt =
+                                            short("systemPrompt", 24_000).unwrap_or_default();
+                                        Action::Prompt {
+                                            session_id,
+                                            text,
+                                            files,
+                                            system_prompt,
+                                            hybrid_whiteboard: value["hybridWhiteboard"] == true,
+                                        }
+                                    })
+                            }
                             Some("cancel") => session.map(Action::Cancel),
                             Some("close") => session.map(Action::Close),
                             Some("delete") => session.map(Action::Delete),
                             Some("fork") => session.map(Action::Fork),
-                            Some("configure") => session.zip(short("configId", 128)).zip(short("configValue", 256)).map(|((session_id, id), value)| Action::Configure { session_id, id, value }),
-                            Some("mode") => session.zip(short("modeId", 128)).map(|(session_id, mode)| Action::SetMode { session_id, mode }),
-                            Some("reply") => session.zip(short("requestId", 128)).zip(short("optionId", 128)).map(|((session_id, request_id), option_id)| Action::Reply { session_id, request_id, option_id }),
-                            Some("answer") => session.zip(short("requestId", 128)).zip(short("choice", 16)).and_then(|((session_id, request_id), choice)| {
-                                let content = value["content"].clone();
-                                (content.to_string().len() <= 32_000).then_some(Action::Answer { session_id, request_id, choice, content })
-                            }),
+                            Some("configure") => session
+                                .zip(short("configId", 128))
+                                .zip(short("configValue", 256))
+                                .map(|((session_id, id), value)| Action::Configure {
+                                    session_id,
+                                    id,
+                                    value,
+                                }),
+                            Some("mode") => session
+                                .zip(short("modeId", 128))
+                                .map(|(session_id, mode)| Action::SetMode { session_id, mode }),
+                            Some("reply") => session
+                                .zip(short("requestId", 128))
+                                .zip(short("optionId", 128))
+                                .map(|((session_id, request_id), option_id)| Action::Reply {
+                                    session_id,
+                                    request_id,
+                                    option_id,
+                                }),
+                            Some("answer") => session
+                                .zip(short("requestId", 128))
+                                .zip(short("choice", 16))
+                                .and_then(|((session_id, request_id), choice)| {
+                                    let content = value["content"].clone();
+                                    (content.to_string().len() <= 32_000).then_some(
+                                        Action::Answer {
+                                            session_id,
+                                            request_id,
+                                            choice,
+                                            content,
+                                        },
+                                    )
+                                }),
                             _ => None,
                         };
-                        if let Some(action) = action { let _ = sender.send(action); }
+                        if let Some(action) = action {
+                            let _ = sender.send(action);
+                        }
                     }
-                    if push_agent_state { self.push_react_state(); }
+                    if push_agent_state {
+                        self.push_react_state();
+                    }
                 }
                 "agentLibrary" => {
                     use crate::platform::windows::agent_library as library;
                     let action = value["action"].as_str().unwrap_or("");
                     let operation = match action {
                         "mcpSave" => library::save_mcp_server(&value["server"]),
-                        "mcpDelete" => value["name"].as_str().filter(|name| name.len() <= 64)
-                            .ok_or_else(|| "Invalid MCP server name.".to_owned()).and_then(library::delete_mcp_server),
+                        "mcpDelete" => value["name"]
+                            .as_str()
+                            .filter(|name| name.len() <= 64)
+                            .ok_or_else(|| "Invalid MCP server name.".to_owned())
+                            .and_then(library::delete_mcp_server),
                         "skillSave" => {
                             let name = value["name"].as_str().filter(|name| name.len() <= 64);
-                            let description = value["description"].as_str().filter(|text| text.len() <= 1024);
-                            let instructions = value["instructions"].as_str().filter(|text| text.len() <= 128_000);
+                            let description = value["description"]
+                                .as_str()
+                                .filter(|text| text.len() <= 1024);
+                            let instructions = value["instructions"]
+                                .as_str()
+                                .filter(|text| text.len() <= 128_000);
                             match (name, description, instructions) {
-                                (Some(name), Some(description), Some(instructions)) => library::save_skill(name, description, instructions),
+                                (Some(name), Some(description), Some(instructions)) => {
+                                    library::save_skill(name, description, instructions)
+                                }
                                 _ => Err("Skill fields exceed the supported limits.".to_owned()),
                             }
                         }
-                        "skillDelete" => value["name"].as_str().filter(|name| name.len() <= 64)
-                            .ok_or_else(|| "Invalid skill name.".to_owned()).and_then(library::delete_skill),
+                        "skillDelete" => value["name"]
+                            .as_str()
+                            .filter(|name| name.len() <= 64)
+                            .ok_or_else(|| "Invalid skill name.".to_owned())
+                            .and_then(library::delete_skill),
                         "refresh" | "skillRead" | "projectEntries" => Ok(()),
                         _ => Err("Unknown agent library action.".to_owned()),
                     };
-                    let mut result = serde_json::json!({ "action": action, "ok": operation.is_ok() });
-                    if let Err(error) = operation { result["error"] = serde_json::json!(error); }
+                    let mut result =
+                        serde_json::json!({ "action": action, "ok": operation.is_ok() });
+                    if let Err(error) = operation {
+                        result["error"] = serde_json::json!(error);
+                    }
                     if action == "projectEntries" {
-                        let root = value["root"].as_str().filter(|path| path.len() <= 32_768).unwrap_or("");
-                        let relative = value["relative"].as_str().filter(|path| path.len() <= 2_048).unwrap_or("");
-                        let query = value["query"].as_str().filter(|query| query.len() <= 2_048).unwrap_or("");
+                        let root = value["root"]
+                            .as_str()
+                            .filter(|path| path.len() <= 32_768)
+                            .unwrap_or("");
+                        let relative = value["relative"]
+                            .as_str()
+                            .filter(|path| path.len() <= 2_048)
+                            .unwrap_or("");
+                        let query = value["query"]
+                            .as_str()
+                            .filter(|query| query.len() <= 2_048)
+                            .unwrap_or("");
                         result["requestId"] = value["requestId"].clone();
                         match library::list_project_entries(root, relative, query) {
                             Ok(project) => result["project"] = project,
-                            Err(error) => { result["ok"] = serde_json::json!(false); result["error"] = serde_json::json!(error); }
+                            Err(error) => {
+                                result["ok"] = serde_json::json!(false);
+                                result["error"] = serde_json::json!(error);
+                            }
                         }
                     }
                     if action != "projectEntries" {
@@ -3783,26 +4797,37 @@ impl EdgeShell {
                     if action == "skillRead" {
                         if let Some(name) = value["name"].as_str().filter(|name| name.len() <= 64) {
                             match library::read_skill(name) {
-                                Ok(content) => { result["skill"] = serde_json::json!({"name":name,"content":content}); }
-                                Err(error) => { result["ok"] = serde_json::json!(false); result["error"] = serde_json::json!(error); }
+                                Ok(content) => {
+                                    result["skill"] =
+                                        serde_json::json!({"name":name,"content":content});
+                                }
+                                Err(error) => {
+                                    result["ok"] = serde_json::json!(false);
+                                    result["error"] = serde_json::json!(error);
+                                }
                             }
                         }
                     }
                     if let Some(view) = &self.react_view
                         && let Ok(encoded) = serde_json::to_string(&result)
                     {
-                        let _ = view.evaluate_script(&format!("window.islandAgentLibraryResult?.({encoded});"));
+                        let _ = view.evaluate_script(&format!(
+                            "window.islandAgentLibraryResult?.({encoded});"
+                        ));
                     }
                     library::clear_mcp_input(&mut value);
                     unsafe {
-                        for byte in message.as_mut_vec() { std::ptr::write_volatile(byte, 0); }
+                        for byte in message.as_mut_vec() {
+                            std::ptr::write_volatile(byte, 0);
+                        }
                     }
                     redraw = false;
                 }
                 "layout" => {
                     // ResizeObserver messages are asynchronous. A closing or
                     // previous presentation cannot change the next open target.
-                    if !self.react_visible || !self.wants_expanded_without_exit()
+                    if !self.react_visible
+                        || !self.wants_expanded_without_exit()
                         || value["generation"].as_u64()
                             != Some(self.react_compact_render_generation)
                         || value["page"].as_str() != Some(self.page.title())
@@ -3815,9 +4840,8 @@ impl EdgeShell {
                     if settings_layout_changed {
                         self.settings_layout_open = settings_open;
                         if settings_open {
-                            self.settings_layout_height = Some(
-                                480.0_f64.min(MAX_EXPANDED_BODY_HEIGHT),
-                            );
+                            self.settings_layout_height =
+                                Some(480.0_f64.min(MAX_EXPANDED_BODY_HEIGHT));
                         } else {
                             self.settings_layout_height = None;
                         }
@@ -3836,8 +4860,14 @@ impl EdgeShell {
                         && let Some(height) = value["height"].as_f64()
                         && height.is_finite()
                     {
-                        let measured = (height.ceil() + 32.0)
-                            .clamp(if self.wake_surface { 90.0 } else { f64::from(EXPANDED_HEIGHT) }, MAX_EXPANDED_BODY_HEIGHT);
+                        let measured = (height.ceil() + 32.0).clamp(
+                            if self.wake_surface {
+                                90.0
+                            } else {
+                                f64::from(EXPANDED_HEIGHT)
+                            },
+                            MAX_EXPANDED_BODY_HEIGHT,
+                        );
                         // Keep Settings' temporary height independent of the
                         // shared page measurement; otherwise other pages can
                         // inherit its larger viewport on close.
@@ -3871,12 +4901,20 @@ impl EdgeShell {
                 "indicatorToggle" => {
                     let field = value["indicator"].as_str().unwrap_or("");
                     let change = match field {
-                        "clock" => { self.clock_indicator_enabled = !self.clock_indicator_enabled; ShellPreferenceChange::Clock(self.clock_indicator_enabled) }
-                        "battery" => { self.battery_indicator_enabled = !self.battery_indicator_enabled; ShellPreferenceChange::Battery(self.battery_indicator_enabled) }
+                        "clock" => {
+                            self.clock_indicator_enabled = !self.clock_indicator_enabled;
+                            ShellPreferenceChange::Clock(self.clock_indicator_enabled)
+                        }
+                        "battery" => {
+                            self.battery_indicator_enabled = !self.battery_indicator_enabled;
+                            ShellPreferenceChange::Battery(self.battery_indicator_enabled)
+                        }
                         _ => continue,
                     };
                     self.clock_refresh_at = std::time::Instant::now();
-                    if let Ok(mut changes) = self.callbacks.preference_changes.lock() { changes.push(change); }
+                    if let Ok(mut changes) = self.callbacks.preference_changes.lock() {
+                        changes.push(change);
+                    }
                     self.callbacks.context.request_repaint();
                     self.push_react_state();
                 }
@@ -3910,11 +4948,29 @@ impl EdgeShell {
                     let key = value["key"].as_str().unwrap_or("");
                     let setting = &value["value"];
                     let change = match key {
-                        "shape" if setting == "notch" => { self.set_shape(ShapeMode::Notch); Some(ShellPreferenceChange::Shape(ShapeMode::Notch)) }
-                        "shape" if setting == "capsule" => { self.set_shape(ShapeMode::Capsule); Some(ShellPreferenceChange::Shape(ShapeMode::Capsule)) }
-                        "privacy" if setting.is_boolean() => { self.privacy_indicator_enabled = setting.as_bool().unwrap(); Some(ShellPreferenceChange::Privacy(self.privacy_indicator_enabled)) }
-                        "hideFullscreen" if setting.is_boolean() => { self.set_hide_in_fullscreen(setting.as_bool().unwrap()); Some(ShellPreferenceChange::HideFullscreen(self.hide_in_fullscreen)) }
-                        "excludeFromScreenCapture" if setting.is_boolean() && self.screen_capture_exclusion_supported => {
+                        "shape" if setting == "notch" => {
+                            self.set_shape(ShapeMode::Notch);
+                            Some(ShellPreferenceChange::Shape(ShapeMode::Notch))
+                        }
+                        "shape" if setting == "capsule" => {
+                            self.set_shape(ShapeMode::Capsule);
+                            Some(ShellPreferenceChange::Shape(ShapeMode::Capsule))
+                        }
+                        "privacy" if setting.is_boolean() => {
+                            self.privacy_indicator_enabled = setting.as_bool().unwrap();
+                            Some(ShellPreferenceChange::Privacy(
+                                self.privacy_indicator_enabled,
+                            ))
+                        }
+                        "hideFullscreen" if setting.is_boolean() => {
+                            self.set_hide_in_fullscreen(setting.as_bool().unwrap());
+                            Some(ShellPreferenceChange::HideFullscreen(
+                                self.hide_in_fullscreen,
+                            ))
+                        }
+                        "excludeFromScreenCapture"
+                            if setting.is_boolean() && self.screen_capture_exclusion_supported =>
+                        {
                             let enabled = setting.as_bool().unwrap();
                             self.set_exclude_from_screen_capture(enabled)
                                 .then_some(ShellPreferenceChange::ScreenCaptureExclusion(enabled))
@@ -3922,59 +4978,101 @@ impl EdgeShell {
                         "reducedMotion" if setting.is_boolean() => {
                             let enabled = setting.as_bool().unwrap();
                             if self.set_reduced_motion(enabled).is_ok() {
-                                self.callbacks.reduced_motion.store(enabled, Ordering::Release);
+                                self.callbacks
+                                    .reduced_motion
+                                    .store(enabled, Ordering::Release);
                                 Some(ShellPreferenceChange::ReducedMotion(enabled))
-                            } else { None }
+                            } else {
+                                None
+                            }
                         }
                         "hoverOpen" if setting.as_u64().is_some_and(|value| value <= 600) => {
                             self.hover_open_delay_ms = setting.as_u64().unwrap() as u32;
                             self.reducer.set_hover_delays(
-                                std::time::Duration::from_millis(u64::from(self.hover_open_delay_ms)),
-                                std::time::Duration::from_millis(u64::from(self.hover_close_delay_ms)),
+                                std::time::Duration::from_millis(u64::from(
+                                    self.hover_open_delay_ms,
+                                )),
+                                std::time::Duration::from_millis(u64::from(
+                                    self.hover_close_delay_ms,
+                                )),
                             );
                             Some(ShellPreferenceChange::HoverOpen(self.hover_open_delay_ms))
                         }
-                        "hoverClose" if setting.as_u64().is_some_and(|value| (100..=1500).contains(&value)) => {
+                        "hoverClose"
+                            if setting
+                                .as_u64()
+                                .is_some_and(|value| (100..=1500).contains(&value)) =>
+                        {
                             self.hover_close_delay_ms = setting.as_u64().unwrap() as u32;
                             self.reducer.set_hover_delays(
-                                std::time::Duration::from_millis(u64::from(self.hover_open_delay_ms)),
-                                std::time::Duration::from_millis(u64::from(self.hover_close_delay_ms)),
+                                std::time::Duration::from_millis(u64::from(
+                                    self.hover_open_delay_ms,
+                                )),
+                                std::time::Duration::from_millis(u64::from(
+                                    self.hover_close_delay_ms,
+                                )),
                             );
                             Some(ShellPreferenceChange::HoverClose(self.hover_close_delay_ms))
                         }
                         "openOnClick" if setting.is_boolean() => {
                             self.click_to_open = setting.as_bool().unwrap();
                             self.hover_intent_deadline = None;
-                            self.reducer.set_interaction_behavior(self.click_to_open, self.close_on_outside_click);
+                            self.reducer.set_interaction_behavior(
+                                self.click_to_open,
+                                self.close_on_outside_click,
+                            );
                             Some(ShellPreferenceChange::ClickToOpen(self.click_to_open))
                         }
                         "closeOnOutsideClick" if setting.is_boolean() => {
                             self.close_on_outside_click = setting.as_bool().unwrap();
-                            self.reducer.set_interaction_behavior(self.click_to_open, self.close_on_outside_click);
-                            Some(ShellPreferenceChange::CloseOnOutsideClick(self.close_on_outside_click))
+                            self.reducer.set_interaction_behavior(
+                                self.click_to_open,
+                                self.close_on_outside_click,
+                            );
+                            Some(ShellPreferenceChange::CloseOnOutsideClick(
+                                self.close_on_outside_click,
+                            ))
                         }
-                        "foldedTransparency" if setting.as_u64().is_some_and(|value| value <= 100) => {
+                        "foldedTransparency"
+                            if setting.as_u64().is_some_and(|value| value <= 100) =>
+                        {
                             self.folded_transparency_percent = setting.as_u64().unwrap() as u8;
                             self.request_tick();
-                            Some(ShellPreferenceChange::FoldedTransparency(self.folded_transparency_percent))
+                            Some(ShellPreferenceChange::FoldedTransparency(
+                                self.folded_transparency_percent,
+                            ))
                         }
-                        "openTransparency" if setting.as_u64().is_some_and(|value| value <= 100) => {
+                        "openTransparency"
+                            if setting.as_u64().is_some_and(|value| value <= 100) =>
+                        {
                             self.open_transparency_percent = setting.as_u64().unwrap() as u8;
                             self.request_tick();
-                            Some(ShellPreferenceChange::OpenTransparency(self.open_transparency_percent))
+                            Some(ShellPreferenceChange::OpenTransparency(
+                                self.open_transparency_percent,
+                            ))
                         }
                         _ => None,
                     };
                     if let Some(change) = change {
-                        if let Ok(mut changes) = self.callbacks.preference_changes.lock() { changes.push(change); }
+                        if let Ok(mut changes) = self.callbacks.preference_changes.lock() {
+                            changes.push(change);
+                        }
                         self.callbacks.context.request_repaint();
                         self.push_react_state();
                     }
                 }
                 "clipboardSetting" => {
-                    let capture_enabled = value["captureEnabled"].as_bool().unwrap_or(self.clipboard_history_enabled);
-                    let history_limit = value["historyLimit"].as_u64().unwrap_or(self.clipboard_limit as u64) as usize;
-                    let settings = ClipboardSettings { capture_enabled, history_limit };
+                    let capture_enabled = value["captureEnabled"]
+                        .as_bool()
+                        .unwrap_or(self.clipboard_history_enabled);
+                    let history_limit = value["historyLimit"]
+                        .as_u64()
+                        .unwrap_or(self.clipboard_limit as u64)
+                        as usize;
+                    let settings = ClipboardSettings {
+                        capture_enabled,
+                        history_limit,
+                    };
                     if save_clipboard_settings(settings) {
                         self.clipboard_history_enabled = capture_enabled;
                         self.clipboard_limit = history_limit;
@@ -4001,7 +5099,9 @@ impl EdgeShell {
                 }
                 "moduleSetting" => {
                     let key = value["module"].as_str().unwrap_or("");
-                    let Some(enabled) = value["enabled"].as_bool() else { continue };
+                    let Some(enabled) = value["enabled"].as_bool() else {
+                        continue;
+                    };
                     let mut modules = self.modules;
                     match key {
                         "clipboard" => modules.clipboard = enabled,
@@ -4016,8 +5116,12 @@ impl EdgeShell {
                     }
                     if save_module_settings(modules) {
                         self.modules = modules;
-                        self.callbacks.shelf_enabled.store(modules.shelf, Ordering::Release);
-                        if !self.page.enabled(&modules) { self.page = ShellPage::Home; }
+                        self.callbacks
+                            .shelf_enabled
+                            .store(modules.shelf, Ordering::Release);
+                        if !self.page.enabled(&modules) {
+                            self.page = ShellPage::Home;
+                        }
                         self.push_react_state();
                         self.request_tick();
                     }
@@ -4077,7 +5181,10 @@ impl EdgeShell {
                         self.clipboard_items.truncate(self.clipboard_limit);
                     }
                 }
-                "clipboardClear" => { self.clipboard_items.clear(); self.screen_clipboard_values.clear(); },
+                "clipboardClear" => {
+                    self.clipboard_items.clear();
+                    self.screen_clipboard_values.clear();
+                }
                 "clipboardCopy" => {
                     if let Some(index) = value["index"].as_u64()
                         && let Some(item) = self.clipboard_items.get(index as usize)
@@ -4086,18 +5193,29 @@ impl EdgeShell {
                     }
                 }
                 "opencodeCopy" => {
-                    if let Some(text) = value["text"].as_str().filter(|text| text.len() <= 400_000) {
+                    if let Some(text) = value["text"].as_str().filter(|text| text.len() <= 400_000)
+                    {
                         let _ = write_clipboard_text(text);
                     }
                 }
                 "openExternalUrl" => {
                     if let Some(url) = value["url"].as_str().filter(|url| {
-                        url.len() <= 2048 && !url.chars().any(char::is_control)
+                        url.len() <= 2048
+                            && !url.chars().any(char::is_control)
                             && (url.starts_with("https://") || url.starts_with("http://"))
                     }) {
                         let target = wide(url);
                         let operation = wide("open");
-                        unsafe { ShellExecuteW(self.window, operation.as_ptr(), target.as_ptr(), null(), null(), SW_SHOW) };
+                        unsafe {
+                            ShellExecuteW(
+                                self.window,
+                                operation.as_ptr(),
+                                target.as_ptr(),
+                                null(),
+                                null(),
+                                SW_SHOW,
+                            )
+                        };
                     }
                 }
                 "shelfOpen" => {
@@ -4108,7 +5226,9 @@ impl EdgeShell {
                     }
                 }
                 "homeActionsSet" => {
-                    let Some(values) = value["actions"].as_array() else { continue };
+                    let Some(values) = value["actions"].as_array() else {
+                        continue;
+                    };
                     let mut actions = Vec::with_capacity(10);
                     let mut used = HashSet::new();
                     let mut valid = values.len() == 10;
@@ -4116,7 +5236,8 @@ impl EdgeShell {
                         match entry {
                             serde_json::Value::Null => actions.push(None),
                             serde_json::Value::String(id)
-                                if HOME_ACTION_IDS.contains(&id.as_str()) && used.insert(id.clone()) =>
+                                if HOME_ACTION_IDS.contains(&id.as_str())
+                                    && used.insert(id.clone()) =>
                             {
                                 actions.push(Some(id.clone()));
                             }
@@ -4170,27 +5291,82 @@ impl EdgeShell {
                     let raw_path = value["path"].as_str().unwrap_or("");
                     let action = value["action"].as_str().unwrap_or("");
                     if raw_path.len() <= 2048 && !raw_path.chars().any(char::is_control) {
-                        let user_profile = std::env::var_os("USERPROFILE").map(std::path::PathBuf::from);
+                        let user_profile =
+                            std::env::var_os("USERPROFILE").map(std::path::PathBuf::from);
                         if let Some(downloads) = user_profile.map(|path| path.join("Downloads"))
-                            && let (Ok(downloads), Ok(path)) = (downloads.canonicalize(), std::path::PathBuf::from(raw_path).canonicalize())
+                            && let (Ok(downloads), Ok(path)) = (
+                                downloads.canonicalize(),
+                                std::path::PathBuf::from(raw_path).canonicalize(),
+                            )
                             && path.parent() == Some(downloads.as_path())
-                            && path.file_name().and_then(|name| name.to_str()).is_some_and(|name| name.starts_with("Island-capture-") || name.starts_with("Island-recording-"))
+                            && path
+                                .file_name()
+                                .and_then(|name| name.to_str())
+                                .is_some_and(|name| {
+                                    name.starts_with("Island-capture-")
+                                        || name.starts_with("Island-recording-")
+                                })
                         {
                             if action == "open" {
                                 let target = wide(&path.to_string_lossy());
                                 let operation = wide("open");
-                                unsafe { ShellExecuteW(self.window, operation.as_ptr(), target.as_ptr(), null(), null(), SW_SHOW); }
+                                unsafe {
+                                    ShellExecuteW(
+                                        self.window,
+                                        operation.as_ptr(),
+                                        target.as_ptr(),
+                                        null(),
+                                        null(),
+                                        SW_SHOW,
+                                    );
+                                }
                             } else if action == "reveal" {
                                 let target = wide("explorer.exe");
-                                let parameters = wide(&format!("/select,\"{}\"", path.to_string_lossy()));
+                                let parameters =
+                                    wide(&format!("/select,\"{}\"", path.to_string_lossy()));
                                 let operation = wide("open");
-                                unsafe { ShellExecuteW(self.window, operation.as_ptr(), target.as_ptr(), parameters.as_ptr(), null(), SW_SHOW); }
-                            } else if action == "copyImage" && path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("png")) {
-                                let copied = std::fs::read(&path).ok().is_some_and(|bytes| copy_png_image(&bytes));
-                                self.set_compact_screen_feedback("notice", if copied { "Image copied" } else { "Could not copy image" }, None, None, Some(std::time::Duration::from_millis(2300)));
+                                unsafe {
+                                    ShellExecuteW(
+                                        self.window,
+                                        operation.as_ptr(),
+                                        target.as_ptr(),
+                                        parameters.as_ptr(),
+                                        null(),
+                                        SW_SHOW,
+                                    );
+                                }
+                            } else if action == "copyImage"
+                                && path
+                                    .extension()
+                                    .is_some_and(|ext| ext.eq_ignore_ascii_case("png"))
+                            {
+                                let copied = std::fs::read(&path)
+                                    .ok()
+                                    .is_some_and(|bytes| copy_png_image(&bytes));
+                                self.set_compact_screen_feedback(
+                                    "notice",
+                                    if copied {
+                                        "Image copied"
+                                    } else {
+                                        "Could not copy image"
+                                    },
+                                    None,
+                                    None,
+                                    Some(std::time::Duration::from_millis(2300)),
+                                );
                             } else if action == "copyFile" {
                                 let copied = copy_file_to_clipboard(&path);
-                                self.set_compact_screen_feedback("notice", if copied { "Recording copied" } else { "Could not copy recording" }, None, None, Some(std::time::Duration::from_millis(2300)));
+                                self.set_compact_screen_feedback(
+                                    "notice",
+                                    if copied {
+                                        "Recording copied"
+                                    } else {
+                                        "Could not copy recording"
+                                    },
+                                    None,
+                                    None,
+                                    Some(std::time::Duration::from_millis(2300)),
+                                );
                             }
                         }
                     }
@@ -4214,7 +5390,8 @@ impl EdgeShell {
                         Err(_) => "Could not start file drag".to_owned(),
                     };
                     if let Some(view) = self.react_view.as_ref()
-                        && let Ok(encoded) = serde_json::to_string(&serde_json::json!({ "message": message }))
+                        && let Ok(encoded) =
+                            serde_json::to_string(&serde_json::json!({ "message": message }))
                     {
                         let _ = view.evaluate_script(&format!(
                             "window.islandSignatureDragResult?.({encoded});"
@@ -4255,7 +5432,8 @@ impl EdgeShell {
                         && text.len() <= 256 * 1024
                     {
                         self.note = text.to_owned();
-                        if let Some(folder) = self.notebook.folders.get_mut(self.notebook.selected) {
+                        if let Some(folder) = self.notebook.folders.get_mut(self.notebook.selected)
+                        {
                             folder.text = self.note.clone();
                         }
                         self.note_dirty = true;
@@ -4278,7 +5456,10 @@ impl EdgeShell {
                     if self.notebook.folders.len() < 16 {
                         let name = value["name"].as_str().unwrap_or("").trim();
                         if !name.is_empty() && name.len() <= 48 {
-                            self.notebook.folders.push(NoteFolder { name: name.to_owned(), text: String::new() });
+                            self.notebook.folders.push(NoteFolder {
+                                name: name.to_owned(),
+                                text: String::new(),
+                            });
                             self.notebook.selected = self.notebook.folders.len() - 1;
                             self.note.clear();
                             self.note_dirty = true;
@@ -4288,7 +5469,8 @@ impl EdgeShell {
                 }
                 "noteFolderSelect" => {
                     if let Some(index) = value["index"].as_u64().map(|value| value as usize)
-                        && index < self.notebook.folders.len() {
+                        && index < self.notebook.folders.len()
+                    {
                         self.save_note();
                         self.notebook.selected = index;
                         self.note = self.notebook.selected_text();
@@ -4300,7 +5482,9 @@ impl EdgeShell {
                     if let Some(index) = value["index"].as_u64().map(|value| value as usize)
                         && let Some(folder) = self.notebook.folders.get_mut(index)
                         && let Some(name) = value["name"].as_str().map(str::trim)
-                        && !name.is_empty() && name.len() <= 48 {
+                        && !name.is_empty()
+                        && name.len() <= 48
+                    {
                         folder.name = name.to_owned();
                         self.note_dirty = true;
                         self.save_note();
@@ -4308,12 +5492,16 @@ impl EdgeShell {
                 }
                 "noteFolderDelete" => {
                     if let Some(index) = value["index"].as_u64().map(|value| value as usize)
-                        && index < self.notebook.folders.len() && self.notebook.folders.len() > 1 {
+                        && index < self.notebook.folders.len()
+                        && self.notebook.folders.len() > 1
+                    {
                         self.save_note();
                         self.notebook.folders.remove(index);
                         self.notebook.selected = if self.notebook.selected > index {
                             self.notebook.selected - 1
-                        } else { self.notebook.selected.min(self.notebook.folders.len() - 1) };
+                        } else {
+                            self.notebook.selected.min(self.notebook.folders.len() - 1)
+                        };
                         self.note = self.notebook.selected_text();
                         self.note_dirty = true;
                         self.save_note();
@@ -4333,8 +5521,14 @@ impl EdgeShell {
                 "noteReminderClear" => {
                     self.notebook.reminder_at = None;
                     self.reminder_notified_at = None;
-                    self.compact_feedbacks.retain(|feedback| feedback.kind != "reminder");
-                    if self.compact_feedback_visible_id.is_some_and(|id| !self.compact_feedbacks.iter().any(|feedback| feedback.id == id)) {
+                    self.compact_feedbacks
+                        .retain(|feedback| feedback.kind != "reminder");
+                    if self.compact_feedback_visible_id.is_some_and(|id| {
+                        !self
+                            .compact_feedbacks
+                            .iter()
+                            .any(|feedback| feedback.id == id)
+                    }) {
                         self.compact_feedback_visible_id = None;
                     }
                     self.sync_compact_feedback_clocks();
@@ -4347,47 +5541,74 @@ impl EdgeShell {
                     if query.trim_start().starts_with('>') {
                         self.command_result = None;
                         self.command_error = Some("Island will not execute shell text. Open a terminal if you want to run this command.".to_owned());
-                    } else { match crate::commands::evaluate(query) {
-                        Ok(result) => {
-                            self.command_result = Some(result);
-                            self.command_error = None;
+                    } else {
+                        match crate::commands::evaluate(query) {
+                            Ok(result) => {
+                                self.command_result = Some(result);
+                                self.command_error = None;
+                            }
+                            Err(error) => {
+                                self.command_result = None;
+                                self.command_error = Some(error.user_message().to_owned());
+                            }
                         }
-                        Err(error) => {
-                            self.command_result = None;
-                            self.command_error = Some(error.user_message().to_owned());
-                        }
-                    } }
+                    }
                 }
                 "commandOpen" => self.start_command_app_scan(),
                 "commandAppSearch" => {
                     let query = value["query"].as_str().unwrap_or("");
-                    if query.len() <= 128 { self.update_command_app_results(query); }
+                    if query.len() <= 128 {
+                        self.update_command_app_results(query);
+                    }
                 }
                 "commandFileSearch" => {
                     let query = value["query"].as_str().unwrap_or("");
-                    if query.len() <= 128 { self.start_command_file_search(query); }
+                    if query.len() <= 128 {
+                        self.start_command_file_search(query);
+                    }
                 }
                 "commandFileOpen" => {
                     let path = value["path"].as_str().unwrap_or("");
-                    if let Some(file) = self.command_file_results.iter().find(|file| file.path == path) {
+                    if let Some(file) = self
+                        .command_file_results
+                        .iter()
+                        .find(|file| file.path == path)
+                    {
                         if file.launch().is_ok() {
                             self.command_result = Some(format!("Opening {}…", file.name));
                             self.command_error = None;
                         } else {
                             self.command_result = None;
-                            self.command_error = Some("Windows could not open that file. It may have moved.".to_owned());
+                            self.command_error = Some(
+                                "Windows could not open that file. It may have moved.".to_owned(),
+                            );
                         }
                     }
                 }
                 "commandAppLaunch" => {
-                    let name = value["name"].as_str().filter(|name| name.len() <= 128).unwrap_or("");
-                    let result = self.command_apps.iter()
+                    let name = value["name"]
+                        .as_str()
+                        .filter(|name| name.len() <= 128)
+                        .unwrap_or("");
+                    let result = self
+                        .command_apps
+                        .iter()
                         .find(|app| app.name.eq_ignore_ascii_case(name))
                         .map(crate::commands::AppEntry::launch);
                     match result {
-                        Some(Ok(())) => { self.command_result = Some(format!("Opening {name}…")); self.command_error = None; }
-                        Some(Err(error)) => { self.command_result = None; self.command_error = Some(error.user_message().to_owned()); }
-                        None => { self.command_result = None; self.command_error = Some("That Start Menu shortcut is no longer available.".to_owned()); }
+                        Some(Ok(())) => {
+                            self.command_result = Some(format!("Opening {name}…"));
+                            self.command_error = None;
+                        }
+                        Some(Err(error)) => {
+                            self.command_result = None;
+                            self.command_error = Some(error.user_message().to_owned());
+                        }
+                        None => {
+                            self.command_result = None;
+                            self.command_error =
+                                Some("That Start Menu shortcut is no longer available.".to_owned());
+                        }
                     }
                 }
                 "commandClear" => {
@@ -4395,9 +5616,13 @@ impl EdgeShell {
                     self.command_error = None;
                 }
                 "clipboardWriteText" => {
-                    if let Some(text) = value["value"].as_str().filter(|text| text.len() <= 64_000) {
+                    if let Some(text) = value["value"].as_str().filter(|text| text.len() <= 64_000)
+                    {
                         let _ = write_clipboard_text(text);
-                        if self.screen_clipboard_values.iter().any(|screen_value| screen_value.eq_ignore_ascii_case(text))
+                        if self
+                            .screen_clipboard_values
+                            .iter()
+                            .any(|screen_value| screen_value.eq_ignore_ascii_case(text))
                             || text.starts_with("rgb(")
                         {
                             self.screen_clipboard_values.insert(text.to_owned());
@@ -4406,18 +5631,28 @@ impl EdgeShell {
                     }
                 }
                 "screenToolStart" => {
-                    if let Some(mode) = value["mode"].as_str().and_then(crate::platform::windows::screen_overlay::Mode::parse) {
-                        let quality = value["quality"].as_str()
+                    if let Some(mode) = value["mode"]
+                        .as_str()
+                        .and_then(crate::platform::windows::screen_overlay::Mode::parse)
+                    {
+                        let quality = value["quality"]
+                            .as_str()
                             .map(crate::platform::windows::screen_overlay::RecordQuality::parse)
                             .unwrap_or_default();
-                        self.start_screen_overlay(mode, value["scope"].as_str() == Some("full"), quality);
+                        self.start_screen_overlay(
+                            mode,
+                            value["scope"].as_str() == Some("full"),
+                            quality,
+                        );
                     }
                     redraw = false;
                 }
                 "screenToolStop" => {
                     if let Some(stop) = &self.screen_recording_stop {
                         let _ = stop.send(());
-                        self.send_screen_tool_result(serde_json::json!({ "mode": "record", "recording": "stopping" }));
+                        self.send_screen_tool_result(
+                            serde_json::json!({ "mode": "record", "recording": "stopping" }),
+                        );
                     }
                     redraw = false;
                 }
@@ -4425,22 +5660,34 @@ impl EdgeShell {
                     let request_id = value["requestId"].as_u64().unwrap_or(0);
                     let image = value["image"].as_str().unwrap_or("");
                     let Some(encoded) = image.strip_prefix("data:image/jpeg;base64,") else {
-                        self.send_screen_ocr_result(request_id, Err("Invalid image data. Capture the area again.".into()));
+                        self.send_screen_ocr_result(
+                            request_id,
+                            Err("Invalid image data. Capture the area again.".into()),
+                        );
                         continue;
                     };
                     if request_id == 0 || encoded.len() > 7 * 1024 * 1024 {
-                        self.send_screen_ocr_result(request_id, Err("The captured image is too large. Select a smaller area.".into()));
+                        self.send_screen_ocr_result(
+                            request_id,
+                            Err("The captured image is too large. Select a smaller area.".into()),
+                        );
                         continue;
                     }
                     if self.screen_ocr_pending {
-                        self.send_screen_ocr_result(request_id, Err("OCR is already processing an image.".into()));
+                        self.send_screen_ocr_result(
+                            request_id,
+                            Err("OCR is already processing an image.".into()),
+                        );
                         continue;
                     }
                     use base64::Engine as _;
                     let bytes = match base64::engine::general_purpose::STANDARD.decode(encoded) {
                         Ok(bytes) if bytes.len() <= 6 * 1024 * 1024 => bytes,
                         _ => {
-                            self.send_screen_ocr_result(request_id, Err("The captured image is invalid or too large.".into()));
+                            self.send_screen_ocr_result(
+                                request_id,
+                                Err("The captured image is invalid or too large.".into()),
+                            );
                             continue;
                         }
                     };
@@ -4458,49 +5705,65 @@ impl EdgeShell {
                     let model = value["model"].as_str().unwrap_or("");
                     let language = value["language"].as_str().unwrap_or("");
                     let api_key = value["apiKey"].as_str().unwrap_or("");
-                    match self.speech_settings.save(base_url, model, language, api_key) {
+                    match self
+                        .speech_settings
+                        .save(base_url, model, language, api_key)
+                    {
                         Ok(settings) => {
                             self.speech_settings = settings;
-                            self.send_speech_settings_result(Ok(self.speech_settings.public_state()));
+                            self.send_speech_settings_result(Ok(self
+                                .speech_settings
+                                .public_state()));
                             self.push_react_state();
                         }
                         Err(error) => self.send_speech_settings_result(Err(error)),
                     }
                 }
-                "speechSettingsRemoveKey" => {
-                    match self.speech_settings.remove_key() {
-                        Ok(settings) => {
-                            self.speech_settings = settings;
-                            self.send_speech_settings_result(Ok(self.speech_settings.public_state()));
-                            self.push_react_state();
-                        }
-                        Err(error) => self.send_speech_settings_result(Err(error)),
+                "speechSettingsRemoveKey" => match self.speech_settings.remove_key() {
+                    Ok(settings) => {
+                        self.speech_settings = settings;
+                        self.send_speech_settings_result(Ok(self.speech_settings.public_state()));
+                        self.push_react_state();
                     }
-                }
+                    Err(error) => self.send_speech_settings_result(Err(error)),
+                },
                 "speechTranscribe" => {
                     let request_id = value["requestId"].as_u64().unwrap_or(0);
                     let audio = value["audio"].as_str().unwrap_or("");
-                    let (content_type, encoded) = if let Some(encoded) = audio.strip_prefix("data:audio/webm;base64,") {
-                        ("audio/webm", encoded)
-                    } else if let Some(encoded) = audio.strip_prefix("data:audio/mp4;base64,") {
-                        ("audio/mp4", encoded)
-                    } else {
-                        self.send_speech_result(request_id, Err("Island received an unsupported audio recording.".into()));
-                        continue;
-                    };
+                    let (content_type, encoded) =
+                        if let Some(encoded) = audio.strip_prefix("data:audio/webm;base64,") {
+                            ("audio/webm", encoded)
+                        } else if let Some(encoded) = audio.strip_prefix("data:audio/mp4;base64,") {
+                            ("audio/mp4", encoded)
+                        } else {
+                            self.send_speech_result(
+                                request_id,
+                                Err("Island received an unsupported audio recording.".into()),
+                            );
+                            continue;
+                        };
                     if request_id == 0 || encoded.len() > 7 * 1024 * 1024 {
-                        self.send_speech_result(request_id, Err("The recording is too large. Record a shorter clip.".into()));
+                        self.send_speech_result(
+                            request_id,
+                            Err("The recording is too large. Record a shorter clip.".into()),
+                        );
                         continue;
                     }
                     if self.speech_pending {
-                        self.send_speech_result(request_id, Err("A transcription is already in progress.".into()));
+                        self.send_speech_result(
+                            request_id,
+                            Err("A transcription is already in progress.".into()),
+                        );
                         continue;
                     }
                     use base64::Engine as _;
                     let bytes = match base64::engine::general_purpose::STANDARD.decode(encoded) {
                         Ok(bytes) if bytes.len() <= 5 * 1024 * 1024 => bytes,
                         _ => {
-                            self.send_speech_result(request_id, Err("The recording is invalid or too large.".into()));
+                            self.send_speech_result(
+                                request_id,
+                                Err("The recording is invalid or too large.".into()),
+                            );
                             continue;
                         }
                     };
@@ -4519,9 +5782,15 @@ impl EdgeShell {
                         let _ = paste_clipboard_text(text);
                     }
                 }
-                "mediaToggle" => { let _ = self.media_actions.send(MediaAction::Toggle); },
-                "mediaPrevious" => { let _ = self.media_actions.send(MediaAction::Previous); },
-                "mediaNext" => { let _ = self.media_actions.send(MediaAction::Next); },
+                "mediaToggle" => {
+                    let _ = self.media_actions.send(MediaAction::Toggle);
+                }
+                "mediaPrevious" => {
+                    let _ = self.media_actions.send(MediaAction::Previous);
+                }
+                "mediaNext" => {
+                    let _ = self.media_actions.send(MediaAction::Next);
+                }
                 "mediaSeek" => {
                     if let Some(position_ms) = value["positionMs"].as_u64() {
                         let _ = self.media_actions.send(MediaAction::SeekToMs(position_ms));
@@ -4534,18 +5803,32 @@ impl EdgeShell {
                 }
                 "outputVolume" => {
                     if let Some(level) = value["value"].as_u64().filter(|level| *level <= 100) {
-                        let _ = self.output_actions.try_send(AudioAction::SetVolume(level as u8));
+                        let _ = self
+                            .output_actions
+                            .try_send(AudioAction::SetVolume(level as u8));
                         self.output_volume = Some(level as u8);
                     }
                 }
                 "outputDevice" => {
-                    let id = value["id"].as_str().filter(|id| !id.is_empty()).map(str::to_owned);
+                    let id = value["id"]
+                        .as_str()
+                        .filter(|id| !id.is_empty())
+                        .map(str::to_owned);
                     let _ = self.output_actions.try_send(AudioAction::SelectDevice(id));
                 }
                 "soundSettings" => {
                     let target = wide("ms-settings:sound");
                     let operation = wide("open");
-                    unsafe { ShellExecuteW(self.window, operation.as_ptr(), target.as_ptr(), null(), null(), SW_SHOW) };
+                    unsafe {
+                        ShellExecuteW(
+                            self.window,
+                            operation.as_ptr(),
+                            target.as_ptr(),
+                            null(),
+                            null(),
+                            SW_SHOW,
+                        )
+                    };
                 }
                 "weatherCity" => {
                     if let Some(city) = value["value"].as_str()
@@ -4563,13 +5846,11 @@ impl EdgeShell {
                     }
                 }
                 "weatherRefresh" => self.refresh_weather_if_stale(),
-                "radioToggle" => {
-                    match value["radio"].as_str() {
-                        Some("wifi") => self.refresh_radios(Some(RadioToggle::Wifi)),
-                        Some("bluetooth") => self.refresh_radios(Some(RadioToggle::Bluetooth)),
-                        _ => {}
-                    }
-                }
+                "radioToggle" => match value["radio"].as_str() {
+                    Some("wifi") => self.refresh_radios(Some(RadioToggle::Wifi)),
+                    Some("bluetooth") => self.refresh_radios(Some(RadioToggle::Bluetooth)),
+                    _ => {}
+                },
                 "radioSettings" => {
                     let page = match value["radio"].as_str() {
                         Some("wifi") => "ms-settings:network-wifi",
@@ -4577,7 +5858,16 @@ impl EdgeShell {
                     };
                     let target = wide(page);
                     let operation = wide("open");
-                    unsafe { ShellExecuteW(self.window, operation.as_ptr(), target.as_ptr(), null(), null(), SW_SHOW) };
+                    unsafe {
+                        ShellExecuteW(
+                            self.window,
+                            operation.as_ptr(),
+                            target.as_ptr(),
+                            null(),
+                            null(),
+                            SW_SHOW,
+                        )
+                    };
                 }
                 "powerAction" => {
                     if let Some(action) = value["action"].as_str() {
@@ -4598,10 +5888,16 @@ impl EdgeShell {
                 "themeToggle" => {
                     let next_dark = !self.dark_theme;
                     let _ = self.set_dark_theme(next_dark);
-                    self.callbacks.dark_theme.store(next_dark, Ordering::Release);
+                    self.callbacks
+                        .dark_theme
+                        .store(next_dark, Ordering::Release);
                     thread::spawn(move || {
                         if let Ok(mut store) = crate::storage::SettingsStore::open_default() {
-                            let theme = if next_dark { crate::storage::StoredTheme::Dark } else { crate::storage::StoredTheme::Light };
+                            let theme = if next_dark {
+                                crate::storage::StoredTheme::Dark
+                            } else {
+                                crate::storage::StoredTheme::Light
+                            };
                             let _ = store.set_theme(theme);
                         }
                     });
@@ -4630,7 +5926,9 @@ impl EdgeShell {
     fn send_screen_ocr_result(&self, request_id: u64, result: Result<String, String>) {
         let payload = match result {
             Ok(text) => serde_json::json!({ "requestId": request_id, "mode": "ocr", "text": text }),
-            Err(error) => serde_json::json!({ "requestId": request_id, "mode": "ocr", "error": error }),
+            Err(error) => {
+                serde_json::json!({ "requestId": request_id, "mode": "ocr", "error": error })
+            }
         };
         if let Some(view) = &self.react_view {
             let _ = view.evaluate_script(&format!("window.islandScreenToolResult?.({payload}); window.islandScreenOcrResult?.({payload});"));
@@ -4643,8 +5941,12 @@ impl EdgeShell {
         full_screen: bool,
         quality: crate::platform::windows::screen_overlay::RecordQuality,
     ) {
-        if self.screen_overlay_active || self.pending_screen_overlay.is_some() { return; }
-        if !self.is_open() { self.remember_foreground(); }
+        if self.screen_overlay_active || self.pending_screen_overlay.is_some() {
+            return;
+        }
+        if !self.is_open() {
+            self.remember_foreground();
+        }
         let now = std::time::Instant::now();
         if self.reducer.snapshot().mode == ShellMode::Tucked {
             self.reducer.dispatch(ShellEvent::Untuck, now);
@@ -4652,8 +5954,12 @@ impl EdgeShell {
         self.reducer.dispatch(ShellEvent::Close, now);
         self.callbacks.is_open.store(false, Ordering::Release);
         self.callbacks.is_pinned.store(false, Ordering::Release);
-        self.callbacks.pointer_inside.store(false, Ordering::Release);
-        self.callbacks.pointer_poll_needed.store(false, Ordering::Release);
+        self.callbacks
+            .pointer_inside
+            .store(false, Ordering::Release);
+        self.callbacks
+            .pointer_poll_needed
+            .store(false, Ordering::Release);
         self.hover_intent_deadline = None;
         self.pending_screen_overlay = Some((mode, full_screen, quality));
         self.request_tick();
@@ -4665,18 +5971,28 @@ impl EdgeShell {
         full_screen: bool,
         quality: crate::platform::windows::screen_overlay::RecordQuality,
     ) {
-        let visible = |window: HWND| !window.is_null() && unsafe { windows_sys::Win32::UI::WindowsAndMessaging::IsWindowVisible(window) } != 0;
+        let visible = |window: HWND| {
+            !window.is_null()
+                && unsafe { windows_sys::Win32::UI::WindowsAndMessaging::IsWindowVisible(window) }
+                    != 0
+        };
         let mut hidden_windows = Vec::new();
-        if !self.drop_catcher.is_null() { hidden_windows.push((self.drop_catcher as isize, visible(self.drop_catcher))); }
+        if !self.drop_catcher.is_null() {
+            hidden_windows.push((self.drop_catcher as isize, visible(self.drop_catcher)));
+        }
         let desk = self.callbacks.desk_window.load(Ordering::Acquire);
-        if !desk.is_null() { hidden_windows.push((desk as isize, visible(desk))); }
+        if !desk.is_null() {
+            hidden_windows.push((desk as isize, visible(desk)));
+        }
         self.screen_overlay_active = true;
         let (kind, label) = match mode {
             crate::platform::windows::screen_overlay::Mode::Capture => ("capture", "Select area"),
             crate::platform::windows::screen_overlay::Mode::Ocr => ("ocr", "Select text"),
             crate::platform::windows::screen_overlay::Mode::Qr => ("qr", "Select QR code"),
             crate::platform::windows::screen_overlay::Mode::Color => ("color", "Pick color"),
-            crate::platform::windows::screen_overlay::Mode::Record => ("record", "Select recording area"),
+            crate::platform::windows::screen_overlay::Mode::Record => {
+                ("record", "Select recording area")
+            }
         };
         let already_processing = match mode {
             crate::platform::windows::screen_overlay::Mode::Ocr => self.screen_ocr_pending,
@@ -4713,7 +6029,11 @@ impl EdgeShell {
         if kind != "notice" {
             self.clear_compact_screen_activity(kind);
         }
-        let duration = if kind == "reminder" { Some(std::time::Duration::from_secs(15)) } else { duration };
+        let duration = if kind == "reminder" {
+            Some(std::time::Duration::from_secs(15))
+        } else {
+            duration
+        };
         self.enqueue_compact_feedback(kind, label.into(), copy_value, color, "result", duration)
     }
 
@@ -4723,12 +6043,18 @@ impl EdgeShell {
     }
 
     fn clear_compact_screen_activity(&mut self, kind: &'static str) {
-        let removed = self.compact_feedbacks.iter()
+        let removed = self
+            .compact_feedbacks
+            .iter()
             .filter(|feedback| feedback.phase == "active" && feedback.kind == kind)
             .map(|feedback| feedback.id)
             .collect::<Vec<_>>();
-        self.compact_feedbacks.retain(|feedback| !(feedback.phase == "active" && feedback.kind == kind));
-        if self.compact_feedback_visible_id.is_some_and(|id| removed.contains(&id)) {
+        self.compact_feedbacks
+            .retain(|feedback| !(feedback.phase == "active" && feedback.kind == kind));
+        if self
+            .compact_feedback_visible_id
+            .is_some_and(|id| removed.contains(&id))
+        {
             self.compact_feedback_visible_id = None;
         }
         if !removed.is_empty() {
@@ -4747,7 +6073,8 @@ impl EdgeShell {
     ) -> u64 {
         let now = std::time::Instant::now();
         self.status_label = label.clone();
-        if phase == "result" && kind != "reminder"
+        if phase == "result"
+            && kind != "reminder"
             && let Some(feedback) = self.compact_feedbacks.iter_mut().find(|feedback| {
                 feedback.phase == "result"
                     && feedback.kind == kind
@@ -4778,8 +6105,13 @@ impl EdgeShell {
         }
         let id = self.next_compact_feedback_id;
         self.next_compact_feedback_id = self.next_compact_feedback_id.wrapping_add(1).max(1);
-        let stale_remaining = if phase == "active" || kind == "reminder" { None } else { Some(COMPACT_FEEDBACK_MAX_WAIT) };
-        let clocks_paused = !self.compact_presentation_available() || self.compact_protected_work_active();
+        let stale_remaining = if phase == "active" || kind == "reminder" {
+            None
+        } else {
+            Some(COMPACT_FEEDBACK_MAX_WAIT)
+        };
+        let clocks_paused =
+            !self.compact_presentation_available() || self.compact_protected_work_active();
         self.compact_feedbacks.push(CompactScreenFeedback {
             id,
             label,
@@ -4790,7 +6122,11 @@ impl EdgeShell {
             file_path: None,
             display_duration,
             display_remaining: display_duration,
-            stale_at: if clocks_paused { None } else { stale_remaining.map(|remaining| now + remaining) },
+            stale_at: if clocks_paused {
+                None
+            } else {
+                stale_remaining.map(|remaining| now + remaining)
+            },
             stale_remaining: if clocks_paused { stale_remaining } else { None },
             next_visible_at: None,
             next_visible_remaining: None,
@@ -4799,13 +6135,21 @@ impl EdgeShell {
             repeat_count: 1,
         });
         loop {
-            let transient_count = self.compact_feedbacks.iter()
+            let transient_count = self
+                .compact_feedbacks
+                .iter()
                 .filter(|feedback| feedback.phase != "active" && feedback.kind != "reminder")
                 .count();
-            if transient_count <= COMPACT_FEEDBACK_CAPACITY { break; }
-            let Some(index) = self.compact_feedbacks.iter().position(|feedback|
-                feedback.phase != "active" && feedback.kind != "reminder" && Some(feedback.id) != self.compact_feedback_visible_id)
-            else { break; };
+            if transient_count <= COMPACT_FEEDBACK_CAPACITY {
+                break;
+            }
+            let Some(index) = self.compact_feedbacks.iter().position(|feedback| {
+                feedback.phase != "active"
+                    && feedback.kind != "reminder"
+                    && Some(feedback.id) != self.compact_feedback_visible_id
+            }) else {
+                break;
+            };
             self.compact_feedbacks.remove(index);
         }
         self.sync_compact_feedback_clocks();
@@ -4815,14 +6159,21 @@ impl EdgeShell {
     }
 
     fn set_compact_feedback_file_path(&mut self, id: u64, path: String) {
-        if let Some(feedback) = self.compact_feedbacks.iter_mut().find(|feedback| feedback.id == id) {
+        if let Some(feedback) = self
+            .compact_feedbacks
+            .iter_mut()
+            .find(|feedback| feedback.id == id)
+        {
             feedback.file_path = Some(path);
         }
     }
 
     fn compact_protected_work_active(&self) -> bool {
         self.screen_recording_stop.is_some()
-            || self.compact_feedbacks.iter().any(|feedback| feedback.phase == "active")
+            || self
+                .compact_feedbacks
+                .iter()
+                .any(|feedback| feedback.phase == "active")
     }
 
     fn compact_presentation_available(&self) -> bool {
@@ -4836,7 +6187,8 @@ impl EdgeShell {
     /// Results retain a bounded wait after they are displaced, rather than expiring invisibly.
     fn sync_compact_feedback_clocks(&mut self) {
         let now = std::time::Instant::now();
-        let clocks_paused = !self.compact_presentation_available() || self.compact_protected_work_active();
+        let clocks_paused =
+            !self.compact_presentation_available() || self.compact_protected_work_active();
         let selected_id = self.compact_feedback_visible_id;
         let status = self.compact_status_visible.as_str();
 
@@ -4899,14 +6251,22 @@ impl EdgeShell {
     }
 
     fn add_screen_clipboard_value(&mut self, text: &str) {
-        if text.is_empty() || text.len() > 64_000 { return; }
+        if text.is_empty() || text.len() > 64_000 {
+            return;
+        }
         self.screen_clipboard_values.insert(text.to_owned());
         self.add_clipboard_item(text);
     }
 
     fn add_clipboard_item(&mut self, text: &str) {
-        if text.is_empty() || text.len() > 64_000 { return; }
-        if self.clipboard_items.first().is_none_or(|first| first != text) {
+        if text.is_empty() || text.len() > 64_000 {
+            return;
+        }
+        if self
+            .clipboard_items
+            .first()
+            .is_none_or(|first| first != text)
+        {
             self.clipboard_items.retain(|item| item != text);
             self.clipboard_items.insert(0, text.to_owned());
             self.clipboard_items.truncate(self.clipboard_limit);
@@ -4919,27 +6279,56 @@ impl EdgeShell {
         while let Ok(event) = self.screen_overlay_receiver.try_recv() {
             use crate::platform::windows::screen_overlay::{Mode, ResultEvent};
             match event {
-                ResultEvent::Selected { mode: Mode::Capture, png, width, height, preview_png } => {
-                    match crate::platform::windows::screen_overlay::save_png(&png) {
-                        Ok(path) => {
-                            use base64::Engine as _;
-                            let preview = preview_png.map(|bytes| format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes)));
-                            let size_bytes = std::fs::metadata(&path).map(|metadata| metadata.len()).unwrap_or(0);
-                            self.send_screen_tool_result(serde_json::json!({ "mode": "capture", "path": path, "width": width, "height": height, "sizeBytes": size_bytes, "preview": preview }));
-                            let feedback_id = self.set_compact_screen_feedback("capture", "Screenshot saved", None, None, Some(std::time::Duration::from_millis(3500)));
-                            self.screen_overlay_feedback_kind = None;
-                            self.set_compact_feedback_file_path(feedback_id, path.clone());
-                            self.push_react_state();
-                        }
-                        Err(error) => {
-                            self.clear_compact_screen_activity("capture");
-                            self.screen_overlay_feedback_kind = None;
-                            self.set_compact_screen_feedback("notice", "Capture unavailable", None, None, Some(std::time::Duration::from_millis(2400)));
-                            self.send_screen_tool_result(serde_json::json!({ "mode": "capture", "error": error }));
-                        }
+                ResultEvent::Selected {
+                    mode: Mode::Capture,
+                    png,
+                    width,
+                    height,
+                    preview_png,
+                } => match crate::platform::windows::screen_overlay::save_png(&png) {
+                    Ok(path) => {
+                        use base64::Engine as _;
+                        let preview = preview_png.map(|bytes| {
+                            format!(
+                                "data:image/png;base64,{}",
+                                base64::engine::general_purpose::STANDARD.encode(bytes)
+                            )
+                        });
+                        let size_bytes = std::fs::metadata(&path)
+                            .map(|metadata| metadata.len())
+                            .unwrap_or(0);
+                        self.send_screen_tool_result(serde_json::json!({ "mode": "capture", "path": path, "width": width, "height": height, "sizeBytes": size_bytes, "preview": preview }));
+                        let feedback_id = self.set_compact_screen_feedback(
+                            "capture",
+                            "Screenshot saved",
+                            None,
+                            None,
+                            Some(std::time::Duration::from_millis(3500)),
+                        );
+                        self.screen_overlay_feedback_kind = None;
+                        self.set_compact_feedback_file_path(feedback_id, path.clone());
+                        self.push_react_state();
                     }
-                }
-                ResultEvent::Selected { mode: Mode::Ocr, png, .. } => {
+                    Err(error) => {
+                        self.clear_compact_screen_activity("capture");
+                        self.screen_overlay_feedback_kind = None;
+                        self.set_compact_screen_feedback(
+                            "notice",
+                            "Capture unavailable",
+                            None,
+                            None,
+                            Some(std::time::Duration::from_millis(2400)),
+                        );
+                        self.send_screen_tool_result(
+                            serde_json::json!({ "mode": "capture", "error": error }),
+                        );
+                    }
+                },
+                ResultEvent::Selected {
+                    mode: Mode::Ocr,
+                    png,
+                    ..
+                } => {
                     if self.screen_ocr_pending {
                         self.screen_overlay_feedback_kind = None;
                         self.send_screen_tool_result(serde_json::json!({ "mode": "ocr", "error": "OCR is already processing another selection." }));
@@ -4948,7 +6337,10 @@ impl EdgeShell {
                     self.set_compact_screen_activity("ocr", "Reading screen text…");
                     self.screen_overlay_feedback_kind = None;
                     self.screen_ocr_pending = true;
-                    let request_id = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64;
+                    let request_id = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as u64;
                     let sender = self.screen_ocr_sender.clone();
                     let window = self.window as usize;
                     thread::spawn(move || {
@@ -4956,12 +6348,24 @@ impl EdgeShell {
                         let _ = sender.try_send((request_id, result));
                         unsafe { PostMessageW(window as HWND, WM_APP_REACT, 0, 0) };
                     });
-                    self.send_screen_tool_result(serde_json::json!({ "mode": "ocr", "working": true }));
+                    self.send_screen_tool_result(
+                        serde_json::json!({ "mode": "ocr", "working": true }),
+                    );
                 }
-                ResultEvent::Selected { mode: Mode::Qr, png, .. } => {
+                ResultEvent::Selected {
+                    mode: Mode::Qr,
+                    png,
+                    ..
+                } => {
                     if self.screen_qr_pending {
                         self.screen_overlay_feedback_kind = None;
-                        self.set_compact_screen_feedback("notice", "QR scan already running", None, None, Some(std::time::Duration::from_millis(2200)));
+                        self.set_compact_screen_feedback(
+                            "notice",
+                            "QR scan already running",
+                            None,
+                            None,
+                            Some(std::time::Duration::from_millis(2200)),
+                        );
                         continue;
                     }
                     self.set_compact_screen_activity("qr", "Reading QR code…");
@@ -4975,35 +6379,66 @@ impl EdgeShell {
                         unsafe { PostMessageW(window as HWND, WM_APP_REACT, 0, 0) };
                     });
                 }
-                ResultEvent::Selected { mode: Mode::Color, .. } => {}
-                ResultEvent::Selected { mode: Mode::Record, .. } => {}
+                ResultEvent::Selected {
+                    mode: Mode::Color, ..
+                } => {}
+                ResultEvent::Selected {
+                    mode: Mode::Record, ..
+                } => {}
                 ResultEvent::Color { hex, rgb } => {
                     let _ = write_clipboard_text(&hex);
                     self.add_screen_clipboard_value(&hex);
                     let color = parse_hex_color(&hex);
-                    self.set_compact_screen_feedback("color", hex.clone(), Some(hex.clone()), color, Some(std::time::Duration::from_millis(2400)));
+                    self.set_compact_screen_feedback(
+                        "color",
+                        hex.clone(),
+                        Some(hex.clone()),
+                        color,
+                        Some(std::time::Duration::from_millis(2400)),
+                    );
                     self.screen_overlay_feedback_kind = None;
-                    self.send_screen_tool_result(serde_json::json!({ "mode": "color", "hex": hex, "rgb": rgb }));
+                    self.send_screen_tool_result(
+                        serde_json::json!({ "mode": "color", "hex": hex, "rgb": rgb }),
+                    );
                 }
-                ResultEvent::RecordingStarted { path, stop, start: _ } => {
+                ResultEvent::RecordingStarted {
+                    path,
+                    stop,
+                    start: _,
+                } => {
                     self.screen_recording_stop = Some(stop);
                     self.clear_compact_screen_activity("record");
                     self.screen_overlay_feedback_kind = None;
                     self.update_status_label();
                     let _ = self.apply_display_affinity();
                     self.hover_intent_deadline = None;
-                    self.reducer.dispatch(ShellEvent::Close, std::time::Instant::now());
+                    self.reducer
+                        .dispatch(ShellEvent::Close, std::time::Instant::now());
                     self.callbacks.is_open.store(false, Ordering::Release);
                     self.callbacks.is_pinned.store(false, Ordering::Release);
-                    self.callbacks.pointer_inside.store(false, Ordering::Release);
-                    self.send_screen_tool_result(serde_json::json!({ "mode": "record", "recording": true, "path": path }));
+                    self.callbacks
+                        .pointer_inside
+                        .store(false, Ordering::Release);
+                    self.send_screen_tool_result(
+                        serde_json::json!({ "mode": "record", "recording": true, "path": path }),
+                    );
                     self.push_react_state();
                 }
-                ResultEvent::Recorded { path, duration_ms, size_bytes } => {
+                ResultEvent::Recorded {
+                    path,
+                    duration_ms,
+                    size_bytes,
+                } => {
                     self.screen_recording_stop = None;
                     let _ = self.apply_display_affinity();
                     self.send_screen_tool_result(serde_json::json!({ "mode": "record", "path": path, "durationMs": duration_ms, "sizeBytes": size_bytes }));
-                    let feedback_id = self.set_compact_screen_feedback("record", "Recording saved", None, None, Some(std::time::Duration::from_millis(4000)));
+                    let feedback_id = self.set_compact_screen_feedback(
+                        "record",
+                        "Recording saved",
+                        None,
+                        None,
+                        Some(std::time::Duration::from_millis(4000)),
+                    );
                     self.set_compact_feedback_file_path(feedback_id, path.clone());
                     self.push_react_state();
                 }
@@ -5013,10 +6448,28 @@ impl EdgeShell {
                         let _ = self.apply_display_affinity();
                     }
                     if let Some(mode) = mode {
-                        let label = match mode { Mode::Ocr => "Text scan unavailable", Mode::Qr => "QR scan unavailable", Mode::Color => "Color picker unavailable", Mode::Capture => "Capture unavailable", Mode::Record => "Recording unavailable" };
-                        let kind = match mode { Mode::Ocr => "ocr", Mode::Qr => "qr", Mode::Color => "color", Mode::Capture => "capture", Mode::Record => "record" };
+                        let label = match mode {
+                            Mode::Ocr => "Text scan unavailable",
+                            Mode::Qr => "QR scan unavailable",
+                            Mode::Color => "Color picker unavailable",
+                            Mode::Capture => "Capture unavailable",
+                            Mode::Record => "Recording unavailable",
+                        };
+                        let kind = match mode {
+                            Mode::Ocr => "ocr",
+                            Mode::Qr => "qr",
+                            Mode::Color => "color",
+                            Mode::Capture => "capture",
+                            Mode::Record => "record",
+                        };
                         self.clear_compact_screen_activity(kind);
-                        self.set_compact_screen_feedback("notice", label, None, None, Some(std::time::Duration::from_millis(2400)));
+                        self.set_compact_screen_feedback(
+                            "notice",
+                            label,
+                            None,
+                            None,
+                            Some(std::time::Duration::from_millis(2400)),
+                        );
                     }
                     self.screen_overlay_feedback_kind = None;
                     self.send_screen_tool_result(serde_json::json!({ "mode": mode.map(|mode| match mode { Mode::Capture => "capture", Mode::Ocr => "ocr", Mode::Qr => "qr", Mode::Color => "color", Mode::Record => "record" }), "error": message }));
@@ -5040,7 +6493,8 @@ impl EdgeShell {
     fn send_screen_tool_result(&self, payload: serde_json::Value) {
         if let Some(view) = &self.react_view {
             if let Ok(encoded) = serde_json::to_string(&payload) {
-                let _ = view.evaluate_script(&format!("window.islandScreenToolResult?.({encoded});"));
+                let _ =
+                    view.evaluate_script(&format!("window.islandScreenToolResult?.({encoded});"));
             }
         }
     }
@@ -5053,7 +6507,11 @@ impl EdgeShell {
                     let text = text.trim();
                     let _ = write_clipboard_text(text);
                     self.add_screen_clipboard_value(text);
-                    let first_line = text.lines().map(str::trim).find(|line| !line.is_empty()).unwrap_or(text);
+                    let first_line = text
+                        .lines()
+                        .map(str::trim)
+                        .find(|line| !line.is_empty())
+                        .unwrap_or(text);
                     let mut chars = first_line.chars();
                     let snippet = chars.by_ref().take(26).collect::<String>();
                     let suffix = if chars.next().is_some() { "…" } else { "" };
@@ -5067,11 +6525,23 @@ impl EdgeShell {
                 }
                 Ok(_) => {
                     self.clear_compact_screen_activity("ocr");
-                    self.set_compact_screen_feedback("notice", "No text found", None, None, Some(std::time::Duration::from_millis(2200)));
+                    self.set_compact_screen_feedback(
+                        "notice",
+                        "No text found",
+                        None,
+                        None,
+                        Some(std::time::Duration::from_millis(2200)),
+                    );
                 }
                 Err(_) => {
                     self.clear_compact_screen_activity("ocr");
-                    self.set_compact_screen_feedback("notice", "Text scan failed", None, None, Some(std::time::Duration::from_millis(2200)));
+                    self.set_compact_screen_feedback(
+                        "notice",
+                        "Text scan failed",
+                        None,
+                        None,
+                        Some(std::time::Duration::from_millis(2200)),
+                    );
                 }
             }
             self.send_screen_ocr_result(request_id, result);
@@ -5087,15 +6557,33 @@ impl EdgeShell {
                     let _ = write_clipboard_text(&text);
                     self.add_screen_clipboard_value(&text);
                     let snippet: String = text.chars().take(28).collect();
-                    self.set_compact_screen_feedback("qr", snippet, Some(text), None, Some(std::time::Duration::from_millis(3200)));
+                    self.set_compact_screen_feedback(
+                        "qr",
+                        snippet,
+                        Some(text),
+                        None,
+                        Some(std::time::Duration::from_millis(3200)),
+                    );
                 }
                 Ok(None) => {
                     self.clear_compact_screen_activity("qr");
-                    self.set_compact_screen_feedback("notice", "No QR code in selection", None, None, Some(std::time::Duration::from_millis(2800)));
+                    self.set_compact_screen_feedback(
+                        "notice",
+                        "No QR code in selection",
+                        None,
+                        None,
+                        Some(std::time::Duration::from_millis(2800)),
+                    );
                 }
                 Err(_) => {
                     self.clear_compact_screen_activity("qr");
-                    self.set_compact_screen_feedback("notice", "QR scan failed", None, None, Some(std::time::Duration::from_millis(2800)));
+                    self.set_compact_screen_feedback(
+                        "notice",
+                        "QR scan failed",
+                        None,
+                        None,
+                        Some(std::time::Duration::from_millis(2800)),
+                    );
                 }
             }
         }
@@ -5107,7 +6595,8 @@ impl EdgeShell {
             Err(error) => serde_json::json!({ "error": error }),
         };
         if let Some(view) = &self.react_view {
-            let _ = view.evaluate_script(&format!("window.islandSpeechSettingsResult?.({payload});"));
+            let _ =
+                view.evaluate_script(&format!("window.islandSpeechSettingsResult?.({payload});"));
         }
     }
 
@@ -5139,7 +6628,12 @@ impl EdgeShell {
                     self.wake_word_error = None;
                 }
                 Event::Triggered { phrase } => {
-                    if self.observed_activity.as_ref().and_then(|activity| activity.privacy.as_ref()).is_some_and(|privacy| privacy.external_microphone_active) {
+                    if self
+                        .observed_activity
+                        .as_ref()
+                        .and_then(|activity| activity.privacy.as_ref())
+                        .is_some_and(|privacy| privacy.external_microphone_active)
+                    {
                         self.wake_word.disarm();
                         self.wake_word_status = "paused".into();
                         self.wake_mic_clear_samples = 0;
@@ -5158,7 +6652,7 @@ impl EdgeShell {
                         self.open_from_click();
                     }
                 }
-                Event::Off if self.wake_word_status == "paused" => {},
+                Event::Off if self.wake_word_status == "paused" => {}
                 Event::Off => {
                     self.wake_word_status = "off".into();
                     self.wake_word_error = None;
@@ -5172,15 +6666,17 @@ impl EdgeShell {
             self.wake_word_revision = self.wake_word_revision.wrapping_add(1);
             changed = true;
         }
-        if changed { self.push_react_state(); }
+        if changed {
+            self.push_react_state();
+        }
     }
 
     fn start_command_app_scan(&mut self) {
         if self.command_apps_loading
             || (self.command_apps_loaded
-                && self.command_apps_updated_at.is_some_and(|at| {
-                    at.elapsed() < std::time::Duration::from_secs(60)
-                }))
+                && self
+                    .command_apps_updated_at
+                    .is_some_and(|at| at.elapsed() < std::time::Duration::from_secs(60)))
         {
             return;
         }
@@ -5225,8 +6721,11 @@ impl EdgeShell {
     fn update_command_app_results(&mut self, query: &str) {
         self.command_app_query = query.to_owned();
         let needle = query.trim().to_lowercase();
-        let matches = if needle.is_empty() { Vec::new() } else {
-            self.command_apps.iter()
+        let matches = if needle.is_empty() {
+            Vec::new()
+        } else {
+            self.command_apps
+                .iter()
                 .filter(|app| app.name.to_lowercase().contains(&needle))
                 .take(8)
                 .map(|app| (app.name.clone(), app.icon_path().to_path_buf()))
@@ -5235,7 +6734,10 @@ impl EdgeShell {
         self.command_app_results = matches.iter().map(|(name, _)| name.clone()).collect();
         self.command_app_icons.clear();
         let icon_query = self.command_app_query.clone();
-        let generation = self.command_app_icon_generation.fetch_add(1, Ordering::Relaxed).wrapping_add(1);
+        let generation = self
+            .command_app_icon_generation
+            .fetch_add(1, Ordering::Relaxed)
+            .wrapping_add(1);
         let generation_counter = Arc::clone(&self.command_app_icon_generation);
         let icon_cache = Arc::clone(&self.command_icon_cache);
         let sender = self.command_app_icon_sender.clone();
@@ -5243,7 +6745,9 @@ impl EdgeShell {
         thread::spawn(move || {
             let mut icons = Vec::with_capacity(matches.len());
             for (name, path) in matches {
-                if generation_counter.load(Ordering::Relaxed) != generation { return; }
+                if generation_counter.load(Ordering::Relaxed) != generation {
+                    return;
+                }
                 icons.push((name, cached_command_icon_data_url(&icon_cache, &path)));
             }
             if generation_counter.load(Ordering::Relaxed) == generation {
@@ -5275,24 +6779,35 @@ impl EdgeShell {
         let icon_cache = Arc::clone(&self.command_icon_cache);
         let window = self.window as usize;
         thread::spawn(move || {
-            let results = crate::commands::search_files(&query).into_iter().map(|file| {
-                let path = std::path::PathBuf::from(&file.path);
-                let kind = shelf_item_kind(&path);
-                let icon = cached_command_icon_data_url(&icon_cache, &path);
-                CommandFileResult { name: file.name, path: file.path, kind, icon }
-            }).collect();
+            let results = crate::commands::search_files(&query)
+                .into_iter()
+                .map(|file| {
+                    let path = std::path::PathBuf::from(&file.path);
+                    let kind = shelf_item_kind(&path);
+                    let icon = cached_command_icon_data_url(&icon_cache, &path);
+                    CommandFileResult {
+                        name: file.name,
+                        path: file.path,
+                        kind,
+                        icon,
+                    }
+                })
+                .collect();
             let _ = sender.send((query, results));
             unsafe { PostMessageW(window as HWND, WM_APP_SHELL_TICK, 0, 0) };
         });
     }
 
     fn poll_command_file_search(&mut self) -> bool {
-        let Some(receiver) = self.command_file_receiver.as_ref() else { return false; };
+        let Some(receiver) = self.command_file_receiver.as_ref() else {
+            return false;
+        };
         match receiver.try_recv() {
             Ok((query, results)) => {
                 self.command_file_receiver = None;
-                if query == self.command_file_query { self.command_file_results = results; }
-                else if self.command_file_query.chars().count() >= 2 {
+                if query == self.command_file_query {
+                    self.command_file_results = results;
+                } else if self.command_file_query.chars().count() >= 2 {
                     let latest = self.command_file_query.clone();
                     self.start_command_file_search(&latest);
                 }
@@ -5403,11 +6918,14 @@ impl EdgeShell {
 
     fn set_expanded_body_width(&mut self, wide: bool) {
         self.wide_layout = wide;
-        if self.wake_surface { self.expanded_body_width = 480.0; return; }
+        if self.wake_surface {
+            self.expanded_body_width = 480.0;
+            return;
+        }
         let base = self.shape.expanded_body_width();
         let screen_limit = (f64::from(self.screen_width) / self.scale - 32.0).max(base);
-        self.expanded_body_width = (base + if wide { PROFILE_PANEL_EXTRA_WIDTH } else { 0.0 })
-            .min(screen_limit);
+        self.expanded_body_width =
+            (base + if wide { PROFILE_PANEL_EXTRA_WIDTH } else { 0.0 }).min(screen_limit);
     }
 
     fn set_focus_restore_target(&mut self, target: HWND) {
@@ -5424,11 +6942,20 @@ impl EdgeShell {
         self.fullscreen_poll_at = std::time::Instant::now();
         if !enabled {
             if self.reducer.snapshot().fullscreen {
-                self.reducer.dispatch(ShellEvent::FullscreenChanged(false), self.fullscreen_poll_at);
-                let media_playing = self.media.as_ref().is_some_and(|media| media.playing || media.sessions.iter().any(|session| session.playing));
-                let browser_foreground = self.foreground_app.as_ref().is_some_and(|app| app.kind == "browser");
+                self.reducer.dispatch(
+                    ShellEvent::FullscreenChanged(false),
+                    self.fullscreen_poll_at,
+                );
+                let media_playing = self.media.as_ref().is_some_and(|media| {
+                    media.playing || media.sessions.iter().any(|session| session.playing)
+                });
+                let browser_foreground = self
+                    .foreground_app
+                    .as_ref()
+                    .is_some_and(|app| app.kind == "browser");
                 if media_playing || browser_foreground {
-                    self.reducer.dispatch(ShellEvent::Tuck, self.fullscreen_poll_at);
+                    self.reducer
+                        .dispatch(ShellEvent::Tuck, self.fullscreen_poll_at);
                 }
             }
         }
@@ -5466,22 +6993,41 @@ impl EdgeShell {
         if now < self.fullscreen_poll_at {
             return;
         }
-        let browser_foreground = self.foreground_app.as_ref().is_some_and(|app| app.kind == "browser");
-        let browser_fullscreen = browser_foreground && self.foreground_app.as_ref().is_some_and(|app| app.fullscreen);
-        if !self.hide_in_fullscreen && !media_playing && !browser_fullscreen && !self.reducer.snapshot().fullscreen {
+        let browser_foreground = self
+            .foreground_app
+            .as_ref()
+            .is_some_and(|app| app.kind == "browser");
+        let browser_fullscreen = browser_foreground
+            && self
+                .foreground_app
+                .as_ref()
+                .is_some_and(|app| app.fullscreen);
+        if !self.hide_in_fullscreen
+            && !media_playing
+            && !browser_fullscreen
+            && !self.reducer.snapshot().fullscreen
+        {
             return;
         }
         let fullscreen = foreground_covers_primary(self.window);
         // Keep a small top-edge reveal target even while the overlay is hidden.
         let mut cursor = POINT::default();
         let reveal = unsafe { GetCursorPos(&mut cursor) } != 0
-            && cursor.x >= self.position.x && cursor.x < self.position.x + self.width
+            && cursor.x >= self.position.x
+            && cursor.x < self.position.x + self.width
             && cursor.y >= 0
-            && cursor.y < if self.fullscreen_hidden {
-                (f64::from(FOLDED_HEIGHT) * self.scale).ceil() as i32
-            } else { (self.position.y + self.height).max((f64::from(FOLDED_HEIGHT) * self.scale).ceil() as i32) };
-        let suppress = fullscreen && (self.hide_in_fullscreen || media_playing || browser_foreground) && !reveal;
-        self.reducer.dispatch(ShellEvent::FullscreenChanged(suppress), now);
+            && cursor.y
+                < if self.fullscreen_hidden {
+                    (f64::from(FOLDED_HEIGHT) * self.scale).ceil() as i32
+                } else {
+                    (self.position.y + self.height)
+                        .max((f64::from(FOLDED_HEIGHT) * self.scale).ceil() as i32)
+                };
+        let suppress = fullscreen
+            && (self.hide_in_fullscreen || media_playing || browser_foreground)
+            && !reveal;
+        self.reducer
+            .dispatch(ShellEvent::FullscreenChanged(suppress), now);
         if suppress {
             self.callbacks
                 .pointer_inside
@@ -5524,7 +7070,9 @@ impl EdgeShell {
                 ShellCommand::ShowCommand => {
                     self.page = ShellPage::Home;
                     self.open_from_click();
-                    if let Some(view) = &self.react_view { let _ = view.evaluate_script("window.islandOpenCommand?.();"); }
+                    if let Some(view) = &self.react_view {
+                        let _ = view.evaluate_script("window.islandOpenCommand?.();");
+                    }
                     self.push_react_state();
                     self.request_tick();
                     Ok(())
@@ -5534,7 +7082,9 @@ impl EdgeShell {
                     Ok(())
                 }
                 ShellCommand::DarkTheme(dark_theme) => self.set_dark_theme(dark_theme),
-                ShellCommand::ReducedMotion(reduced_motion) => self.set_reduced_motion(reduced_motion),
+                ShellCommand::ReducedMotion(reduced_motion) => {
+                    self.set_reduced_motion(reduced_motion)
+                }
             };
             if result.is_err() {
                 self.callbacks
@@ -5553,20 +7103,55 @@ impl EdgeShell {
         let mut next = ActivityIndicators::default();
         let mut lines = Vec::new();
         if self.privacy_indicator_enabled {
-            if let Some(privacy) = self.observed_activity.as_ref().and_then(|sample| sample.privacy.as_ref()) {
+            if let Some(privacy) = self
+                .observed_activity
+                .as_ref()
+                .and_then(|sample| sample.privacy.as_ref())
+            {
                 next.microphone_active = privacy.microphone_active();
                 next.camera_active = privacy.camera_active();
-                if next.microphone_active { lines.push(format!("Microphone · {}", privacy.microphone_apps.join(", "))); }
-                if next.camera_active { lines.push(format!("Camera · {}", privacy.camera_apps.join(", "))); }
+                if next.microphone_active {
+                    lines.push(format!(
+                        "Microphone · {}",
+                        privacy.microphone_apps.join(", ")
+                    ));
+                }
+                if next.camera_active {
+                    lines.push(format!("Camera · {}", privacy.camera_apps.join(", ")));
+                }
             }
         }
         next.agent_runs = [("opencode", &self.acp_opencode), ("codex", &self.acp_codex)]
-            .into_iter().flat_map(|(provider, snapshot)| snapshot.sessions.iter().filter(|session| session.active).map(move |session| AgentRun {
-                provider: provider.into(), source: "acp".into(), session_id: session.id.clone(),
-                label: session.title.clone(), status: "running".into(),
-            })).collect();
+            .into_iter()
+            .flat_map(|(provider, snapshot)| {
+                snapshot
+                    .sessions
+                    .iter()
+                    .filter(|session| session.active)
+                    .map(move |session| AgentRun {
+                        provider: provider.into(),
+                        source: "acp".into(),
+                        session_id: session.id.clone(),
+                        label: session.title.clone(),
+                        status: "running".into(),
+                    })
+            })
+            .collect();
         next.opencode_active_count = self.acp_opencode.active_count;
-        for run in &next.agent_runs { lines.insert(0, format!("{} · {}", if run.provider == "codex" { "Codex" } else { "OpenCode" }, run.label)); }
+        for run in &next.agent_runs {
+            lines.insert(
+                0,
+                format!(
+                    "{} · {}",
+                    if run.provider == "codex" {
+                        "Codex"
+                    } else {
+                        "OpenCode"
+                    },
+                    run.label
+                ),
+            );
+        }
         next.details = lines.join("\n");
         if self.activity == next {
             return Ok(());
@@ -5590,11 +7175,21 @@ impl EdgeShell {
                                 self.push_react_state();
                             }
                         } else if self.wake_word_status == "paused" {
-                            self.wake_mic_clear_samples = self.wake_mic_clear_samples.saturating_add(1);
+                            self.wake_mic_clear_samples =
+                                self.wake_mic_clear_samples.saturating_add(1);
                             if self.wake_mic_clear_samples >= 2 {
-                                match self.wake_word.arm(&self.wake_word_phrase, wake_sensitivity()) {
-                                    Ok(_) => { self.wake_word_status = "arming".into(); self.wake_word_error = None; }
-                                    Err(error) => { self.wake_word_status = "error".into(); self.wake_word_error = Some(error); }
+                                match self
+                                    .wake_word
+                                    .arm(&self.wake_word_phrase, wake_sensitivity())
+                                {
+                                    Ok(_) => {
+                                        self.wake_word_status = "arming".into();
+                                        self.wake_word_error = None;
+                                    }
+                                    Err(error) => {
+                                        self.wake_word_status = "error".into();
+                                        self.wake_word_error = Some(error);
+                                    }
                                 }
                                 self.push_react_state();
                             }
@@ -5604,7 +7199,7 @@ impl EdgeShell {
                     let _ = self.merge_activity();
                 }
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => self.activity_receiver = None,
-                Err(std::sync::mpsc::TryRecvError::Empty) => {},
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
             }
         }
         if self.activity_receiver.is_none() && now >= self.activity_poll_at {
@@ -5621,7 +7216,9 @@ impl EdgeShell {
     }
 
     fn poll_foreground_app(&mut self, now: std::time::Instant) {
-        if now < self.foreground_app_poll_at { return; }
+        if now < self.foreground_app_poll_at {
+            return;
+        }
         self.foreground_app_poll_at = now + std::time::Duration::from_millis(750);
         let next = foreground_app_snapshot(self.window, self.previous_foreground);
         if self.foreground_app != next {
@@ -5631,8 +7228,14 @@ impl EdgeShell {
     }
 
     fn refresh_radios(&mut self, toggle: Option<RadioToggle>) {
-        if self.radio_busy { return; }
-        if toggle.is_none() && self.radio_last_check.is_some_and(|at| at.elapsed() < std::time::Duration::from_secs(10)) {
+        if self.radio_busy {
+            return;
+        }
+        if toggle.is_none()
+            && self
+                .radio_last_check
+                .is_some_and(|at| at.elapsed() < std::time::Duration::from_secs(10))
+        {
             return;
         }
         self.radio_busy = true;
@@ -5660,7 +7263,9 @@ impl EdgeShell {
     }
 
     fn request_startup_state(&mut self, enabled: Option<bool>) {
-        if self.startup_pending { return; }
+        if self.startup_pending {
+            return;
+        }
         self.startup_pending = true;
         self.push_react_state();
         let sender = self.startup_sender.clone();
@@ -5669,7 +7274,8 @@ impl EdgeShell {
             let status = match enabled {
                 Some(enabled) => crate::platform::windows::startup::set_startup_task(enabled),
                 None => crate::platform::windows::startup::read_startup_task(),
-            }.unwrap_or_else(|error| error.status());
+            }
+            .unwrap_or_else(|error| error.status());
             let _ = sender.send(status);
             unsafe { PostMessageW(window as HWND, WM_APP_SHELL_TICK, 0, 0) };
         });
@@ -5692,7 +7298,9 @@ impl EdgeShell {
                 now.saturating_duration_since(started) >= REACT_COMPACT_RENDER_TIMEOUT
             });
         if compact_render_timed_out {
-            trace_drop(format_args!("react compact render acknowledgement timed out"));
+            trace_drop(format_args!(
+                "react compact render acknowledgement timed out"
+            ));
             self.pending_react_compact_render = None;
             self.pending_react_compact_since = None;
         }
@@ -5701,14 +7309,20 @@ impl EdgeShell {
         let mut reminder_snoozed = false;
         let mut reminder_reactivated = false;
         for feedback in &mut self.compact_feedbacks {
-            if feedback.kind == "reminder" && feedback.expires_at.is_some_and(|deadline| now >= deadline) {
+            if feedback.kind == "reminder"
+                && feedback.expires_at.is_some_and(|deadline| now >= deadline)
+            {
                 feedback.expires_at = None;
                 feedback.display_remaining = feedback.display_duration;
                 feedback.next_visible_at = Some(now + std::time::Duration::from_secs(90));
                 feedback.next_visible_remaining = None;
                 feedback.appeared_at = now;
                 reminder_snoozed = true;
-            } else if feedback.kind == "reminder" && feedback.next_visible_at.is_some_and(|deadline| now >= deadline) {
+            } else if feedback.kind == "reminder"
+                && feedback
+                    .next_visible_at
+                    .is_some_and(|deadline| now >= deadline)
+            {
                 feedback.next_visible_at = None;
                 feedback.next_visible_remaining = None;
                 feedback.appeared_at = now;
@@ -5720,8 +7334,16 @@ impl EdgeShell {
             feedback.expires_at.is_none_or(|deadline| now < deadline)
                 && feedback.stale_at.is_none_or(|deadline| now < deadline)
         });
-        if self.compact_feedbacks.len() != previous_feedback_count || reminder_snoozed || reminder_reactivated {
-            if self.compact_feedback_visible_id.is_some_and(|id| !self.compact_feedbacks.iter().any(|feedback| feedback.id == id)) {
+        if self.compact_feedbacks.len() != previous_feedback_count
+            || reminder_snoozed
+            || reminder_reactivated
+        {
+            if self.compact_feedback_visible_id.is_some_and(|id| {
+                !self
+                    .compact_feedbacks
+                    .iter()
+                    .any(|feedback| feedback.id == id)
+            }) {
                 self.compact_feedback_visible_id = None;
             }
             self.update_status_label();
@@ -5740,36 +7362,64 @@ impl EdgeShell {
         self.poll_activity(now);
         self.poll_foreground_app(now);
         let mut latest_opencode = None;
-        while let Ok(snapshot) = self.opencode_receiver.try_recv() { latest_opencode = Some(snapshot); }
+        while let Ok(snapshot) = self.opencode_receiver.try_recv() {
+            latest_opencode = Some(snapshot);
+        }
         if let Some(snapshot) = latest_opencode {
-            let reconnect_acp = self.opencode.installing && !snapshot.installing && snapshot.notice.contains("Connecting");
-            let changed = serde_json::to_string(&snapshot).ok() != serde_json::to_string(&self.opencode).ok();
+            let reconnect_acp = self.opencode.installing
+                && !snapshot.installing
+                && snapshot.notice.contains("Connecting");
+            let changed =
+                serde_json::to_string(&snapshot).ok() != serde_json::to_string(&self.opencode).ok();
             self.opencode = snapshot;
-            if reconnect_acp { let _ = self.acp_opencode_actions.send(crate::agent_acp::Action::Connect); }
-            if changed { let _ = self.merge_activity(); self.push_react_state(); }
+            if reconnect_acp {
+                let _ = self
+                    .acp_opencode_actions
+                    .send(crate::agent_acp::Action::Connect);
+            }
+            if changed {
+                let _ = self.merge_activity();
+                self.push_react_state();
+            }
         }
         let mut latest_acp_opencode = None;
-        while let Ok(snapshot) = self.acp_opencode_receiver.try_recv() { latest_acp_opencode = Some(snapshot); }
+        while let Ok(snapshot) = self.acp_opencode_receiver.try_recv() {
+            latest_acp_opencode = Some(snapshot);
+        }
         if let Some(snapshot) = latest_acp_opencode {
             let previous_activity = self.activity.clone();
             self.acp_opencode = snapshot;
             let _ = self.merge_activity();
-            if self.activity == previous_activity { self.push_react_state(); }
+            if self.activity == previous_activity {
+                self.push_react_state();
+            }
         }
         let mut latest_acp_codex = None;
-        while let Ok(snapshot) = self.acp_codex_receiver.try_recv() { latest_acp_codex = Some(snapshot); }
+        while let Ok(snapshot) = self.acp_codex_receiver.try_recv() {
+            latest_acp_codex = Some(snapshot);
+        }
         if let Some(snapshot) = latest_acp_codex {
             let previous_activity = self.activity.clone();
             self.acp_codex = snapshot;
             let _ = self.merge_activity();
-            if self.activity == previous_activity { self.push_react_state(); }
+            if self.activity == previous_activity {
+                self.push_react_state();
+            }
         }
-        if self.converter.poll() { self.push_react_state(); }
+        if self.converter.poll() {
+            self.push_react_state();
+        }
         let conversion_paths = {
-            let mut pending = self.callbacks.pending_conversion_drops.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            let mut pending = self
+                .callbacks
+                .pending_conversion_drops
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             std::mem::take(&mut *pending)
         };
-        if !conversion_paths.is_empty() { self.open_conversion(conversion_paths, true); }
+        if !conversion_paths.is_empty() {
+            self.open_conversion(conversion_paths, true);
+        }
         let dropped_paths = {
             let mut pending = self
                 .callbacks
@@ -5782,11 +7432,16 @@ impl EdgeShell {
             self.accept_dropped_paths(dropped_paths);
         }
         let mut latest_media = None;
-        while let Ok(snapshot) = self.media_receiver.try_recv() { latest_media = Some(snapshot); }
+        while let Ok(snapshot) = self.media_receiver.try_recv() {
+            latest_media = Some(snapshot);
+        }
         if let Some(snapshot) = latest_media {
             if self.media != snapshot {
                 self.media = snapshot;
-                self.media_playing.store(self.media.as_ref().is_some_and(|media| media.playing), Ordering::Relaxed);
+                self.media_playing.store(
+                    self.media.as_ref().is_some_and(|media| media.playing),
+                    Ordering::Relaxed,
+                );
                 if self.update_status_label() {
                     self.render_frame()?;
                 }
@@ -5808,7 +7463,9 @@ impl EdgeShell {
             self.push_react_state();
         }
         let mut latest_output = None;
-        while let Ok(snapshot) = self.output_receiver.try_recv() { latest_output = Some(snapshot); }
+        while let Ok(snapshot) = self.output_receiver.try_recv() {
+            latest_output = Some(snapshot);
+        }
         if let Some(snapshot) = latest_output {
             let peak_changed = self.output_peak != snapshot.peak;
             let controls_changed = self.output_volume != snapshot.volume
@@ -5827,8 +7484,14 @@ impl EdgeShell {
                 if controls_changed || (!self.react_compact_visible && !self.react_visible) {
                     self.render_frame()?;
                 }
-                if peak_changed && self.react_compact_visible && let Some(view) = &self.react_view {
-                    let _ = view.evaluate_script(&format!("document.documentElement.style.setProperty('--audio-height','{}px');", 3.0 + f64::from(self.output_peak) * 0.14));
+                if peak_changed
+                    && self.react_compact_visible
+                    && let Some(view) = &self.react_view
+                {
+                    let _ = view.evaluate_script(&format!(
+                        "document.documentElement.style.setProperty('--audio-height','{}px');",
+                        3.0 + f64::from(self.output_peak) * 0.14
+                    ));
                 }
             }
         }
@@ -5838,9 +7501,13 @@ impl EdgeShell {
             self.push_react_state();
         }
         let selector_busy = self.selector_busy();
-        if !selector_busy { self.poll_fullscreen(now); }
-        let compact_hit_area = matches!(self.reducer.snapshot().mode,
-            ShellMode::Tucked | ShellMode::Resting | ShellMode::HoverPending);
+        if !selector_busy {
+            self.poll_fullscreen(now);
+        }
+        let compact_hit_area = matches!(
+            self.reducer.snapshot().mode,
+            ShellMode::Tucked | ShellMode::Resting | ShellMode::HoverPending
+        );
         if !selector_busy && compact_hit_area {
             let mut cursor = POINT::default();
             if unsafe { GetCursorPos(&mut cursor) } != 0
@@ -5851,10 +7518,17 @@ impl EdgeShell {
             {
                 self.callbacks.pointer_inside.store(true, Ordering::Release);
             } else {
-                self.callbacks.pointer_inside.store(false, Ordering::Release);
+                self.callbacks
+                    .pointer_inside
+                    .store(false, Ordering::Release);
             }
         }
-        if !selector_busy && !compact_hit_area && (self.callbacks.pointer_poll_needed.load(Ordering::Acquire) || self.react_visible || self.react_compact_visible) {
+        if !selector_busy
+            && !compact_hit_area
+            && (self.callbacks.pointer_poll_needed.load(Ordering::Acquire)
+                || self.react_visible
+                || self.react_compact_visible)
+        {
             let mut point = POINT::default();
             if unsafe { GetCursorPos(&mut point) } != 0 {
                 let under = unsafe { WindowFromPoint(point) };
@@ -5892,14 +7566,25 @@ impl EdgeShell {
         if self.pending_screen_overlay.is_some() {
             next = next.min(self.frame_interval);
         }
-        let feedback_deadline = self.compact_feedbacks.iter()
-            .flat_map(|feedback| [feedback.expires_at, feedback.stale_at, feedback.next_visible_at])
+        let feedback_deadline = self
+            .compact_feedbacks
+            .iter()
+            .flat_map(|feedback| {
+                [
+                    feedback.expires_at,
+                    feedback.stale_at,
+                    feedback.next_visible_at,
+                ]
+            })
             .flatten()
             .min();
         if let Some(deadline) = feedback_deadline {
             next = next.min(deadline.saturating_duration_since(std::time::Instant::now()));
         }
-        if let Some(deadline) = self.selected_compact_feedback().and_then(|feedback| feedback.expires_at) {
+        if let Some(deadline) = self
+            .selected_compact_feedback()
+            .and_then(|feedback| feedback.expires_at)
+        {
             if let Some(fade_start) = deadline.checked_sub(SCREEN_FEEDBACK_EXIT)
                 && now < fade_start
             {
@@ -5907,16 +7592,31 @@ impl EdgeShell {
             }
         }
         let selector_busy = self.selector_busy();
-        if !selector_busy && (self.callbacks.pointer_poll_needed.load(Ordering::Acquire) || self.react_visible || self.react_compact_visible) {
-            next = next.min(if self.react_compact_visible { std::time::Duration::from_millis(32) } else { pointer_poll_interval(self.refresh_period) });
+        if !selector_busy
+            && (self.callbacks.pointer_poll_needed.load(Ordering::Acquire)
+                || self.react_visible
+                || self.react_compact_visible)
+        {
+            next = next.min(if self.react_compact_visible {
+                std::time::Duration::from_millis(32)
+            } else {
+                pointer_poll_interval(self.refresh_period)
+            });
         }
         if !selector_busy && self.reducer.snapshot().mode == ShellMode::Tucked {
             next = next.min(pointer_poll_interval(self.refresh_period));
         }
-        if !selector_busy && (self.hide_in_fullscreen
-            || self.media.as_ref().is_some_and(|media| media.playing || media.sessions.iter().any(|session| session.playing))
-            || self.foreground_app.as_ref().is_some_and(|app| app.kind == "browser" && app.fullscreen)
-            || self.reducer.snapshot().fullscreen) {
+        if !selector_busy
+            && (self.hide_in_fullscreen
+                || self.media.as_ref().is_some_and(|media| {
+                    media.playing || media.sessions.iter().any(|session| session.playing)
+                })
+                || self
+                    .foreground_app
+                    .as_ref()
+                    .is_some_and(|app| app.kind == "browser" && app.fullscreen)
+                || self.reducer.snapshot().fullscreen)
+        {
             next = next.min(FULLSCREEN_POLL_INTERVAL);
         }
         next = next.min(self.foreground_app_poll_at.saturating_duration_since(now));
@@ -5965,20 +7665,28 @@ impl EdgeShell {
 
     fn handle_outside_click(&mut self) {
         if self.wake_surface {
-            if let Some(view) = &self.react_view { let _ = view.evaluate_script("window.dispatchEvent(new Event('island:voice-dismiss'));"); }
+            if let Some(view) = &self.react_view {
+                let _ = view
+                    .evaluate_script("window.dispatchEvent(new Event('island:voice-dismiss'));");
+            }
             self.wake_surface = false;
             self.wake_closing = true;
-            self.reducer.dispatch(ShellEvent::Close, std::time::Instant::now());
+            self.reducer
+                .dispatch(ShellEvent::Close, std::time::Instant::now());
             self.push_react_state();
             self.request_tick();
             return;
         }
-        if !self.click_to_open || !self.close_on_outside_click || !self.is_open()
-            || self.reducer.snapshot().mode == ShellMode::Pinned || self.selector_busy()
+        if !self.click_to_open
+            || !self.close_on_outside_click
+            || !self.is_open()
+            || self.reducer.snapshot().mode == ShellMode::Pinned
+            || self.selector_busy()
         {
             return;
         }
-        self.reducer.dispatch(ShellEvent::Close, std::time::Instant::now());
+        self.reducer
+            .dispatch(ShellEvent::Close, std::time::Instant::now());
         self.request_tick();
     }
     fn save_note(&mut self) {
@@ -6005,10 +7713,16 @@ impl EdgeShell {
         if self.weather_city.trim().is_empty() || self.weather_receiver.is_some() {
             return;
         }
-        if self.weather_updated_at.is_some_and(|at| unix_seconds().saturating_sub(at) < 15 * 60) {
+        if self
+            .weather_updated_at
+            .is_some_and(|at| unix_seconds().saturating_sub(at) < 15 * 60)
+        {
             return;
         }
-        if self.weather_last_attempt.is_some_and(|at| at.elapsed() < std::time::Duration::from_secs(2 * 60)) {
+        if self
+            .weather_last_attempt
+            .is_some_and(|at| at.elapsed() < std::time::Duration::from_secs(2 * 60))
+        {
             return;
         }
         self.start_weather_request();
@@ -6026,12 +7740,14 @@ impl EdgeShell {
         self.weather_last_attempt = Some(std::time::Instant::now());
         self.weather_error = None;
         let units = self.weather_units;
-        let cached_place = self.weather_data.as_ref().and_then(|data| Some((
-            data["latitude"].as_f64()?,
-            data["longitude"].as_f64()?,
-            data["location"].as_str()?.to_owned(),
-            data["country"].as_str().unwrap_or("").to_owned(),
-        )));
+        let cached_place = self.weather_data.as_ref().and_then(|data| {
+            Some((
+                data["latitude"].as_f64()?,
+                data["longitude"].as_f64()?,
+                data["location"].as_str()?.to_owned(),
+                data["country"].as_str().unwrap_or("").to_owned(),
+            ))
+        });
         let (sender, receiver) = sync_channel(1);
         self.weather_receiver = Some(receiver);
         if self.weather_data.is_none() {
@@ -6057,13 +7773,25 @@ impl EdgeShell {
         let show_feedback = !self.selector_busy()
             && !self.screen_clipboard_values.contains(&text)
             && !self.callbacks.is_open.load(Ordering::Acquire);
-        let preview = text.lines().find(|line| !line.trim().is_empty()).unwrap_or(&text)
-            .trim().chars().take(42).collect::<String>();
+        let preview = text
+            .lines()
+            .find(|line| !line.trim().is_empty())
+            .unwrap_or(&text)
+            .trim()
+            .chars()
+            .take(42)
+            .collect::<String>();
         self.clipboard_items.insert(0, text);
         self.clipboard_items.truncate(self.clipboard_limit);
         if show_feedback {
             let copy = self.clipboard_items.first().cloned();
-            self.set_compact_screen_feedback("copy", preview, copy, None, Some(std::time::Duration::from_millis(2100)));
+            self.set_compact_screen_feedback(
+                "copy",
+                preview,
+                copy,
+                None,
+                Some(std::time::Duration::from_millis(2100)),
+            );
         }
         if self.page == ShellPage::Clipboard || self.page == ShellPage::Home {
             self.redraw_page();
@@ -6116,12 +7844,19 @@ impl EdgeShell {
             let copied =
                 unsafe { DragQueryFileW(drop, index, buffer.as_mut_ptr(), buffer.len() as u32) }
                     as usize;
-            paths.push(std::path::PathBuf::from(String::from_utf16_lossy(&buffer[..copied])));
+            paths.push(std::path::PathBuf::from(String::from_utf16_lossy(
+                &buffer[..copied],
+            )));
         }
         unsafe { DragFinish(drop) };
         let mut point = POINT::default();
-        unsafe { GetCursorPos(&mut point); }
-        self.callbacks.drop_convertible.store(paths.iter().all(|p| crate::conversion::could_convert(p)), Ordering::Release);
+        unsafe {
+            GetCursorPos(&mut point);
+        }
+        self.callbacks.drop_convertible.store(
+            paths.iter().all(|p| crate::conversion::could_convert(p)),
+            Ordering::Release,
+        );
         match resolve_drop_intent(&self.callbacks, point.x, point.y, true) {
             1 => self.open_conversion(paths, true),
             2 => self.accept_dropped_paths(paths),
@@ -6134,14 +7869,21 @@ impl EdgeShell {
         if from_drop {
             self.drop_handoff_sequence = self.drop_handoff_sequence.wrapping_add(1).max(1);
         }
-        self.callbacks.shelf_drag_hover_hint.store(false, Ordering::Release);
+        self.callbacks
+            .shelf_drag_hover_hint
+            .store(false, Ordering::Release);
         self.callbacks.drop_intent.store(0, Ordering::Release);
         self.shelf_drop_transition_at = Some(std::time::Instant::now());
         self.drop_open_hold_until = Some(std::time::Instant::now() + DROP_HANDOFF_DURATION);
         self.page = ShellPage::Convert;
-        if !self.is_open() { self.reducer.dispatch(ShellEvent::Open, std::time::Instant::now()); }
+        if !self.is_open() {
+            self.reducer
+                .dispatch(ShellEvent::Open, std::time::Instant::now());
+        }
         self.last_pointer_inside = true;
-        self.callbacks.is_open.store(self.is_open(), Ordering::Release);
+        self.callbacks
+            .is_open
+            .store(self.is_open(), Ordering::Release);
         self.redraw_page();
         self.push_react_state();
     }
@@ -6169,14 +7911,19 @@ impl EdgeShell {
             let icon_sender = self.shelf_icon_sender.clone();
             thread::spawn(move || {
                 for (index, path) in added {
-                    if icon_sender.send((generation, index, shelf_item_visual_data_url(&path))).is_err() {
+                    if icon_sender
+                        .send((generation, index, shelf_item_visual_data_url(&path)))
+                        .is_err()
+                    {
                         break;
                     }
                 }
             });
         }
         save_shelf_paths(&self.shelf_items);
-        self.callbacks.shelf_drag_hover_hint.store(false, Ordering::Release);
+        self.callbacks
+            .shelf_drag_hover_hint
+            .store(false, Ordering::Release);
         self.callbacks.drop_intent.store(0, Ordering::Release);
         self.shelf_drop_transition_at = Some(std::time::Instant::now());
         self.drop_open_hold_until = Some(std::time::Instant::now() + DROP_HANDOFF_DURATION);
@@ -6195,8 +7942,15 @@ impl EdgeShell {
 
     fn refresh_missing_shelf_icons(&self) {
         let generation = self.shelf_generation;
-        let missing: Vec<_> = self.shelf_items.iter().enumerate()
-            .filter(|(index, _)| self.shelf_icon_data.get(*index).map_or(true, Option::is_none))
+        let missing: Vec<_> = self
+            .shelf_items
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| {
+                self.shelf_icon_data
+                    .get(*index)
+                    .map_or(true, Option::is_none)
+            })
             .map(|(index, path)| (index, path.clone()))
             .collect();
         if missing.is_empty() {
@@ -6205,7 +7959,10 @@ impl EdgeShell {
         let sender = self.shelf_icon_sender.clone();
         thread::spawn(move || {
             for (index, path) in missing {
-                if sender.send((generation, index, shelf_item_visual_data_url(&path))).is_err() {
+                if sender
+                    .send((generation, index, shelf_item_visual_data_url(&path)))
+                    .is_err()
+                {
                     break;
                 }
             }
@@ -6244,14 +8001,30 @@ impl EdgeShell {
     }
 
     fn update_status_label(&mut self) -> bool {
-        if self.screen_feedback_active() { return false; }
-        let status = if self.notebook.reminder_at.is_some_and(|at| at <= unix_seconds()) {
+        if self.screen_feedback_active() {
+            return false;
+        }
+        let status = if self
+            .notebook
+            .reminder_at
+            .is_some_and(|at| at <= unix_seconds())
+        {
             "Reminder due".to_owned()
         } else {
-            self.activity.label().or_else(|| self.media.as_ref()
-                .filter(|media| media.playing)
-                .map(|media| format!("♫ {}", bounded_shell_line(&media.title, 30))))
-                .unwrap_or_else(|| current_status_label(self.clock_indicator_enabled, self.battery_indicator_enabled))
+            self.activity
+                .label()
+                .or_else(|| {
+                    self.media
+                        .as_ref()
+                        .filter(|media| media.playing)
+                        .map(|media| format!("♫ {}", bounded_shell_line(&media.title, 30)))
+                })
+                .unwrap_or_else(|| {
+                    current_status_label(
+                        self.clock_indicator_enabled,
+                        self.battery_indicator_enabled,
+                    )
+                })
         };
         if self.status_label == status {
             return false;
@@ -6313,35 +8086,49 @@ impl EdgeShell {
     ) -> Result<Option<std::time::Duration>, String> {
         let was_tucked = self.reducer.snapshot().mode == ShellMode::Tucked;
         let selector_pending = self.pending_screen_overlay.is_some();
-        let hover_suppressed = selector_pending || self.screen_feedback_active()
+        let hover_suppressed = selector_pending
+            || self.screen_feedback_active()
             || (self.react_compact_visible && self.compact_feedback_selected());
-        let pointer_inside = !hover_suppressed && self.callbacks.pointer_inside.load(Ordering::Acquire);
+        let pointer_inside =
+            !hover_suppressed && self.callbacks.pointer_inside.load(Ordering::Acquire);
         let media_playing = self.media.as_ref().is_some_and(|media| {
             media.playing || media.sessions.iter().any(|session| session.playing)
         });
-        let browser_foreground = self.foreground_app.as_ref().is_some_and(|app| app.kind == "browser");
+        let browser_foreground = self
+            .foreground_app
+            .as_ref()
+            .is_some_and(|app| app.kind == "browser");
         let auto_tucked = (browser_foreground || media_playing)
             && !hover_suppressed
             && self.screen_recording_stop.is_none()
             && !self.callbacks.shelf_drag_active.load(Ordering::Acquire)
             && !self.callbacks.shelf_drag_hover_hint.load(Ordering::Acquire);
         if auto_tucked && !pointer_inside && self.reducer.snapshot().mode == ShellMode::Resting {
-            let leave_delay = if self.compact_context_tools > 0 { 700 } else { 350 };
-            let deadline = *self.auto_tuck_deadline.get_or_insert(now + std::time::Duration::from_millis(leave_delay));
+            let leave_delay = if self.compact_context_tools > 0 {
+                700
+            } else {
+                350
+            };
+            let deadline = *self
+                .auto_tuck_deadline
+                .get_or_insert(now + std::time::Duration::from_millis(leave_delay));
             if now >= deadline {
                 self.reducer.dispatch(ShellEvent::Tuck, now);
                 self.hover_intent_deadline = None;
                 self.auto_tuck_deadline = None;
                 self.compact_context_tools = 0;
             }
-        } else if self.reducer.snapshot().mode == ShellMode::Tucked && (!auto_tucked || pointer_inside) {
+        } else if self.reducer.snapshot().mode == ShellMode::Tucked
+            && (!auto_tucked || pointer_inside)
+        {
             self.auto_tuck_deadline = None;
             self.reducer.dispatch(ShellEvent::Untuck, now);
         } else {
             self.auto_tuck_deadline = None;
         }
-        let drag_active = !hover_suppressed && (self.callbacks.shelf_drag_active.load(Ordering::Acquire)
-            || self.callbacks.shelf_drag_hover_hint.load(Ordering::Acquire));
+        let drag_active = !hover_suppressed
+            && (self.callbacks.shelf_drag_active.load(Ordering::Acquire)
+                || self.callbacks.shelf_drag_hover_hint.load(Ordering::Acquire));
         let drag_active = drag_active && !self.fullscreen_hidden;
         let react_drop_active = self.callbacks.shelf_drag_active.load(Ordering::Acquire);
         let react_drop_intent = self.callbacks.drop_intent.load(Ordering::Acquire);
@@ -6352,8 +8139,13 @@ impl EdgeShell {
             self.last_react_drop_intent = react_drop_intent;
             self.push_react_state();
         }
-        let drop_open_hold_active = self.drop_open_hold_until.is_some_and(|deadline| now < deadline);
-        if self.drop_open_hold_until.is_some_and(|deadline| now >= deadline) {
+        let drop_open_hold_active = self
+            .drop_open_hold_until
+            .is_some_and(|deadline| now < deadline);
+        if self
+            .drop_open_hold_until
+            .is_some_and(|deadline| now >= deadline)
+        {
             self.drop_open_hold_until = None;
         }
         if drag_active {
@@ -6397,7 +8189,9 @@ impl EdgeShell {
                 }
             }
         }
-        if self.last_shelf_drag_active && !drag_active && pointer_inside
+        if self.last_shelf_drag_active
+            && !drag_active
+            && pointer_inside
             && !self.click_to_open
             && self.reducer.snapshot().mode == ShellMode::Resting
             && !self.fullscreen_hidden
@@ -6407,7 +8201,8 @@ impl EdgeShell {
             self.hover_intent_deadline = Some(now + HOVER_INTENT_DWELL);
         }
         self.last_shelf_drag_active = drag_active;
-        if !drag_active && !self.click_to_open
+        if !drag_active
+            && !self.click_to_open
             && let Some(deadline) = self.hover_intent_deadline
             && now >= deadline
         {
@@ -6470,7 +8265,10 @@ impl EdgeShell {
         let mut snapped = false;
         let mut retargeted = false;
         if target != self.animation_target {
-            trace_drop(format_args!("shell target height={:.0} light={}", target.1, !self.dark_theme));
+            trace_drop(format_args!(
+                "shell target height={:.0} light={}",
+                target.1, !self.dark_theme
+            ));
             if self.wants_expanded_without_exit()
                 && self.animation_target.1 <= f64::from(FOLDED_HEIGHT) + 1.0
                 && target.1 > f64::from(FOLDED_HEIGHT) + 1.0
@@ -6487,7 +8285,8 @@ impl EdgeShell {
                 let already_expanded = matches!(
                     self.reducer.snapshot().mode,
                     ShellMode::Expanded | ShellMode::Pinned | ShellMode::TextEntry
-                ) && self.animation_target.1 >= f64::from(FOLDED_HEIGHT) + 1.0;
+                ) && self.animation_target.1
+                    >= f64::from(FOLDED_HEIGHT) + 1.0;
                 let compact_change = target.1 <= f64::from(FOLDED_HEIGHT) + 1.0
                     && self.animation_target.1 <= f64::from(FOLDED_HEIGHT) + 1.0;
                 let spring = if compact_change {
@@ -6501,8 +8300,10 @@ impl EdgeShell {
                 } else {
                     SHELL_COLLAPSE_SPRING
                 };
-                self.width_motion.retarget_without_reversal(target.0, spring);
-                self.height_motion.retarget_without_reversal(target.1, spring);
+                self.width_motion
+                    .retarget_without_reversal(target.0, spring);
+                self.height_motion
+                    .retarget_without_reversal(target.1, spring);
             }
             self.animation_target = target;
             // Ignore idle time (including the hover delay) when beginning a
@@ -6522,21 +8323,41 @@ impl EdgeShell {
         let width_animating = self.width_motion.advance(elapsed);
         let height_animating = self.height_motion.advance(elapsed);
         let previous_tuck = self.tuck_motion.value();
-        let tuck_target = if self.reducer.snapshot().mode == ShellMode::Tucked { 1.0 } else { 0.0 };
-        if self.reduced_motion { self.tuck_motion.snap_to(tuck_target); }
-        else { self.tuck_motion.retarget_without_reversal(tuck_target, COMPACT_STATUS_SPRING); }
+        let tuck_target = if self.reducer.snapshot().mode == ShellMode::Tucked {
+            1.0
+        } else {
+            0.0
+        };
+        if self.reduced_motion {
+            self.tuck_motion.snap_to(tuck_target);
+        } else {
+            self.tuck_motion
+                .retarget_without_reversal(tuck_target, COMPACT_STATUS_SPRING);
+        }
         let tuck_elapsed = if was_tucked != (self.reducer.snapshot().mode == ShellMode::Tucked) {
             std::time::Duration::ZERO
-        } else { elapsed };
+        } else {
+            elapsed
+        };
         let tuck_animating = self.tuck_motion.advance(tuck_elapsed);
-        let drop_target = match self.callbacks.drop_intent.load(Ordering::Acquire) { 1 => -1.0, 2 => 1.0, _ => 0.0 };
-        if self.reduced_motion { self.drop_motion.snap_to(drop_target); }
-        else { self.drop_motion.retarget_without_reversal(drop_target, IN_PLACE_LAYOUT_SPRING); }
+        let drop_target = match self.callbacks.drop_intent.load(Ordering::Acquire) {
+            1 => -1.0,
+            2 => 1.0,
+            _ => 0.0,
+        };
+        if self.reduced_motion {
+            self.drop_motion.snap_to(drop_target);
+        } else {
+            self.drop_motion
+                .retarget_without_reversal(drop_target, IN_PLACE_LAYOUT_SPRING);
+        }
         let drop_animating = self.drop_motion.advance(elapsed);
         let feedback_animating = self.screen_feedback_animation(now).1;
-        let live_compact_animation = !self.reduced_motion && !self.screen_feedback_active()
+        let live_compact_animation = !self.reduced_motion
+            && !self.screen_feedback_active()
             && self.reducer.snapshot().mode == ShellMode::Resting
-            && self.opencode.active_count > 0 && !self.react_compact_visible
+            && self.opencode.active_count > 0
+            && !self.react_compact_visible
             && !self.media.as_ref().is_some_and(|media| media.playing);
         // Reconcile a completed compact handoff even on a tick with no size
         // change. Visibility must not depend on another animation frame.
@@ -6560,7 +8381,12 @@ impl EdgeShell {
         {
             self.render_frame()?;
         }
-        if width_animating || height_animating || tuck_animating || feedback_animating || drop_animating {
+        if width_animating
+            || height_animating
+            || tuck_animating
+            || feedback_animating
+            || drop_animating
+        {
             return Ok(Some(self.frame_interval));
         }
         if live_compact_animation {
@@ -6587,16 +8413,24 @@ impl EdgeShell {
         let hover_intent_delay = self
             .hover_intent_deadline
             .map(|deadline| deadline.saturating_duration_since(now));
-        let drop_open_hold_delay = self.drop_open_hold_until
+        let drop_open_hold_delay = self
+            .drop_open_hold_until
             .map(|deadline| deadline.saturating_duration_since(now));
-        Ok([timer_delay, exit_delay, hover_intent_delay, drop_open_hold_delay]
-            .into_iter()
-            .flatten()
-            .min())
+        Ok([
+            timer_delay,
+            exit_delay,
+            hover_intent_delay,
+            drop_open_hold_delay,
+        ]
+        .into_iter()
+        .flatten()
+        .min())
     }
 
     fn wants_expanded_without_exit(&self) -> bool {
-        if self.wake_surface { return true; }
+        if self.wake_surface {
+            return true;
+        }
         let mode = self.reducer.snapshot().mode;
         let folded_width = self.folded_target_width();
         let remain_expanded_while_closing =
@@ -6608,30 +8442,51 @@ impl EdgeShell {
     }
 
     fn folded_target_width(&self) -> f64 {
-        let privacy_width = 20.0 * f64::from(
-            u8::from(self.activity.microphone_active) + u8::from(self.activity.camera_active));
-        if self.click_to_open && self.compact_context_tools > 0
+        let privacy_width = 20.0
+            * f64::from(
+                u8::from(self.activity.microphone_active) + u8::from(self.activity.camera_active),
+            );
+        if self.click_to_open
+            && self.compact_context_tools > 0
             && matches!(self.compact_status_visible.as_str(), "idle" | "media")
         {
             // Five fixed icon targets, an app label, and an independent privacy lane.
-            let context_width = 110.0 + self.compact_context_tools as f64 * 27.0
-                + if privacy_width > 0.0 { privacy_width + 20.0 } else { 0.0 };
-            let idle_width = self.measure_text(&self.status_label)
-                .map(|size| f64::from(size.cx) / self.scale).unwrap_or_default();
-            return self.shape.folded_body_width()
+            let context_width = 110.0
+                + self.compact_context_tools as f64 * 27.0
+                + if privacy_width > 0.0 {
+                    privacy_width + 20.0
+                } else {
+                    0.0
+                };
+            let idle_width = self
+                .measure_text(&self.status_label)
+                .map(|size| f64::from(size.cx) / self.scale)
+                .unwrap_or_default();
+            return self
+                .shape
+                .folded_body_width()
                 .max((idle_width + privacy_width + 58.0).min(420.0))
                 .max(context_width);
         }
         if self.compact_feedback_selected() {
-            let detail_width = self.selected_compact_feedback()
+            let detail_width = self
+                .selected_compact_feedback()
                 .and_then(|feedback| self.measure_text(&feedback.label).ok())
-                .map(|size| f64::from(size.cx) / self.scale).unwrap_or(0.0);
-            return self.shape.folded_body_width().max((detail_width + 122.0 + privacy_width).clamp(260.0, 380.0));
+                .map(|size| f64::from(size.cx) / self.scale)
+                .unwrap_or(0.0);
+            return self
+                .shape
+                .folded_body_width()
+                .max((detail_width + 122.0 + privacy_width).clamp(260.0, 380.0));
         }
-        if self.compact_status_visible == "media" && self.media.as_ref().is_some_and(|media| media.playing) {
+        if self.compact_status_visible == "media"
+            && self.media.as_ref().is_some_and(|media| media.playing)
+        {
             return self.shape.folded_body_width().max(286.0 + privacy_width);
         }
-        if self.compact_status_visible == "agent" && self.acp_opencode.active_count + self.acp_codex.active_count > 0 {
+        if self.compact_status_visible == "agent"
+            && self.acp_opencode.active_count + self.acp_codex.active_count > 0
+        {
             return self.shape.folded_body_width().max(234.0 + privacy_width);
         }
         if self.compact_status_visible == "agent-approval" {
@@ -6643,10 +8498,13 @@ impl EdgeShell {
         if self.compact_status_visible == "weather" {
             return self.shape.folded_body_width().max(205.0 + privacy_width);
         }
-        let text_width = self.measure_text(&self.status_label)
+        let text_width = self
+            .measure_text(&self.status_label)
             .map(|size| f64::from(size.cx) / self.scale)
             .unwrap_or_default();
-        self.shape.folded_body_width().max((text_width + privacy_width + 58.0).min(420.0))
+        self.shape
+            .folded_body_width()
+            .max((text_width + privacy_width + 58.0).min(420.0))
     }
 
     fn initial_home_expanded_body_height(&self) -> f64 {
@@ -6660,7 +8518,8 @@ impl EdgeShell {
 
     fn expanded_layout_height(&self) -> f64 {
         if self.settings_layout_open {
-            self.settings_layout_height.unwrap_or(self.expanded_body_height)
+            self.settings_layout_height
+                .unwrap_or(self.expanded_body_height)
         } else {
             self.expanded_body_height
         }
@@ -6673,9 +8532,7 @@ impl EdgeShell {
             && self.reducer.snapshot().mode == ShellMode::Resting
         {
             (
-                self.shape
-                    .folded_body_width()
-                    .max(SHELF_PEEK_SIZE.0),
+                self.shape.folded_body_width().max(SHELF_PEEK_SIZE.0),
                 SHELF_PEEK_SIZE.1,
             )
         } else if self.wants_expanded_without_exit()
@@ -6707,11 +8564,17 @@ impl EdgeShell {
             ShellPage::Weather => self.refresh_weather_if_stale(),
             ShellPage::Controls => self.refresh_radios(None),
             ShellPage::Agents | ShellPage::Ask => {
-                let _ = self.opencode_actions.send(crate::opencode_control::Action::Refresh);
+                let _ = self
+                    .opencode_actions
+                    .send(crate::opencode_control::Action::Refresh);
             }
             // These pages are native snapshots, so pushing below supplies the
             // newest state before React content is revealed.
-            ShellPage::Clipboard | ShellPage::Shelf | ShellPage::Convert | ShellPage::Text | ShellPage::Note => {}
+            ShellPage::Clipboard
+            | ShellPage::Shelf
+            | ShellPage::Convert
+            | ShellPage::Text
+            | ShellPage::Note => {}
         }
         self.push_react_state();
     }
@@ -6721,7 +8584,9 @@ impl EdgeShell {
             "reminder" => feedback.kind == "reminder",
             "notification" => feedback.kind == "notice" && feedback.phase != "active",
             "tool-active" => feedback.phase == "active" && feedback.kind != "record",
-            "tool-result" => !["reminder", "notice"].contains(&feedback.kind) && feedback.phase != "active",
+            "tool-result" => {
+                !["reminder", "notice"].contains(&feedback.kind) && feedback.phase != "active"
+            }
             _ => false,
         }
     }
@@ -6731,10 +8596,13 @@ impl EdgeShell {
         let valid = |feedback: &&CompactScreenFeedback| {
             feedback.expires_at.is_none_or(|deadline| now < deadline)
                 && feedback.stale_at.is_none_or(|deadline| now < deadline)
-                && feedback.next_visible_at.is_none_or(|deadline| now >= deadline)
+                && feedback
+                    .next_visible_at
+                    .is_none_or(|deadline| now >= deadline)
                 && Self::feedback_matches_compact_status(feedback, &self.compact_status_visible)
         };
-        self.compact_feedbacks.iter()
+        self.compact_feedbacks
+            .iter()
             .find(|feedback| Some(feedback.id) == self.compact_feedback_visible_id)
             .filter(valid)
             .or_else(|| self.compact_feedbacks.iter().find(valid))
@@ -6757,8 +8625,12 @@ impl EdgeShell {
     }
 
     fn screen_feedback_animation(&self, now: std::time::Instant) -> (f64, bool) {
-        if self.reduced_motion { return (1.0, false); }
-        let Some(feedback) = self.selected_compact_feedback() else { return (1.0, false); };
+        if self.reduced_motion {
+            return (1.0, false);
+        }
+        let Some(feedback) = self.selected_compact_feedback() else {
+            return (1.0, false);
+        };
         let smoothstep = |value: f64| {
             let value = value.clamp(0.0, 1.0);
             value * value * (3.0 - 2.0 * value)
@@ -6768,7 +8640,10 @@ impl EdgeShell {
         let enter = smoothstep(enter_age.as_secs_f64() / SCREEN_FEEDBACK_ENTER.as_secs_f64());
         let (exit, exiting) = feedback.expires_at.map_or((1.0, false), |deadline| {
             let remaining = deadline.saturating_duration_since(now);
-            (smoothstep(remaining.as_secs_f64() / SCREEN_FEEDBACK_EXIT.as_secs_f64()), remaining < SCREEN_FEEDBACK_EXIT)
+            (
+                smoothstep(remaining.as_secs_f64() / SCREEN_FEEDBACK_EXIT.as_secs_f64()),
+                remaining < SCREEN_FEEDBACK_EXIT,
+            )
         });
         (enter * exit, entering || exiting)
     }
@@ -6785,7 +8660,17 @@ impl EdgeShell {
         {
             self.reminder_notified_at = Some(at);
             let preview: String = self.note.trim().chars().take(32).collect();
-            self.set_compact_screen_feedback("reminder", if preview.is_empty() { "Your note is due".to_owned() } else { preview }, None, None, Some(std::time::Duration::from_secs(7)));
+            self.set_compact_screen_feedback(
+                "reminder",
+                if preview.is_empty() {
+                    "Your note is due".to_owned()
+                } else {
+                    preview
+                },
+                None,
+                None,
+                Some(std::time::Duration::from_secs(7)),
+            );
         }
         let needs_refresh = self.clock_indicator_enabled || self.battery_indicator_enabled;
         let mut now = SYSTEMTIME::default();
@@ -6811,20 +8696,35 @@ impl EdgeShell {
             };
             format!("{hour}:{:02}", now.wMinute)
         });
-        let status = if self.notebook.reminder_at.is_some_and(|at| at <= unix_seconds()) {
+        let status = if self
+            .notebook
+            .reminder_at
+            .is_some_and(|at| at <= unix_seconds())
+        {
             "Reminder due".to_owned()
         } else {
-            self.activity.label().or_else(|| self.media.as_ref()
-                .filter(|media| media.playing)
-                .map(|media| format!("♫ {}", bounded_shell_line(&media.title, 30))))
-                .unwrap_or_else(|| current_status_label_from_clock(clock, self.battery_indicator_enabled))
+            self.activity
+                .label()
+                .or_else(|| {
+                    self.media
+                        .as_ref()
+                        .filter(|media| media.playing)
+                        .map(|media| format!("♫ {}", bounded_shell_line(&media.title, 30)))
+                })
+                .unwrap_or_else(|| {
+                    current_status_label_from_clock(clock, self.battery_indicator_enabled)
+                })
         };
         if !self.screen_feedback_active() {
             let changed = self.status_label != status;
-            if changed { self.status_label = status; }
+            if changed {
+                self.status_label = status;
+            }
             if changed || self.battery_indicator_enabled {
                 self.render_frame()?;
-                if self.react_compact_visible { self.push_react_state(); }
+                if self.react_compact_visible {
+                    self.push_react_state();
+                }
             }
         }
         self.clock_refresh_at = instant_now + next_update;
@@ -6836,14 +8736,15 @@ impl EdgeShell {
             return Ok(());
         }
         let render_started = std::time::Instant::now();
-        let body_width = self.width_motion.value().clamp(
-            self.folded_target_width(),
-            self.expanded_body_width,
-        );
+        let body_width = self
+            .width_motion
+            .value()
+            .clamp(self.folded_target_width(), self.expanded_body_width);
         // Both edges move together. Alternating odd/even HWND widths shifts
         // the integer-positioned window's center by half a pixel each frame.
         let body_width = f64::from(centered_pixel_width(
-            body_width * self.scale, self.screen_width,
+            body_width * self.scale,
+            self.screen_width,
         )) / self.scale;
         let body_height = self
             .height_motion
@@ -6863,7 +8764,8 @@ impl EdgeShell {
         self.position.x = centered_pixel_origin(self.screen_width, self.width);
         // Move the entire silhouette beyond the screen edge: leaving a few
         // pixels exposed produced a bright seam before the next reveal.
-        self.position.y = -((self.height + 2) as f64 * self.tuck_motion.value().clamp(0.0, 1.0)).round() as i32;
+        self.position.y =
+            -((self.height + 2) as f64 * self.tuck_motion.value().clamp(0.0, 1.0)).round() as i32;
         self.layout = layout;
         let width = width as usize;
         let height = height as usize;
@@ -6906,7 +8808,7 @@ impl EdgeShell {
             && self.reducer.snapshot().mode == ShellMode::Resting;
         let peek_progress = ((body_height - f64::from(FOLDED_HEIGHT))
             / (SHELF_PEEK_SIZE.1 - f64::from(FOLDED_HEIGHT)))
-            .clamp(0.0, 1.0);
+        .clamp(0.0, 1.0);
         if shelf_drop_target {
             let opacity = peek_progress * peek_progress * (3.0 - 2.0 * peek_progress);
             let scale = self.scale;
@@ -6915,10 +8817,19 @@ impl EdgeShell {
             let card_height = (58.0 * scale).round() as i32;
             let gap = (4.0 * scale).round() as i32;
             let center_y = body_top
-                + ((body_height.min(SHELF_PEEK_SIZE.1) * scale - f64::from(card_height)) / 2.0).max(0.0);
+                + ((body_height.min(SHELF_PEEK_SIZE.1) * scale - f64::from(card_height)) / 2.0)
+                    .max(0.0);
             let press = self.drop_motion.value();
-            let convert_y = if self.reduced_motion { 0.0 } else { ((-press).max(0.0) * 5.0 - press.max(0.0) * 2.0) * scale };
-            let shelf_y = if self.reduced_motion { 0.0 } else { (press.max(0.0) * 5.0 - (-press).max(0.0) * 2.0) * scale };
+            let convert_y = if self.reduced_motion {
+                0.0
+            } else {
+                ((-press).max(0.0) * 5.0 - press.max(0.0) * 2.0) * scale
+            };
+            let shelf_y = if self.reduced_motion {
+                0.0
+            } else {
+                (press.max(0.0) * 5.0 - (-press).max(0.0) * 2.0) * scale
+            };
             let intent = self.callbacks.drop_intent.load(Ordering::Acquire);
             let convert_enabled = self.callbacks.drop_convertible.load(Ordering::Acquire);
             let shelf_enabled = self.modules.shelf;
@@ -6932,7 +8843,11 @@ impl EdgeShell {
                 card_width * 2 + gap + (8.0 * scale).round() as i32,
                 card_height + (8.0 * scale).round() as i32,
                 (32.0 * scale).round() as i32,
-                if self.dark_theme { (24, 25, 29) } else { (236, 238, 243) },
+                if self.dark_theme {
+                    (24, 25, 29)
+                } else {
+                    (236, 238, 243)
+                },
                 opacity,
             );
             self.draw_native_drop_target(
@@ -6941,7 +8856,11 @@ impl EdgeShell {
                 card_width,
                 card_height,
                 "Convert",
-                if convert_enabled { "Resize · format" } else { "Files only" },
+                if convert_enabled {
+                    "Resize · format"
+                } else {
+                    "Files only"
+                },
                 intent == 1,
                 convert_enabled,
                 opacity,
@@ -6990,7 +8909,8 @@ impl EdgeShell {
             }
             let body_top = (f64::from(self.shape.top_gap()) * self.scale).round() as usize;
             let center_x = width / 2;
-            let folded_text_half_width = (self.folded_target_width() * self.scale / 2.0).ceil() as usize;
+            let folded_text_half_width =
+                (self.folded_target_width() * self.scale / 2.0).ceil() as usize;
             restore_opaque_alpha_rect(
                 pixels,
                 &self.alpha,
@@ -7128,7 +9048,9 @@ impl EdgeShell {
         color: (u8, u8, u8),
         opacity: f64,
     ) {
-        if width <= 0 || height <= 0 || opacity <= 0.0 { return; }
+        if width <= 0 || height <= 0 || opacity <= 0.0 {
+            return;
+        }
         let color = self.blend_status_color(color, opacity);
         let (region, brush): (HRGN, HBRUSH) = unsafe {
             (
@@ -7138,8 +9060,12 @@ impl EdgeShell {
         };
         if region.is_null() || brush.is_null() {
             unsafe {
-                if !region.is_null() { DeleteObject(region as HGDIOBJ); }
-                if !brush.is_null() { DeleteObject(brush as HGDIOBJ); }
+                if !region.is_null() {
+                    DeleteObject(region as HGDIOBJ);
+                }
+                if !brush.is_null() {
+                    DeleteObject(brush as HGDIOBJ);
+                }
             }
             return;
         }
@@ -7167,20 +9093,50 @@ impl EdgeShell {
         let (accent, _) = self.native_drop_accent();
         if selected {
             self.fill_native_round_rect(
-                x, y, width, height,
+                x,
+                y,
+                width,
+                height,
                 (26.0 * self.scale).round() as i32,
-                if self.dark_theme { (37, 43, 47) } else { (218, 230, 236) },
+                if self.dark_theme {
+                    (37, 43, 47)
+                } else {
+                    (218, 230, 236)
+                },
                 opacity,
             );
         }
-        let title_color = if !enabled { (130, 133, 140) }
-            else if selected { accent }
-            else if self.dark_theme { (246, 247, 250) }
-            else { (35, 39, 48) };
-        let detail_color = if self.dark_theme { (158, 162, 171) } else { (96, 101, 111) };
+        let title_color = if !enabled {
+            (130, 133, 140)
+        } else if selected {
+            accent
+        } else if self.dark_theme {
+            (246, 247, 250)
+        } else {
+            (35, 39, 48)
+        };
+        let detail_color = if self.dark_theme {
+            (158, 162, 171)
+        } else {
+            (96, 101, 111)
+        };
         let center_x = x + width / 2;
-        let _ = self.draw_text_color_opacity(title, center_x, y + (10.0 * self.scale).round() as i32, TA_CENTER, title_color, opacity);
-        let _ = self.draw_text_color_opacity(detail, center_x, y + (32.0 * self.scale).round() as i32, TA_CENTER, detail_color, opacity * 0.84);
+        let _ = self.draw_text_color_opacity(
+            title,
+            center_x,
+            y + (10.0 * self.scale).round() as i32,
+            TA_CENTER,
+            title_color,
+            opacity,
+        );
+        let _ = self.draw_text_color_opacity(
+            detail,
+            center_x,
+            y + (32.0 * self.scale).round() as i32,
+            TA_CENTER,
+            detail_color,
+            opacity * 0.84,
+        );
     }
 
     fn draw_text_color_opacity(
@@ -7210,7 +9166,6 @@ impl EdgeShell {
         }
         Ok(())
     }
-
 }
 
 impl Drop for EdgeShell {
@@ -7219,7 +9174,9 @@ impl Drop for EdgeShell {
             let _ = stop.send(());
         }
         if !self.window.is_null() {
-            unsafe { SetWindowDisplayAffinity(self.window, 0); }
+            unsafe {
+                SetWindowDisplayAffinity(self.window, 0);
+            }
         }
         self.drag_hover_stop.store(true, Ordering::Release);
         if let Some(worker) = self.drag_hover_worker.take() {
@@ -7232,7 +9189,9 @@ impl Drop for EdgeShell {
                 dwFlags: RIDEV_REMOVE,
                 hwndTarget: null_mut(),
             };
-            unsafe { RegisterRawInputDevices(&mouse_device, 1, size_of::<RAWINPUTDEVICE>() as u32) };
+            unsafe {
+                RegisterRawInputDevices(&mouse_device, 1, size_of::<RAWINPUTDEVICE>() as u32)
+            };
         }
         self.save_note();
         if !self.drop_catcher.is_null() {
@@ -7369,11 +9328,16 @@ unsafe extern "system" fn shell_window_proc(
                 let external = under != window
                     && unsafe { IsChild(window, under) } == 0
                     && explorer_owns_window(under);
-                callbacks.raw_external_press.store(external, Ordering::Release);
+                callbacks
+                    .raw_external_press
+                    .store(external, Ordering::Release);
                 callbacks.raw_mouse_down.store(true, Ordering::Release);
                 callbacks.raw_press_x.store(point.x, Ordering::Release);
                 callbacks.raw_press_y.store(point.y, Ordering::Release);
-                trace_drop(format_args!("raw mouse down external={external} x={} y={}", point.x, point.y));
+                trace_drop(format_args!(
+                    "raw mouse down external={external} x={} y={}",
+                    point.x, point.y
+                ));
                 if !under.is_null() && under != window && unsafe { IsChild(window, under) } == 0 {
                     let owner = callbacks.owner.load(Ordering::Acquire);
                     if !owner.is_null() {
@@ -7580,7 +9544,9 @@ unsafe extern "system" fn shell_window_proc(
     }
     if message == WM_TIMER && wparam == HOLD_SPACE_TIMER_ID {
         if unsafe { GetAsyncKeyState(0x20) } >= 0 {
-            unsafe { KillTimer(window, HOLD_SPACE_TIMER_ID); }
+            unsafe {
+                KillTimer(window, HOLD_SPACE_TIMER_ID);
+            }
             let owner = unsafe { &*callbacks }.owner.load(Ordering::Acquire);
             if !owner.is_null() {
                 if let Some(view) = unsafe { &(*owner).react_view } {
@@ -7625,21 +9591,31 @@ fn post_shell_tick(window: HWND, callbacks: &ShellCallbacks) {
 /// but gives no drag-enter event. Observe only drags that began outside Island
 /// so the native spring can offer a target before the file is released.
 fn explorer_owns_window(window: HWND) -> bool {
-    use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW};
-    if window.is_null() { return false; }
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
+    };
+    if window.is_null() {
+        return false;
+    }
     let mut process_id = 0;
     unsafe { GetWindowThreadProcessId(window, &mut process_id) };
-    if process_id == 0 { return false; }
+    if process_id == 0 {
+        return false;
+    }
     let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, process_id) };
-    if process.is_null() { return false; }
+    if process.is_null() {
+        return false;
+    }
     let mut path = [0u16; 1024];
     let mut length = path.len() as u32;
-    let readable = unsafe { QueryFullProcessImageNameW(process, 0, path.as_mut_ptr(), &mut length) } != 0;
+    let readable =
+        unsafe { QueryFullProcessImageNameW(process, 0, path.as_mut_ptr(), &mut length) } != 0;
     unsafe { CloseHandle(process) };
-    readable && String::from_utf16_lossy(&path[..length as usize])
-        .rsplit(['\\', '/'])
-        .next()
-        .is_some_and(|name| name.eq_ignore_ascii_case("explorer.exe"))
+    readable
+        && String::from_utf16_lossy(&path[..length as usize])
+            .rsplit(['\\', '/'])
+            .next()
+            .is_some_and(|name| name.eq_ignore_ascii_case("explorer.exe"))
 }
 
 fn monitor_external_drag_hover(callbacks: Arc<ShellCallbacks>, stop: Arc<AtomicBool>) {
@@ -7680,7 +9656,9 @@ fn monitor_external_drag_hover(callbacks: Arc<ShellCallbacks>, stop: Arc<AtomicB
             && moved
             && !callbacks.is_open.load(Ordering::Acquire)
             && !ole_drag_active;
-        let was_hovering = callbacks.shelf_drag_hover_hint.swap(hovering, Ordering::AcqRel);
+        let was_hovering = callbacks
+            .shelf_drag_hover_hint
+            .swap(hovering, Ordering::AcqRel);
         if hovering {
             // WM_DROPFILES has no DragEnter/DragOver callbacks. Explorer's
             // legacy route still gets live left/right target feedback here;
@@ -7694,7 +9672,10 @@ fn monitor_external_drag_hover(callbacks: Arc<ShellCallbacks>, stop: Arc<AtomicB
             }
         }
         if was_hovering != hovering {
-            trace_drop(format_args!("external drag hover {}", if hovering { "entered" } else { "left" }));
+            trace_drop(format_args!(
+                "external drag hover {}",
+                if hovering { "entered" } else { "left" }
+            ));
             post_shell_tick(window, &callbacks);
         }
         thread::sleep(DRAG_HOVER_POLL);
@@ -7798,7 +9779,9 @@ fn restore_gdi_alpha_rect(
     width: usize,
     bounds: (usize, usize, usize, usize),
 ) {
-    if width == 0 { return; }
+    if width == 0 {
+        return;
+    }
     let (x_start, x_end, y_start, y_end) = bounds;
     for y in y_start.min(source_alpha.len() / width)..y_end.min(source_alpha.len() / width) {
         for x in x_start.min(width)..x_end.min(width) {
@@ -7911,24 +9894,40 @@ fn foreground_covers_primary(shell_window: HWND) -> bool {
 
 fn is_windows_capture_surface(window: HWND) -> bool {
     let mut process_id = 0;
-    unsafe { GetWindowThreadProcessId(window, &mut process_id); }
-    if process_id == 0 { return false; }
+    unsafe {
+        GetWindowThreadProcessId(window, &mut process_id);
+    }
+    if process_id == 0 {
+        return false;
+    }
     let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, process_id) };
-    if process.is_null() { return false; }
+    if process.is_null() {
+        return false;
+    }
 
     // Win+Shift+S uses a temporary full-desktop window. Treating that picker
     // as a fullscreen app hides and re-shows the Island around every snip,
     // which needlessly tears down the compact WebView presentation.
     let mut path = [0u16; 1024];
     let mut length = path.len() as u32;
-    let queried = unsafe { QueryFullProcessImageNameW(process, 0, path.as_mut_ptr(), &mut length) } != 0;
-    unsafe { CloseHandle(process); }
-    if !queried || length == 0 { return false; }
+    let queried =
+        unsafe { QueryFullProcessImageNameW(process, 0, path.as_mut_ptr(), &mut length) } != 0;
+    unsafe {
+        CloseHandle(process);
+    }
+    if !queried || length == 0 {
+        return false;
+    }
     let image = String::from_utf16_lossy(&path[..(length as usize).min(path.len())]);
     let executable = image.rsplit(['\\', '/']).next().unwrap_or(&image);
-    ["SnippingTool.exe", "ScreenClippingHost.exe", "ScreenSketch.exe", "ScreenCaptureHost.exe"]
-        .iter()
-        .any(|name| executable.eq_ignore_ascii_case(name))
+    [
+        "SnippingTool.exe",
+        "ScreenClippingHost.exe",
+        "ScreenSketch.exe",
+        "ScreenCaptureHost.exe",
+    ]
+    .iter()
+    .any(|name| executable.eq_ignore_ascii_case(name))
 }
 
 fn is_fullscreen_bounds(bounds: RECT, screen_width: i32, screen_height: i32) -> bool {
@@ -8113,10 +10112,20 @@ fn load_notebook() -> NoteBook {
         .and_then(|local| std::fs::read(local.join("Island").join("notes.json")).ok())
         .filter(|bytes| bytes.len() <= 4 * 1024 * 1024)
         .and_then(|bytes| serde_json::from_slice::<NoteBook>(&bytes).ok())
-        .filter(|book| !book.folders.is_empty() && book.folders.len() <= 16 && book.selected < book.folders.len()
-            && book.folders.iter().all(|folder| folder.name.len() <= 48 && folder.text.len() <= 256 * 1024));
+        .filter(|book| {
+            !book.folders.is_empty()
+                && book.folders.len() <= 16
+                && book.selected < book.folders.len()
+                && book
+                    .folders
+                    .iter()
+                    .all(|folder| folder.name.len() <= 48 && folder.text.len() <= 256 * 1024)
+        });
     saved.unwrap_or_else(|| NoteBook {
-        folders: vec![NoteFolder { name: "Notes".to_owned(), text: read_local_note() }],
+        folders: vec![NoteFolder {
+            name: "Notes".to_owned(),
+            text: read_local_note(),
+        }],
         selected: 0,
         reminder_at: None,
     })
@@ -8130,7 +10139,14 @@ fn weather_city_path() -> Option<std::path::PathBuf> {
 
 fn enable_shutdown_privilege() -> bool {
     let mut token = null_mut();
-    if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &mut token) } == 0 {
+    if unsafe {
+        OpenProcessToken(
+            GetCurrentProcess(),
+            TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY,
+            &mut token,
+        )
+    } == 0
+    {
         return false;
     }
     let mut luid = windows_sys::Win32::Foundation::LUID::default();
@@ -8139,14 +10155,19 @@ fn enable_shutdown_privilege() -> bool {
     let enabled = if found {
         let privileges = TOKEN_PRIVILEGES {
             PrivilegeCount: 1,
-            Privileges: [LUID_AND_ATTRIBUTES { Luid: luid, Attributes: SE_PRIVILEGE_ENABLED }],
+            Privileges: [LUID_AND_ATTRIBUTES {
+                Luid: luid,
+                Attributes: SE_PRIVILEGE_ENABLED,
+            }],
         };
         unsafe {
             SetLastError(0);
             AdjustTokenPrivileges(token, 0, &privileges, 0, null_mut(), null_mut()) != 0
                 && GetLastError() != ERROR_NOT_ALL_ASSIGNED
         }
-    } else { false };
+    } else {
+        false
+    };
     unsafe { CloseHandle(token) };
     enabled
 }
@@ -8155,16 +10176,24 @@ fn run_shutdown_command(flag: &str) -> String {
     use std::os::windows::process::CommandExt;
     use windows_sys::Win32::System::Threading::CREATE_NO_WINDOW;
     let mut directory = [0u16; 32768];
-    let count = unsafe { GetSystemDirectoryW(directory.as_mut_ptr(), directory.len() as u32) } as usize;
-    if count == 0 || count >= directory.len() { return "Windows system directory is unavailable.".into(); }
-    let path = std::path::PathBuf::from(String::from_utf16_lossy(&directory[..count])).join("shutdown.exe");
+    let count =
+        unsafe { GetSystemDirectoryW(directory.as_mut_ptr(), directory.len() as u32) } as usize;
+    if count == 0 || count >= directory.len() {
+        return "Windows system directory is unavailable.".into();
+    }
+    let path = std::path::PathBuf::from(String::from_utf16_lossy(&directory[..count]))
+        .join("shutdown.exe");
     let args: &[&str] = match flag {
         "/r" => &["/r", "/t", "30"],
         "/s" => &["/s", "/t", "30"],
         "/a" => &["/a"],
         _ => return "Unknown power action.".into(),
     };
-    match std::process::Command::new(path).args(args).creation_flags(CREATE_NO_WINDOW).status() {
+    match std::process::Command::new(path)
+        .args(args)
+        .creation_flags(CREATE_NO_WINDOW)
+        .status()
+    {
         Ok(status) if status.success() => match flag {
             "/r" => "Restart scheduled in 30 seconds. You can cancel it here.".into(),
             "/s" => "Shut down scheduled in 30 seconds. You can cancel it here.".into(),
@@ -8176,10 +10205,22 @@ fn run_shutdown_command(flag: &str) -> String {
 
 fn run_power_action(action: &str) -> String {
     match action {
-        "lock" => if unsafe { LockWorkStation() } != 0 { "PC locked.".into() } else { "Windows could not lock the PC.".into() },
+        "lock" => {
+            if unsafe { LockWorkStation() } != 0 {
+                "PC locked.".into()
+            } else {
+                "Windows could not lock the PC.".into()
+            }
+        }
         "sleep" => {
-            if !enable_shutdown_privilege() { return "Windows did not grant permission to sleep.".into(); }
-            if unsafe { SetSuspendState(false, false, false) } { "PC resumed from sleep.".into() } else { "Windows could not put the PC to sleep.".into() }
+            if !enable_shutdown_privilege() {
+                return "Windows did not grant permission to sleep.".into();
+            }
+            if unsafe { SetSuspendState(false, false, false) } {
+                "PC resumed from sleep.".into()
+            } else {
+                "Windows could not put the PC to sleep.".into()
+            }
         }
         "restart" => run_shutdown_command("/r"),
         "shutdown" => run_shutdown_command("/s"),
@@ -8204,15 +10245,26 @@ fn weather_cache_path() -> Option<std::path::PathBuf> {
 
 fn load_weather_cache(city: &str, units: WeatherUnits) -> Option<WeatherCache> {
     let bytes = std::fs::read(weather_cache_path()?).ok()?;
-    if bytes.len() > 512 * 1024 { return None; }
+    if bytes.len() > 512 * 1024 {
+        return None;
+    }
     let cache: WeatherCache = serde_json::from_slice(&bytes).ok()?;
     if !cache.city.eq_ignore_ascii_case(city)
         || cache.units != units
         || unix_seconds().saturating_sub(cache.fetched_at) > 6 * 60 * 60
         || cache.data["timezone"].as_str().is_none_or(str::is_empty)
-        || !["time", "weather_code", "precipitation_probability", "precipitation"]
-            .iter()
-            .all(|key| cache.data["hourly"][key].as_array().is_some_and(|values| !values.is_empty()))
+        || ![
+            "time",
+            "weather_code",
+            "precipitation_probability",
+            "precipitation",
+        ]
+        .iter()
+        .all(|key| {
+            cache.data["hourly"][key]
+                .as_array()
+                .is_some_and(|values| !values.is_empty())
+        })
     {
         return None;
     }
@@ -8220,7 +10272,9 @@ fn load_weather_cache(city: &str, units: WeatherUnits) -> Option<WeatherCache> {
 }
 
 fn save_weather_cache(cache: &WeatherCache) {
-    let Some(path) = weather_cache_path() else { return; };
+    let Some(path) = weather_cache_path() else {
+        return;
+    };
     if let Some(parent) = path.parent()
         && std::fs::create_dir_all(parent).is_ok()
         && let Ok(bytes) = serde_json::to_vec(cache)
@@ -8237,15 +10291,32 @@ fn shelf_path() -> Option<std::path::PathBuf> {
 }
 
 const HOME_ACTION_IDS: [&str; 17] = [
-    "capture", "record", "ocr", "qr", "color", "command", "dictate", "sign", "remind", "task",
-    "clipboard-page", "shelf-page", "text-page", "agents-page", "notes-page", "weather-page", "controls-page",
+    "capture",
+    "record",
+    "ocr",
+    "qr",
+    "color",
+    "command",
+    "dictate",
+    "sign",
+    "remind",
+    "task",
+    "clipboard-page",
+    "shelf-page",
+    "text-page",
+    "agents-page",
+    "notes-page",
+    "weather-page",
+    "controls-page",
 ];
 
 fn default_home_actions() -> Vec<Option<String>> {
-    ["capture", "record", "ocr", "qr", "color", "command", "dictate", "sign", "remind", "task"]
-        .into_iter()
-        .map(|action| Some(action.to_owned()))
-        .collect()
+    [
+        "capture", "record", "ocr", "qr", "color", "command", "dictate", "sign", "remind", "task",
+    ]
+    .into_iter()
+    .map(|action| Some(action.to_owned()))
+    .collect()
 }
 
 fn home_actions_path() -> Option<std::path::PathBuf> {
@@ -8259,9 +10330,10 @@ fn valid_home_actions(actions: &[Option<String>]) -> bool {
         return false;
     }
     let mut used = HashSet::new();
-    actions.iter().flatten().all(|action| {
-        HOME_ACTION_IDS.contains(&action.as_str()) && used.insert(action.as_str())
-    })
+    actions
+        .iter()
+        .flatten()
+        .all(|action| HOME_ACTION_IDS.contains(&action.as_str()) && used.insert(action.as_str()))
 }
 
 fn load_home_actions() -> Vec<Option<String>> {
@@ -8277,8 +10349,12 @@ fn save_home_actions(actions: &[Option<String>]) -> bool {
     if !valid_home_actions(actions) {
         return false;
     }
-    let Some(path) = home_actions_path() else { return false };
-    let Some(parent) = path.parent() else { return false };
+    let Some(path) = home_actions_path() else {
+        return false;
+    };
+    let Some(parent) = path.parent() else {
+        return false;
+    };
     if std::fs::create_dir_all(parent).is_err() {
         return false;
     }
@@ -8316,17 +10392,15 @@ fn shelf_item_kind(path: &std::path::Path) -> &'static str {
         .unwrap_or_default()
         .to_ascii_lowercase();
     match extension.as_str() {
-        "png" | "jpg" | "jpeg" | "gif" | "bmp" | "webp" | "tif" | "tiff" | "heic"
-        | "heif" | "avif" => "image",
-        "mp4" | "mov" | "mkv" | "webm" | "avi" | "wmv" | "m4v" | "mpg" | "mpeg"
-        | "3gp" => "video",
-        "mp3" | "wav" | "flac" | "m4a" | "aac" | "ogg" | "oga" | "opus" | "wma"
-        | "aif" | "aiff" | "m4b" | "ac3" | "amr" | "ape" | "mid" | "midi" | "mka" => "audio",
+        "png" | "jpg" | "jpeg" | "gif" | "bmp" | "webp" | "tif" | "tiff" | "heic" | "heif"
+        | "avif" => "image",
+        "mp4" | "mov" | "mkv" | "webm" | "avi" | "wmv" | "m4v" | "mpg" | "mpeg" | "3gp" => "video",
+        "mp3" | "wav" | "flac" | "m4a" | "aac" | "ogg" | "oga" | "opus" | "wma" | "aif"
+        | "aiff" | "m4b" | "ac3" | "amr" | "ape" | "mid" | "midi" | "mka" => "audio",
         "zip" | "rar" | "7z" | "tar" | "gz" | "bz2" | "xz" => "archive",
-        "rs" | "c" | "h" | "cpp" | "hpp" | "cs" | "java" | "py" | "js" | "mjs"
-        | "cjs" | "ts" | "jsx" | "tsx" | "html" | "css" | "scss" | "json" | "xml"
-        | "yaml" | "yml" | "toml" | "sql" | "sh" | "ps1" | "bat" | "cmd" | "go"
-        | "rb" | "php" | "swift" | "kt" => "code",
+        "rs" | "c" | "h" | "cpp" | "hpp" | "cs" | "java" | "py" | "js" | "mjs" | "cjs" | "ts"
+        | "jsx" | "tsx" | "html" | "css" | "scss" | "json" | "xml" | "yaml" | "yml" | "toml"
+        | "sql" | "sh" | "ps1" | "bat" | "cmd" | "go" | "rb" | "php" | "swift" | "kt" => "code",
         "txt" | "md" | "rtf" | "log" | "csv" => "text",
         "pdf" => "pdf",
         "doc" | "docx" | "odt" | "ppt" | "pptx" | "xls" | "xlsx" | "epub" => "document",
@@ -8488,11 +10562,12 @@ fn shell_file_icon_data_url(path: &std::path::Path) -> Option<String> {
         ..Default::default()
     };
     let mut pixels = null_mut();
-    let bitmap = unsafe {
-        CreateDIBSection(dc, &bitmap_info, DIB_RGB_COLORS, &mut pixels, null_mut(), 0)
-    };
+    let bitmap =
+        unsafe { CreateDIBSection(dc, &bitmap_info, DIB_RGB_COLORS, &mut pixels, null_mut(), 0) };
     if bitmap.is_null() || pixels.is_null() {
-        if !bitmap.is_null() { unsafe { DeleteObject(bitmap as HGDIOBJ) }; }
+        if !bitmap.is_null() {
+            unsafe { DeleteObject(bitmap as HGDIOBJ) };
+        }
         unsafe {
             DeleteDC(dc);
             DestroyIcon(icon);
@@ -8542,7 +10617,9 @@ fn cached_command_icon_data_url(
     cache: &Mutex<HashMap<std::path::PathBuf, Option<String>>>,
     path: &std::path::Path,
 ) -> Option<String> {
-    let mut cache = cache.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut cache = cache
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     if let Some(icon) = cache.get(path) {
         return icon.clone();
     }
@@ -8858,24 +10935,53 @@ fn write_clipboard_text(value: &str) -> bool {
 fn copy_png_image(bytes: &[u8]) -> bool {
     use std::io::Cursor;
     use windows_sys::Win32::Foundation::GlobalFree;
-    use windows_sys::Win32::System::DataExchange::{CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData};
-    use windows_sys::Win32::System::Memory::{GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalUnlock};
+    use windows_sys::Win32::System::DataExchange::{
+        CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData,
+    };
+    use windows_sys::Win32::System::Memory::{
+        GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalUnlock,
+    };
 
-    if bytes.len() > 24 * 1024 * 1024 { return false; }
+    if bytes.len() > 24 * 1024 * 1024 {
+        return false;
+    }
     let mut decoder = png::Decoder::new(Cursor::new(bytes));
     decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
-    let Ok(mut reader) = decoder.read_info() else { return false };
-    let Some(input_size) = reader.output_buffer_size() else { return false };
-    if input_size > 64 * 1024 * 1024 { return false; }
+    let Ok(mut reader) = decoder.read_info() else {
+        return false;
+    };
+    let Some(input_size) = reader.output_buffer_size() else {
+        return false;
+    };
+    if input_size > 64 * 1024 * 1024 {
+        return false;
+    }
     let mut input = vec![0; input_size];
-    let Ok(frame) = reader.next_frame(&mut input) else { return false };
+    let Ok(frame) = reader.next_frame(&mut input) else {
+        return false;
+    };
     let width = frame.width as usize;
     let height = frame.height as usize;
-    let channels = match frame.color_type { png::ColorType::Rgba => 4, png::ColorType::Rgb => 3, _ => return false };
-    let Some(pixel_bytes) = width.checked_mul(height).and_then(|pixels| pixels.checked_mul(4)) else { return false };
-    if pixel_bytes > 64 * 1024 * 1024 { return false; }
-    let Some(total_bytes) = pixel_bytes.checked_add(size_of::<BITMAPINFOHEADER>()) else { return false };
-    if unsafe { OpenClipboard(null_mut()) } == 0 { return false; }
+    let channels = match frame.color_type {
+        png::ColorType::Rgba => 4,
+        png::ColorType::Rgb => 3,
+        _ => return false,
+    };
+    let Some(pixel_bytes) = width
+        .checked_mul(height)
+        .and_then(|pixels| pixels.checked_mul(4))
+    else {
+        return false;
+    };
+    if pixel_bytes > 64 * 1024 * 1024 {
+        return false;
+    }
+    let Some(total_bytes) = pixel_bytes.checked_add(size_of::<BITMAPINFOHEADER>()) else {
+        return false;
+    };
+    if unsafe { OpenClipboard(null_mut()) } == 0 {
+        return false;
+    }
     let mut success = false;
     let handle = unsafe { GlobalAlloc(GMEM_MOVEABLE, total_bytes) };
     if !handle.is_null() {
@@ -8890,18 +10996,36 @@ fn copy_png_image(bytes: &[u8]) -> bool {
             header.biCompression = BI_RGB;
             header.biSizeImage = pixel_bytes as u32;
             unsafe {
-                std::ptr::copy_nonoverlapping((&header as *const BITMAPINFOHEADER).cast::<u8>(), pointer, size_of::<BITMAPINFOHEADER>());
-                let output = std::slice::from_raw_parts_mut(pointer.add(size_of::<BITMAPINFOHEADER>()), pixel_bytes);
-                for (source, target) in input[..frame.buffer_size()].chunks_exact(channels).zip(output.chunks_exact_mut(4)) {
-                    target.copy_from_slice(&[source[2], source[1], source[0], if channels == 4 { source[3] } else { 255 }]);
+                std::ptr::copy_nonoverlapping(
+                    (&header as *const BITMAPINFOHEADER).cast::<u8>(),
+                    pointer,
+                    size_of::<BITMAPINFOHEADER>(),
+                );
+                let output = std::slice::from_raw_parts_mut(
+                    pointer.add(size_of::<BITMAPINFOHEADER>()),
+                    pixel_bytes,
+                );
+                for (source, target) in input[..frame.buffer_size()]
+                    .chunks_exact(channels)
+                    .zip(output.chunks_exact_mut(4))
+                {
+                    target.copy_from_slice(&[
+                        source[2],
+                        source[1],
+                        source[0],
+                        if channels == 4 { source[3] } else { 255 },
+                    ]);
                 }
                 GlobalUnlock(handle);
             }
-            if unsafe { EmptyClipboard() } != 0 && !unsafe { SetClipboardData(8, handle) }.is_null() {
+            if unsafe { EmptyClipboard() } != 0 && !unsafe { SetClipboardData(8, handle) }.is_null()
+            {
                 success = true;
             }
         }
-        if !success { unsafe { GlobalFree(handle) }; }
+        if !success {
+            unsafe { GlobalFree(handle) };
+        }
     }
     unsafe { CloseClipboard() };
     success
@@ -8909,28 +11033,66 @@ fn copy_png_image(bytes: &[u8]) -> bool {
 
 fn copy_file_to_clipboard(path: &std::path::Path) -> bool {
     use windows_sys::Win32::Foundation::GlobalFree;
-    use windows_sys::Win32::System::DataExchange::{CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData};
-    use windows_sys::Win32::System::Memory::{GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalUnlock};
+    use windows_sys::Win32::System::DataExchange::{
+        CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData,
+    };
+    use windows_sys::Win32::System::Memory::{
+        GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalUnlock,
+    };
     #[repr(C)]
-    struct DropFiles { offset: u32, x: i32, y: i32, non_client: i32, wide: i32 }
+    struct DropFiles {
+        offset: u32,
+        x: i32,
+        y: i32,
+        non_client: i32,
+        wide: i32,
+    }
 
     let units: Vec<u16> = path.as_os_str().encode_wide().chain([0, 0]).collect();
-    let Some(total_bytes) = units.len().checked_mul(size_of::<u16>()).and_then(|bytes| bytes.checked_add(size_of::<DropFiles>())) else { return false };
-    if total_bytes > 16 * 1024 || unsafe { OpenClipboard(null_mut()) } == 0 { return false; }
+    let Some(total_bytes) = units
+        .len()
+        .checked_mul(size_of::<u16>())
+        .and_then(|bytes| bytes.checked_add(size_of::<DropFiles>()))
+    else {
+        return false;
+    };
+    if total_bytes > 16 * 1024 || unsafe { OpenClipboard(null_mut()) } == 0 {
+        return false;
+    }
     let mut success = false;
     let handle = unsafe { GlobalAlloc(GMEM_MOVEABLE, total_bytes) };
     if !handle.is_null() {
         let pointer = unsafe { GlobalLock(handle) } as *mut u8;
         if !pointer.is_null() {
-            let header = DropFiles { offset: size_of::<DropFiles>() as u32, x: 0, y: 0, non_client: 0, wide: 1 };
+            let header = DropFiles {
+                offset: size_of::<DropFiles>() as u32,
+                x: 0,
+                y: 0,
+                non_client: 0,
+                wide: 1,
+            };
             unsafe {
-                std::ptr::copy_nonoverlapping((&header as *const DropFiles).cast::<u8>(), pointer, size_of::<DropFiles>());
-                std::ptr::copy_nonoverlapping(units.as_ptr(), pointer.add(size_of::<DropFiles>()).cast::<u16>(), units.len());
+                std::ptr::copy_nonoverlapping(
+                    (&header as *const DropFiles).cast::<u8>(),
+                    pointer,
+                    size_of::<DropFiles>(),
+                );
+                std::ptr::copy_nonoverlapping(
+                    units.as_ptr(),
+                    pointer.add(size_of::<DropFiles>()).cast::<u16>(),
+                    units.len(),
+                );
                 GlobalUnlock(handle);
             }
-            if unsafe { EmptyClipboard() } != 0 && !unsafe { SetClipboardData(15, handle) }.is_null() { success = true; }
+            if unsafe { EmptyClipboard() } != 0
+                && !unsafe { SetClipboardData(15, handle) }.is_null()
+            {
+                success = true;
+            }
         }
-        if !success { unsafe { GlobalFree(handle) }; }
+        if !success {
+            unsafe { GlobalFree(handle) };
+        }
     }
     unsafe { CloseClipboard() };
     success
@@ -8940,8 +11102,15 @@ fn paste_clipboard_text(value: &str) -> bool {
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
         INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, SendInput, VK_CONTROL,
     };
-    if !write_clipboard_text(value) { return false; }
-    let keys = [(VK_CONTROL, false), (b'V' as u16, false), (b'V' as u16, true), (VK_CONTROL, true)];
+    if !write_clipboard_text(value) {
+        return false;
+    }
+    let keys = [
+        (VK_CONTROL, false),
+        (b'V' as u16, false),
+        (b'V' as u16, true),
+        (VK_CONTROL, true),
+    ];
     let mut inputs = vec![INPUT::default(); keys.len()];
     for (input, (key, up)) in inputs.iter_mut().zip(keys) {
         input.r#type = INPUT_KEYBOARD;
@@ -8955,7 +11124,13 @@ fn paste_clipboard_text(value: &str) -> bool {
             },
         };
     }
-    unsafe { SendInput(inputs.len() as u32, inputs.as_ptr(), size_of::<INPUT>() as i32) == inputs.len() as u32 }
+    unsafe {
+        SendInput(
+            inputs.len() as u32,
+            inputs.as_ptr(),
+            size_of::<INPUT>() as i32,
+        ) == inputs.len() as u32
+    }
 }
 
 fn open_shelf_path(window: HWND, path: &std::path::Path) -> bool {
@@ -9009,46 +11184,61 @@ fn fetch_weather(
             .map_err(|_| "Weather service returned invalid data.".to_owned())
     }
 
-    let (latitude, longitude, name, country) = if let Some((latitude, longitude, name, country)) = cached_place
-        && latitude.is_finite() && longitude.is_finite()
-        && (-90.0..=90.0).contains(&latitude) && (-180.0..=180.0).contains(&longitude)
+    let (latitude, longitude, name, country) = if let Some((latitude, longitude, name, country)) =
+        cached_place
+        && latitude.is_finite()
+        && longitude.is_finite()
+        && (-90.0..=90.0).contains(&latitude)
+        && (-180.0..=180.0).contains(&longitude)
     {
         (latitude, longitude, name, country)
     } else {
-    let mut candidates = vec![city.trim().to_owned()];
-    if let Some(before_comma) = city.split(',').next() {
-        if !before_comma.eq_ignore_ascii_case(city) { candidates.push(before_comma.trim().to_owned()); }
-    }
-    let words: Vec<_> = city.split_whitespace().collect();
-    for count in (1..words.len()).rev() {
-        let candidate = words[..count].join(" ");
-        if !candidates.iter().any(|item| item.eq_ignore_ascii_case(&candidate)) { candidates.push(candidate); }
-    }
-    let mut place = None;
-    for candidate in candidates.into_iter().take(4) {
-        let location = request(
-            "https://geocoding-api.open-meteo.com/v1/search",
-            &[
-                format!("name={candidate}"),
-                "count=1".to_owned(),
-                "language=en".to_owned(),
-                "format=json".to_owned(),
-            ],
-        )?;
-        if let Some(found) = location["results"].as_array().and_then(|items| items.first()) {
-            place = Some(found.clone());
-            break;
+        let mut candidates = vec![city.trim().to_owned()];
+        if let Some(before_comma) = city.split(',').next() {
+            if !before_comma.eq_ignore_ascii_case(city) {
+                candidates.push(before_comma.trim().to_owned());
+            }
         }
-    }
-    let Some(place) = place else { return Err("City not found. Try a more specific name.".to_owned()); };
-    let (Some(latitude), Some(longitude)) =
-        (place["latitude"].as_f64(), place["longitude"].as_f64())
-    else {
-        return Err("Weather service did not return coordinates.".to_owned());
-    };
-    let name = place["name"].as_str().unwrap_or(city).to_owned();
-    let country = place["country_code"].as_str().unwrap_or("").to_owned();
-    (latitude, longitude, name, country)
+        let words: Vec<_> = city.split_whitespace().collect();
+        for count in (1..words.len()).rev() {
+            let candidate = words[..count].join(" ");
+            if !candidates
+                .iter()
+                .any(|item| item.eq_ignore_ascii_case(&candidate))
+            {
+                candidates.push(candidate);
+            }
+        }
+        let mut place = None;
+        for candidate in candidates.into_iter().take(4) {
+            let location = request(
+                "https://geocoding-api.open-meteo.com/v1/search",
+                &[
+                    format!("name={candidate}"),
+                    "count=1".to_owned(),
+                    "language=en".to_owned(),
+                    "format=json".to_owned(),
+                ],
+            )?;
+            if let Some(found) = location["results"]
+                .as_array()
+                .and_then(|items| items.first())
+            {
+                place = Some(found.clone());
+                break;
+            }
+        }
+        let Some(place) = place else {
+            return Err("City not found. Try a more specific name.".to_owned());
+        };
+        let (Some(latitude), Some(longitude)) =
+            (place["latitude"].as_f64(), place["longitude"].as_f64())
+        else {
+            return Err("Weather service did not return coordinates.".to_owned());
+        };
+        let name = place["name"].as_str().unwrap_or(city).to_owned();
+        let country = place["country_code"].as_str().unwrap_or("").to_owned();
+        (latitude, longitude, name, country)
     };
     let forecast = request(
         "https://api.open-meteo.com/v1/forecast",
@@ -9136,7 +11326,9 @@ fn color_ref(red: u8, green: u8, blue: u8) -> u32 {
 
 fn parse_hex_color(value: &str) -> Option<(u8, u8, u8)> {
     let digits = value.strip_prefix('#')?;
-    if digits.len() != 6 { return None; }
+    if digits.len() != 6 {
+        return None;
+    }
     Some((
         u8::from_str_radix(&digits[0..2], 16).ok()?,
         u8::from_str_radix(&digits[2..4], 16).ok()?,
@@ -9195,10 +11387,10 @@ fn last_error(context: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        FALLBACK_FRAME_INTERVAL, MAX_SHELL_SURFACE_BYTES,
-        animation_frame_interval, battery_percentage, composite_shell_pixel, format_status_label,
-        is_fullscreen_bounds, refresh_period_for_rate, restore_opaque_alpha_rect,
-        shell_surface_metrics, smoothed_render_cost,
+        FALLBACK_FRAME_INTERVAL, MAX_SHELL_SURFACE_BYTES, animation_frame_interval,
+        battery_percentage, composite_shell_pixel, format_status_label, is_fullscreen_bounds,
+        refresh_period_for_rate, restore_opaque_alpha_rect, shell_surface_metrics,
+        smoothed_render_cost,
     };
     use std::time::Duration;
 

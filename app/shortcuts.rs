@@ -236,9 +236,7 @@ fn binding_valid(binding: ShortcutBinding) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        MOD_ALT, MOD_CONTROL, ShortcutAction, ShortcutSet, binding_valid,
-    };
+    use super::{MOD_ALT, MOD_CONTROL, ShortcutAction, ShortcutSet, binding_valid};
 
     #[test]
     fn reference_defaults_are_unique_and_round_trip() {
@@ -265,5 +263,4 @@ mod tests {
         assert_eq!(ShortcutSet::decode_json("[]"), None);
         assert!(ShortcutSet::decode_json(&ShortcutSet::default().encode_json()).is_some());
     }
-
 }

@@ -361,17 +361,13 @@ mod tests {
                     .chain(std::iter::once(202.0))
                     .chain((210..=680).step_by(7).map(f64::from));
                 for logical_width in logical_widths {
-                    let shell_width = centered_pixel_width(
-                        logical_width * scale,
-                        screen_width,
-                    ) as i32;
+                    let shell_width =
+                        centered_pixel_width(logical_width * scale, screen_width) as i32;
                     let shell_x = centered_pixel_origin(screen_width, shell_width);
                     assert_eq!(2 * shell_x + shell_width, screen_width);
 
-                    let compact_width = centered_pixel_width(
-                        (logical_width - 8.0) * scale,
-                        screen_width,
-                    ) as i32;
+                    let compact_width =
+                        centered_pixel_width((logical_width - 8.0) * scale, screen_width) as i32;
                     let compact_x = centered_pixel_origin(shell_width, compact_width);
                     assert_eq!(2 * compact_x + compact_width, shell_width);
                     assert!(compact_width < shell_width);

@@ -1,16 +1,16 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 #[cfg(windows)]
-mod commands;
-#[cfg(windows)]
-mod diagnostics;
-mod opencode_control;
-#[cfg(windows)]
-mod conversion;
-#[cfg(windows)]
 mod agent_acp;
 #[cfg(windows)]
 mod agent_presentation;
+#[cfg(windows)]
+mod commands;
+#[cfg(windows)]
+mod conversion;
+#[cfg(windows)]
+mod diagnostics;
+mod opencode_control;
 #[cfg(windows)]
 mod platform;
 #[cfg(windows)]

@@ -113,9 +113,15 @@ impl ShellReducer {
         self.click_to_open = click_to_open;
         self.close_on_outside_click = close_on_outside_click;
         if self.mode == ShellMode::HoverPending {
-            let closing = self.timer.is_some_and(|timer| timer.target == ShellTimerTarget::Resting);
+            let closing = self
+                .timer
+                .is_some_and(|timer| timer.target == ShellTimerTarget::Resting);
             self.cancel_timer();
-            self.mode = if closing { ShellMode::Expanded } else { ShellMode::Resting };
+            self.mode = if closing {
+                ShellMode::Expanded
+            } else {
+                ShellMode::Resting
+            };
         }
     }
 
@@ -132,8 +138,12 @@ impl ShellReducer {
         let before = self.snapshot();
         match event {
             ShellEvent::PointerEntered if !self.fullscreen => match self.mode {
-                ShellMode::HoverPending if self.click_to_open
-                    && self.timer.is_some_and(|timer| timer.target == ShellTimerTarget::Resting) => {
+                ShellMode::HoverPending
+                    if self.click_to_open
+                        && self
+                            .timer
+                            .is_some_and(|timer| timer.target == ShellTimerTarget::Resting) =>
+                {
                     self.cancel_timer();
                     self.mode = ShellMode::Expanded;
                 }
@@ -166,8 +176,10 @@ impl ShellReducer {
                 // expanded state after the pointer leaves the surface. Keep
                 // pinned text entry persistent; ordinary text entry follows
                 // the same close delay as every other expanded page.
-                ShellMode::TextEntry if self.text_return_mode == ShellMode::Expanded
-                    && !(self.click_to_open && self.close_on_outside_click) => {
+                ShellMode::TextEntry
+                    if self.text_return_mode == ShellMode::Expanded
+                        && !(self.click_to_open && self.close_on_outside_click) =>
+                {
                     self.schedule(ShellTimerTarget::Resting, now, self.hover_close_delay)
                 }
                 ShellMode::Expanded if !(self.click_to_open && self.close_on_outside_click) => {
@@ -185,7 +197,10 @@ impl ShellReducer {
                 }
             }
             ShellEvent::Close if !self.fullscreen => match self.mode {
-                ShellMode::Expanded | ShellMode::Pinned | ShellMode::TextEntry | ShellMode::HoverPending => {
+                ShellMode::Expanded
+                | ShellMode::Pinned
+                | ShellMode::TextEntry
+                | ShellMode::HoverPending => {
                     self.cancel_timer();
                     self.mode = ShellMode::Resting;
                 }
@@ -361,7 +376,10 @@ mod tests {
         shell.set_interaction_behavior(true, false);
         shell.dispatch(ShellEvent::Open, now);
         shell.dispatch(ShellEvent::PointerLeft, now);
-        assert_eq!(shell.snapshot().timer.unwrap().target, ShellTimerTarget::Resting);
+        assert_eq!(
+            shell.snapshot().timer.unwrap().target,
+            ShellTimerTarget::Resting
+        );
         shell.dispatch(ShellEvent::PointerEntered, now);
         assert_eq!(shell.snapshot().mode, ShellMode::Expanded);
         assert_eq!(shell.snapshot().timer, None);

@@ -26,7 +26,9 @@ impl IslandApp {
         let (settings_store, settings) = match SettingsStore::open_default() {
             Ok(store) => {
                 let settings = store.load().unwrap_or_else(|_| {
-                    crate::platform::windows::report_diagnostic(DiagnosticCode::SettingsUnavailable);
+                    crate::platform::windows::report_diagnostic(
+                        DiagnosticCode::SettingsUnavailable,
+                    );
                     StoredSettings::default()
                 });
                 (Some(store), settings)
@@ -53,8 +55,12 @@ impl IslandApp {
             shape: settings.shape,
             accent_gradient: settings.accent_gradient,
             media_card_style: settings.media_card_style,
-            hover_open_delay: std::time::Duration::from_millis(u64::from(settings.hover_open_delay_ms)),
-            hover_close_delay: std::time::Duration::from_millis(u64::from(settings.hover_close_delay_ms)),
+            hover_open_delay: std::time::Duration::from_millis(u64::from(
+                settings.hover_open_delay_ms,
+            )),
+            hover_close_delay: std::time::Duration::from_millis(u64::from(
+                settings.hover_close_delay_ms,
+            )),
             click_to_open: settings.click_to_open,
             close_on_outside_click: settings.close_on_outside_click,
             reduced_motion: settings.reduced_motion,
@@ -74,7 +80,15 @@ impl IslandApp {
                 (None, Some(error))
             }
         };
-        Self { shell, tray, settings_store, settings, quit_requested: false, first_frame: true, startup_error }
+        Self {
+            shell,
+            tray,
+            settings_store,
+            settings,
+            quit_requested: false,
+            first_frame: true,
+            startup_error,
+        }
     }
 
     fn save_settings(&mut self) {
@@ -86,11 +100,17 @@ impl IslandApp {
     }
 
     fn attach_windows(&self, frame: &eframe::Frame) {
-        let Ok(handle) = frame.window_handle() else { return };
+        let Ok(handle) = frame.window_handle() else {
+            return;
+        };
         if let RawWindowHandle::Win32(handle) = handle.as_raw() {
             let window = handle.hwnd.get() as _;
-            if let Some(tray) = &self.tray { tray.set_root_window(window); }
-            if let Some(shell) = &self.shell { shell.set_desk_window(window); }
+            if let Some(tray) = &self.tray {
+                tray.set_root_window(window);
+            }
+            if let Some(shell) = &self.shell {
+                shell.set_desk_window(window);
+            }
         }
     }
 
@@ -100,20 +120,44 @@ impl IslandApp {
         for change in shell.take_preference_changes() {
             match change {
                 ShellPreferenceChange::Shape(shape) => self.settings.shape = shape,
-                ShellPreferenceChange::AccentGradient(value) => self.settings.accent_gradient = value,
-                ShellPreferenceChange::MediaCardStyle(value) => self.settings.media_card_style = value,
-                ShellPreferenceChange::Clock(value) => self.settings.clock_indicator_enabled = value,
-                ShellPreferenceChange::Battery(value) => self.settings.battery_indicator_enabled = value,
-                ShellPreferenceChange::Privacy(value) => self.settings.privacy_indicator_enabled = value,
-                ShellPreferenceChange::HideFullscreen(value) => self.settings.hide_in_fullscreen = value,
-                ShellPreferenceChange::ScreenCaptureExclusion(value) => self.settings.exclude_from_screen_capture = value,
+                ShellPreferenceChange::AccentGradient(value) => {
+                    self.settings.accent_gradient = value
+                }
+                ShellPreferenceChange::MediaCardStyle(value) => {
+                    self.settings.media_card_style = value
+                }
+                ShellPreferenceChange::Clock(value) => {
+                    self.settings.clock_indicator_enabled = value
+                }
+                ShellPreferenceChange::Battery(value) => {
+                    self.settings.battery_indicator_enabled = value
+                }
+                ShellPreferenceChange::Privacy(value) => {
+                    self.settings.privacy_indicator_enabled = value
+                }
+                ShellPreferenceChange::HideFullscreen(value) => {
+                    self.settings.hide_in_fullscreen = value
+                }
+                ShellPreferenceChange::ScreenCaptureExclusion(value) => {
+                    self.settings.exclude_from_screen_capture = value
+                }
                 ShellPreferenceChange::ReducedMotion(value) => self.settings.reduced_motion = value,
-                ShellPreferenceChange::HoverOpen(value) => self.settings.hover_open_delay_ms = value,
-                ShellPreferenceChange::HoverClose(value) => self.settings.hover_close_delay_ms = value,
+                ShellPreferenceChange::HoverOpen(value) => {
+                    self.settings.hover_open_delay_ms = value
+                }
+                ShellPreferenceChange::HoverClose(value) => {
+                    self.settings.hover_close_delay_ms = value
+                }
                 ShellPreferenceChange::ClickToOpen(value) => self.settings.click_to_open = value,
-                ShellPreferenceChange::CloseOnOutsideClick(value) => self.settings.close_on_outside_click = value,
-                ShellPreferenceChange::FoldedTransparency(value) => self.settings.folded_transparency_percent = value,
-                ShellPreferenceChange::OpenTransparency(value) => self.settings.open_transparency_percent = value,
+                ShellPreferenceChange::CloseOnOutsideClick(value) => {
+                    self.settings.close_on_outside_click = value
+                }
+                ShellPreferenceChange::FoldedTransparency(value) => {
+                    self.settings.folded_transparency_percent = value
+                }
+                ShellPreferenceChange::OpenTransparency(value) => {
+                    self.settings.open_transparency_percent = value
+                }
             }
             settings_changed = true;
         }
@@ -125,27 +169,41 @@ impl IslandApp {
             };
             settings_changed = true;
         }
-        if shell.set_dark_theme(context.theme() == egui::Theme::Dark).is_err()
-            || shell.set_reduced_motion(self.settings.reduced_motion).is_err()
+        if shell
+            .set_dark_theme(context.theme() == egui::Theme::Dark)
+            .is_err()
+            || shell
+                .set_reduced_motion(self.settings.reduced_motion)
+                .is_err()
             || shell.take_animation_failure()
         {
             crate::platform::windows::report_diagnostic(DiagnosticCode::ShellUnavailable);
         }
         let _ = shell.take_toggle_request();
         for action in shell.take_shortcut_requests() {
-            if action == ShortcutAction::CommandBar { let _ = shell.show_command(); }
+            if action == ShortcutAction::CommandBar {
+                let _ = shell.show_command();
+            }
         }
-        if settings_changed { self.save_settings(); }
+        if settings_changed {
+            self.save_settings();
+        }
     }
 
     fn handle_tray(&mut self, context: &egui::Context) {
-        let (show, focus_target, quit) = self.tray.as_ref().map(|tray| {
-            let (show, focus_target) = tray.take_show_request();
-            (show, focus_target, tray.take_quit_request())
-        }).unwrap_or_default();
+        let (show, focus_target, quit) = self
+            .tray
+            .as_ref()
+            .map(|tray| {
+                let (show, focus_target) = tray.take_show_request();
+                (show, focus_target, tray.take_quit_request())
+            })
+            .unwrap_or_default();
         if show {
             if let Some(shell) = &self.shell {
-                if let Some(target) = focus_target { let _ = shell.set_focus_restore_target(target); }
+                if let Some(target) = focus_target {
+                    let _ = shell.set_focus_restore_target(target);
+                }
                 let _ = shell.show_settings();
             }
         }
@@ -156,7 +214,9 @@ impl IslandApp {
     }
 
     fn handle_close(&mut self, context: &egui::Context) {
-        if self.quit_requested || !context.input(|input| input.viewport().close_requested()) { return; }
+        if self.quit_requested || !context.input(|input| input.viewport().close_requested()) {
+            return;
+        }
         if self.tray.is_some() {
             context.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             context.send_viewport_cmd(egui::ViewportCommand::Visible(false));

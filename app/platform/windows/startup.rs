@@ -1,15 +1,14 @@
 //! Packaged-app startup control with an authoritative Windows readback.
 
+use std::ptr::{null, null_mut};
 use windows_startup::ApplicationModel::{StartupTask, StartupTaskState as WinStartupTaskState};
 use windows_startup::Win32::System::WinRT::{RO_INIT_MULTITHREADED, RoInitialize, RoUninitialize};
 use windows_startup::core::HSTRING;
 use windows_sys::Win32::Foundation::{ERROR_FILE_NOT_FOUND, ERROR_SUCCESS};
 use windows_sys::Win32::System::Registry::{
     HKEY, HKEY_CURRENT_USER, KEY_QUERY_VALUE, KEY_SET_VALUE, REG_OPTION_NON_VOLATILE, REG_SZ,
-    RegCloseKey, RegCreateKeyExW, RegDeleteValueW, RegOpenKeyExW, RegQueryValueExW,
-    RegSetValueExW,
+    RegCloseKey, RegCreateKeyExW, RegDeleteValueW, RegOpenKeyExW, RegQueryValueExW, RegSetValueExW,
 };
-use std::ptr::{null, null_mut};
 
 const TASK_ID: &str = "IslandDesktopStartup";
 
@@ -29,11 +28,17 @@ pub enum StartupTaskStatus {
 
 impl StartupTaskStatus {
     pub fn is_enabled(self) -> bool {
-        matches!(self, Self::Enabled | Self::EnabledByPolicy | Self::RegistryEnabled)
+        matches!(
+            self,
+            Self::Enabled | Self::EnabledByPolicy | Self::RegistryEnabled
+        )
     }
 
     pub fn can_change(self) -> bool {
-        matches!(self, Self::Enabled | Self::Disabled | Self::RegistryEnabled | Self::RegistryDisabled)
+        matches!(
+            self,
+            Self::Enabled | Self::Disabled | Self::RegistryEnabled | Self::RegistryDisabled
+        )
     }
 
     pub fn description(self) -> &'static str {

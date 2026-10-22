@@ -6,13 +6,19 @@ pub fn decode_image(bytes: &[u8]) -> Result<Option<String>, String> {
     }
     let mut decoder = png::Decoder::new(Cursor::new(bytes));
     decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
-    let mut reader = decoder.read_info().map_err(|_| "Could not read the selected image.".to_owned())?;
-    let size = reader.output_buffer_size().ok_or("The selected image is too large.")?;
+    let mut reader = decoder
+        .read_info()
+        .map_err(|_| "Could not read the selected image.".to_owned())?;
+    let size = reader
+        .output_buffer_size()
+        .ok_or("The selected image is too large.")?;
     if size > 96 * 1024 * 1024 {
         return Err("The selected image is too large.".into());
     }
     let mut pixels = vec![0; size];
-    let frame = reader.next_frame(&mut pixels).map_err(|_| "Could not read the selected image.".to_owned())?;
+    let frame = reader
+        .next_frame(&mut pixels)
+        .map_err(|_| "Could not read the selected image.".to_owned())?;
     let width = frame.width as usize;
     let height = frame.height as usize;
     if width == 0 || height == 0 || width.saturating_mul(height) > 24_000_000 {
@@ -39,7 +45,9 @@ pub fn decode_image(bytes: &[u8]) -> Result<Option<String>, String> {
         let Ok(code) = candidate else { continue };
         let Ok(data) = code.decode() else { continue };
         if let Ok(text) = String::from_utf8(data.payload) {
-            if !text.trim().is_empty() { return Ok(Some(text)); }
+            if !text.trim().is_empty() {
+                return Ok(Some(text));
+            }
         }
     }
     Ok(None)

@@ -152,7 +152,6 @@ impl StoredSettings {
             && self.open_transparency_percent <= 100
             && self.shortcuts.is_valid()
     }
-
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -168,10 +167,13 @@ pub struct SettingsStore {
 
 impl SettingsStore {
     pub fn set_theme(&mut self, theme: StoredTheme) -> Result<(), StorageError> {
-        let changed = self.connection.execute(
-            "UPDATE preferences SET theme=?1 WHERE singleton=1",
-            [theme.as_str()],
-        ).map_err(|_| StorageError::Unavailable)?;
+        let changed = self
+            .connection
+            .execute(
+                "UPDATE preferences SET theme=?1 WHERE singleton=1",
+                [theme.as_str()],
+            )
+            .map_err(|_| StorageError::Unavailable)?;
         if changed == 0 {
             let mut settings = StoredSettings::default();
             settings.theme = theme;
@@ -405,7 +407,6 @@ impl SettingsStore {
             .map_err(|_| StorageError::Unavailable)?;
         transaction.commit().map_err(|_| StorageError::Unavailable)
     }
-
 }
 
 fn migrate(connection: &mut Connection) -> Result<(), StorageError> {
@@ -643,9 +644,7 @@ mod tests {
             )
             .unwrap();
         migrate(&mut connection).unwrap();
-        let store = SettingsStore {
-            connection,
-        };
+        let store = SettingsStore { connection };
         let settings = store.load().unwrap();
         assert_eq!(settings.shape, ShapeMode::Capsule);
         assert_eq!(settings.theme, StoredTheme::Dark);
@@ -682,9 +681,7 @@ mod tests {
             )
             .unwrap();
         migrate(&mut connection).unwrap();
-        let store = SettingsStore {
-            connection,
-        };
+        let store = SettingsStore { connection };
         let settings = store.load().unwrap();
         assert!(settings.privacy_indicator_enabled);
         assert!(settings.hide_in_fullscreen);
@@ -712,9 +709,7 @@ mod tests {
             )
             .unwrap();
         migrate(&mut connection).unwrap();
-        let store = SettingsStore {
-            connection,
-        };
+        let store = SettingsStore { connection };
         let settings = store.load().unwrap();
         assert!(settings.hide_in_fullscreen);
         assert_eq!(
@@ -742,12 +737,15 @@ mod tests {
         let path = directory.join("settings.sqlite3");
         fs::write(&path, b"this is not a SQLite database").unwrap();
         let store = SettingsStore::open(path.clone()).unwrap();
-        let backup = fs::read_dir(&directory).unwrap()
+        let backup = fs::read_dir(&directory)
+            .unwrap()
             .map(|entry| entry.unwrap().path())
-            .find(|candidate| candidate.file_name().is_some_and(|name| {
-                let name = name.to_string_lossy();
-                name.contains(".corrupt-") && !name.ends_with("-wal") && !name.ends_with("-shm")
-            }))
+            .find(|candidate| {
+                candidate.file_name().is_some_and(|name| {
+                    let name = name.to_string_lossy();
+                    name.contains(".corrupt-") && !name.ends_with("-wal") && !name.ends_with("-shm")
+                })
+            })
             .unwrap();
         assert_eq!(fs::read(&backup).unwrap(), b"this is not a SQLite database");
         assert_eq!(store.load().unwrap(), StoredSettings::default());
