@@ -2,6 +2,7 @@ import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 're
 import { createRoot } from 'react-dom/client';
 import { createPortal } from 'react-dom';
 import { PageBoundary } from './page-boundary.jsx';
+import { WakeEyes } from './wake-eyes.jsx';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { compactStatusLanes, compactStatusModules, defaultCompactStatusOrder, normalizeCompactStatusOrder, resolveCompactStatus } from './compact-status.js';
 import { AgentSettings, AgentsWorkspace, readAgentPreferences, saveAgentPreferences, defaultAskInstructions } from './agents-ui.jsx';
@@ -434,7 +435,7 @@ function CompactTransition(props) {
     update();
     return () => preference.removeEventListener('change', update);
   }, []);
-  const reduced = !!state.shellSettings?.reducedMotion || systemReduced;
+  const reduced = !!(state.shellSettings?.reducedMotion || state.shellSettings?.systemReducedMotion) || systemReduced;
   const [contextOpen, setContextOpen] = useState(false);
   const [contextPresent, setContextPresent] = useState(false);
   const contextTimer = useRef(null);
@@ -1032,7 +1033,8 @@ function MediaSessionSwitcher({ sessions = [], selectedId, onSelect, reducedMoti
   useLayoutEffect(() => {
     if (open) { setPresent(true); return; }
     if (reducedMotion) { setPresent(false); return; }
-    const timer = window.setTimeout(() => setPresent(false), 180);
+    // CSS completion owns removal; the timeout only recovers a cancelled animation.
+    const timer = window.setTimeout(() => setPresent(false), 300);
     return () => window.clearTimeout(timer);
   }, [open, reducedMotion]);
   useEffect(() => {
@@ -1092,7 +1094,7 @@ function MediaSessionSwitcher({ sessions = [], selectedId, onSelect, reducedMoti
       <Icon name="MediaQueue" size={14} /><span>{sessions.length}</span>
     </button>
     </div>
-    {present && panelTarget && createPortal(<section className={`media-session-panel ${reducedMotion ? 'reduce-motion' : ''} ${!open ? 'is-closing' : ''}`} ref={panelRef} inert={!open} aria-hidden={!open} aria-label="Media source selection">
+    {present && panelTarget && createPortal(<section className={`media-session-panel ${reducedMotion ? 'reduce-motion' : ''} ${!open ? 'is-closing' : ''}`} ref={panelRef} onAnimationEnd={event => { if (!open && event.target === event.currentTarget && event.animationName === 'media-picker-exit') setPresent(false); }} inert={!open} aria-hidden={!open} aria-label="Media source selection">
       <header className="media-session-panel-heading"><span className="media-session-panel-icon"><Icon name="MediaQueue" size={15} /></span><div><strong>Media sources</strong><small>{sessions.length} available</small></div><button className="media-session-close" type="button" aria-label="Close media source selection" title="Close" onClick={() => { setOpen(false); requestAnimationFrame(() => rootRef.current?.querySelector('button')?.focus()); }}><Icon name="Cancel" size={14} /></button></header>
       <div id="media-session-options" className="media-session-options" role="listbox" aria-label="Available media sources">
         {sessions.map((session, index) => <button type="button" className={'media-session-option ' + (session.id === selectedId ? 'is-selected' : '')} role="option" aria-selected={session.id === selectedId} key={session.id}
@@ -1309,7 +1311,7 @@ function SettingsPanel({ state, batteryView, setBatteryView, accentGradient, set
   return <section className={'settings-page ' + (section === 'agents' && agentSettingsDetail ? 'is-agent-detail' : '')} aria-label="Island settings">
     <div className={'settings-workspace ' + (section === 'agents' && agentSettingsDetail ? 'is-agent-detail' : '')}>
       <nav className="settings-sidebar" aria-label="Settings sections">{sections.map(([id, icon, label]) => <button key={id} type="button" className={'settings-nav-item icon-only ' + (section === id ? 'selected' : '')} title={label} aria-label={label} aria-current={section === id ? 'page' : undefined} onClick={() => setSection(id)}><Icon name={icon} size={17} /></button>)}</nav>
-      <div className={'settings-content ' + (section === 'agents' && agentSettingsDetail ? 'is-agent-detail' : '')} ref={settingsContentRef} data-section={section} onScroll={event => sectionScrollPositions.current.set(section, event.currentTarget.scrollTop)}>
+      <div className={'settings-content ' + (section === 'agents' && agentSettingsDetail ? 'is-agent-detail' : '')} key={section} ref={settingsContentRef} data-section={section} onScroll={event => sectionScrollPositions.current.set(section, event.currentTarget.scrollTop)}>
         {section === 'general' && <>
           <div className="settings-grid">
             <SettingsCard icon="Power" title="Startup" detail="Open Island when you sign in."><SettingsToggle label="Start with Windows" value={!!state.startup?.enabled} disabled={!state.startup?.canChange || state.startup?.busy} onChange={() => send('startupSet', { enabled: !state.startup?.enabled })} /><div className="settings-save-row"><span>{state.startup?.description || 'Checking startup state…'}</span><button type="button" className="settings-inline-action" disabled={state.startup?.busy} onClick={() => send('startupSet')}>Check</button></div></SettingsCard>
@@ -1746,8 +1748,8 @@ function DictatePanel({ captureSensitivity = 'balanced', pauseMs = 1500, noiseSu
   const timerLabel = String(Math.floor(recordingSeconds / 60)).padStart(2, '0') + ':' + String(recordingSeconds % 60).padStart(2, '0');
   const sentenceCount = transcript.match(/[.!?](?=\s|$)/g)?.length ?? 0;
   const canExpandTranscript = transcript.trim().length > 100 || sentenceCount > 1;
-  if (minimal) return <div className="wake-listening-surface" role="status" aria-label={dictationStatus}>
-    <div className={'wake-audio-eyes ' + (transcriptionPending ? 'is-processing' : '')} style={{ '--eye-level': averageLevel }} aria-hidden="true"><i/><i/></div>
+  if (minimal) return <div className="wake-listening-surface" data-layout-height={error ? 138 : 34} role="status" aria-label={dictationStatus}>
+    <WakeEyes levels={inputLevels} phase={transcriptionPending ? 'thinking' : dictating ? 'listening' : 'starting'} />
     {error && <p role="alert">{error}</p>}
   </div>;
   if (compact && holdCapture) return <div className="ask-capture-surface" data-capture-state={dictating ? 'recording' : transcriptionPending ? 'processing' : starting ? 'starting' : 'idle'}>
@@ -1878,6 +1880,73 @@ function CommandPage({ query, setQuery, state, onClose, onRoute }) {
   </section>;
 }
 
+// Playback interpolation belongs to the visible controls, not the whole app.
+function MediaTransport({ media, receivedAt }) {
+  const [mediaClock, setMediaClock] = useState(() => performance.now());
+  const [seekDraftMs, setSeekDraftMs] = useState(null);
+  const seekPendingRef = useRef(null);
+  const seekTimerRef = useRef(null);
+  const mediaDurationMs = media?.duration_ms ?? 0;
+  useEffect(() => () => clearTimeout(seekTimerRef.current), []);
+  useEffect(() => {
+    clearTimeout(seekTimerRef.current);
+    seekTimerRef.current = null;
+    seekPendingRef.current = null;
+    setSeekDraftMs(null);
+  }, [media?.session_id, media?.title]);
+  useEffect(() => {
+    let timer;
+    const sync = () => {
+      clearInterval(timer);
+      setMediaClock(performance.now());
+      if (media?.playing && !document.hidden) timer = setInterval(() => setMediaClock(performance.now()), 250);
+    };
+    sync();
+    document.addEventListener('visibilitychange', sync);
+    return () => { clearInterval(timer); document.removeEventListener('visibilitychange', sync); };
+  }, [media?.playing]);
+  const mediaPositionMs = Math.min(mediaDurationMs || Number.MAX_SAFE_INTEGER,
+    (media?.position_ms ?? 0) + (media?.playing && receivedAt ? Math.max(0, mediaClock - receivedAt) : 0));
+  const mediaSeekTo = positionMs => {
+    if (!mediaDurationMs || !media?.can_seek) return;
+    const nextPosition = Math.max(0, Math.min(mediaDurationMs, Math.round(positionMs)));
+    if (seekPendingRef.current === nextPosition && seekTimerRef.current) return;
+    seekPendingRef.current = nextPosition;
+    setSeekDraftMs(nextPosition);
+    clearTimeout(seekTimerRef.current);
+    seekTimerRef.current = setTimeout(() => {
+      seekPendingRef.current = null;
+      setSeekDraftMs(null);
+      seekTimerRef.current = null;
+    }, 2200);
+    send('mediaSeek', { positionMs: nextPosition });
+  };
+  useEffect(() => {
+    const target = seekPendingRef.current;
+    const observed = media?.position_ms;
+    if (target == null || observed == null || Math.abs(observed - target) > 1800) return;
+    clearTimeout(seekTimerRef.current);
+    seekTimerRef.current = null;
+    seekPendingRef.current = null;
+    setSeekDraftMs(null);
+  }, [media?.position_ms]);
+  return <>
+                <div className="media-progress" aria-label="Playback timeline">
+                  <input className="media-seek" type="range" min="0" max={mediaDurationMs || 1} step="500" aria-label="Seek in current media" disabled={!media.can_seek} value={seekDraftMs ?? mediaPositionMs} style={{ '--range-progress': `${mediaDurationMs ? Math.min(100, (seekDraftMs ?? mediaPositionMs) / mediaDurationMs * 100) : 0}%` }} onChange={event => setSeekDraftMs(Number(event.currentTarget.value))} onPointerUp={event => mediaSeekTo(Number(event.currentTarget.value))} onPointerCancel={event => mediaSeekTo(Number(event.currentTarget.value))} onKeyUp={event => mediaSeekTo(Number(event.currentTarget.value))} onBlur={event => { if (seekDraftMs != null) mediaSeekTo(Number(event.currentTarget.value)); }} />
+                  <div className="media-times"><small>{mediaTime(seekDraftMs ?? mediaPositionMs)}</small><small>{mediaTime(mediaDurationMs || null)}</small></div>
+                </div>
+                <div className="media-controls">
+                  <span className="media-control-side">{media.can_seek && <button type="button" aria-label="Back 10 seconds" title="Back 10 seconds" onClick={() => mediaSeekTo(mediaPositionMs - 10000)}><Icon name="Back10" size={18} /></button>}</span>
+                  <span className="media-control-center">
+                    {media.can_previous && <button type="button" aria-label="Previous track" title="Previous track" onClick={() => send('mediaPrevious')}><Icon name="Previous" size={18} /></button>}
+                    {media.can_toggle && <button type="button" className="media-play" aria-label={media.playing ? 'Pause' : 'Play'} title={media.playing ? 'Pause' : 'Play'} onClick={() => send('mediaToggle')}><Icon name={media.playing ? 'Pause' : 'Play'} size={18} /></button>}
+                    {media.can_next && <button type="button" aria-label="Next track" title="Next track" onClick={() => send('mediaNext')}><Icon name="Next" size={18} /></button>}
+                  </span>
+                  <span className="media-control-side">{media.can_seek && <button type="button" aria-label="Forward 10 seconds" title="Forward 10 seconds" onClick={() => mediaSeekTo(mediaPositionMs + 10000)}><Icon name="Forward10" size={18} /></button>}</span>
+                </div>
+  </>;
+}
+
 function App() {
   const [state, setState] = useState(initial);
   const appearanceMigrationDone = useRef(false);
@@ -1962,7 +2031,16 @@ function App() {
 
   const [dictateMode, setDictateMode] = useState('home');
   const [agentDictateAutoSubmit, setAgentDictateAutoSubmit] = useState(false);
-  useEffect(() => { const dismiss = () => { setDictateOpen(false); setAgentDictateAutoSubmit(false); send('wakeWordResume'); }; window.addEventListener('island:voice-dismiss', dismiss); return () => window.removeEventListener('island:voice-dismiss', dismiss); }, []);
+  useEffect(() => {
+    const dismiss = event => {
+      if (event.detail?.revision != null && event.detail.revision !== state.wakeWord?.revision) return;
+      setDictateOpen(false); setHoldCapture(false); setAgentDictatedText(''); setAgentDictateAutoSubmit(false);
+      window.islandHoldReleased = false;
+      send('wakeWordResume', { revision: state.wakeWord?.revision });
+    };
+    window.addEventListener('island:voice-dismiss', dismiss);
+    return () => window.removeEventListener('island:voice-dismiss', dismiss);
+  }, [state.wakeWord?.revision]);
   const [dictateTranscriptExpanded, setDictateTranscriptExpanded] = useState(false);
   const [agentDictatedText, setAgentDictatedText] = useState('');
   const [dictatePortalTarget, setDictatePortalTarget] = useState(null);
@@ -1976,7 +2054,7 @@ function App() {
     } catch { return 'high'; }
   });
   const [settingsOpen, setSettingsOpen] = useState(false);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (state.wakeWord?.status === 'triggered') {
       setSettingsOpen(false);
       setSignOpen(false);
@@ -2001,6 +2079,17 @@ function App() {
     }, 170);
   };
   useEffect(() => () => { window.clearTimeout(settingsCloseTimer.current); window.clearTimeout(settingsReturnTimer.current); }, []);
+  useLayoutEffect(() => {
+    // A route change can bypass Back while its exit is still running.
+    if (!settingsOpen) {
+      window.clearTimeout(settingsCloseTimer.current);
+      setSettingsClosing(false);
+      if (settingsReturning) document.querySelector('.bar button[aria-label="Island settings"]')?.focus({ preventScroll: true });
+    } else {
+      window.clearTimeout(settingsReturnTimer.current);
+      setSettingsReturning(false);
+    }
+  }, [settingsOpen]);
   useEffect(() => {
     const target = document.createElement('div');
     target.className = 'dictate-portal';
@@ -2018,26 +2107,35 @@ function App() {
   useEffect(() => {
     if (!dictateOpen || dictateMode !== 'home') setDictateTranscriptExpanded(false);
   }, [dictateOpen, dictateMode]);
+  const askCaptureState = useRef(null);
+  useLayoutEffect(() => { askCaptureState.current = { state, dictateOpen }; });
   useEffect(() => {
     if (displayPage !== 'Ask' || settingsOpen) return;
+    let holding = false;
     const ownsSpace = e => e.code === 'Space' && !isEditor(e.target) && !document.querySelector('.ask-context-page');
     const down = e => {
       if (!ownsSpace(e) || e.altKey || e.ctrlKey || e.metaKey) return;
       e.preventDefault(); e.stopImmediatePropagation();
       if (document.activeElement?.matches('button')) document.activeElement.blur();
+      const { state, dictateOpen } = askCaptureState.current;
       const agent = state.agents?.[readAgentPreferences().defaultProvider];
       if (e.repeat || dictateOpen || !state.speechSettings?.configured || !agent?.connected || agent.sessions?.some(session => session.id === agent.selectedId && session.active)) return;
       if (['arming', 'listening'].includes(state.wakeWord?.status)) send('wakeWordSet', { enabled: false });
+      if (holding) return;
+      holding = true;
       window.islandHoldReleased = false; send('holdSpaceBegin'); setHoldCapture(true); setAgentDictateAutoSubmit(true); setDictateMode('agent'); setDictateOpen(true);
     };
     const release = e => {
-      if (!ownsSpace(e)) return;
+      if (e.code !== 'Space' || (!holding && !ownsSpace(e))) return;
       e.preventDefault(); e.stopImmediatePropagation();
+      holding = false;
       window.islandHoldReleased = true; send('holdSpaceEnd'); window.dispatchEvent(new Event('island:hold-release'));
     };
+    const cancel = () => { if (holding) { holding = false; window.islandHoldReleased = true; send('holdSpaceEnd'); window.dispatchEvent(new Event('island:hold-release')); } };
     window.addEventListener('keydown', down, true); window.addEventListener('keyup', release, true);
-    return () => { window.removeEventListener('keydown', down, true); window.removeEventListener('keyup', release, true); };
-  }, [displayPage, settingsOpen, dictateOpen, state.speechSettings?.configured, state.agents]);
+    window.addEventListener('blur', cancel);
+    return () => { cancel(); window.removeEventListener('blur', cancel); window.removeEventListener('keydown', down, true); window.removeEventListener('keyup', release, true); };
+  }, [displayPage, settingsOpen]);
   const [homeActions, setHomeActionsState] = useState(loadHomeActions);
   const setHomeActions = value => {
     const next = normalizeHomeActions(typeof value === 'function' ? value(homeActions) : value);
@@ -2091,7 +2189,7 @@ function App() {
     const updatedAt = state.weatherUpdatedAt ?? null;
     const receivedFreshData = updatedAt != null && updatedAt !== weatherUpdatedAtRef.current && !!state.weatherData;
     weatherUpdatedAtRef.current = updatedAt;
-    if (!receivedFreshData || state.shellSettings?.reducedMotion) return;
+    if (!receivedFreshData || state.shellSettings?.reducedMotion || state.shellSettings?.systemReducedMotion) return;
 
     setWeatherDataTransition(true);
     clearTimeout(weatherTransitionTimerRef.current);
@@ -2099,7 +2197,7 @@ function App() {
       weatherTransitionTimerRef.current = null;
       setWeatherDataTransition(false);
     }, 420);
-  }, [state.weatherLoading, state.weatherUpdatedAt, state.weatherData, state.shellSettings?.reducedMotion]);
+  }, [state.weatherLoading, state.weatherUpdatedAt, state.weatherData, state.shellSettings?.reducedMotion, state.shellSettings?.systemReducedMotion]);
   useEffect(() => () => clearTimeout(weatherTransitionTimerRef.current), []);
   useEffect(() => {
     if (!state.weatherData?.hourly?.time?.length) return undefined;
@@ -2124,12 +2222,8 @@ function App() {
     const timer = setTimeout(() => setPowerArmed(null), 2400);
     return () => clearTimeout(timer);
   }, [powerArmed]);
-  const [mediaClock, setMediaClock] = useState(0);
   const [mediaReceivedAt, setMediaReceivedAt] = useState(0);
   const [fileDragOver, setFileDragOver] = useState(false);
-  const [seekDraftMs, setSeekDraftMs] = useState(null);
-  const seekPendingRef = useRef(null);
-  const seekTimerRef = useRef(null);
   const [volumeDraft, setVolumeDraft] = useState(null);
   const [outputPickerOpen, setOutputPickerOpen] = useState(false);
   const volumeDraftRef = useRef(null);
@@ -2188,7 +2282,7 @@ function App() {
         weatherCityRef.current = next.weatherCity ?? '';
         setCity(next.weatherCity ?? '');
       }
-      setMediaReceivedAt(performance.now());
+      if (Object.prototype.hasOwnProperty.call(update, 'media')) setMediaReceivedAt(performance.now());
     };
     window.islandReceiveMedia = incoming => {
       setState(previous => ({ ...previous, media: mergeMedia(previous.media, incoming) }));
@@ -2295,17 +2389,11 @@ function App() {
       window.removeEventListener('keydown', onKeyDown);
     };
   }, [outputPickerOpen]);
-  useEffect(() => () => { clearTimeout(volumeTimerRef.current); clearTimeout(seekTimerRef.current); }, []);
-  useEffect(() => {
-    if (!state.media?.playing || (state.expanded && displayPage !== 'Home')) return undefined;
-    setMediaClock(performance.now());
-    const timer = setInterval(() => setMediaClock(performance.now()), state.expanded ? 250 : 1000);
-    return () => clearInterval(timer);
-  }, [state.media?.playing, state.media?.title, state.media?.position_ms, state.expanded, displayPage]);
+  useEffect(() => () => { clearTimeout(volumeTimerRef.current); }, []);
   const page = state.page;
   const nav = name => { if (name !== 'Note') setShowReminderCalendar(false); setSignOpen(false); setCommandOpen(false); setDictateOpen(false); setScreenSelection(null); setSettingsOpen(false); send('page', { page: name }); };
   const openScreenSelection = mode => { setSignOpen(false); setScreenResult(null); setCommandOpen(false); setSettingsOpen(false); setDictateOpen(false); setScreenSelection(mode); };
-  const openDictation = () => { if (['arming', 'listening'].includes(state.wakeWord?.status)) send('wakeWordSet', { enabled: false, phrase: state.wakeWord?.phrase }); setAgentDictateAutoSubmit(false); setSignOpen(false); setScreenResult(null); setCommandOpen(false); setSettingsOpen(false); setScreenSelection(null); setDictateMode('home'); setDictateTranscriptExpanded(false); setDictateOpen(true); };
+  const openDictation = () => { setHoldCapture(false); window.islandHoldReleased = false; if (['arming', 'listening'].includes(state.wakeWord?.status)) send('wakeWordSet', { enabled: false, phrase: state.wakeWord?.phrase }); setAgentDictateAutoSubmit(false); setSignOpen(false); setScreenResult(null); setCommandOpen(false); setSettingsOpen(false); setScreenSelection(null); setDictateMode('home'); setDictateTranscriptExpanded(false); setDictateOpen(true); };
   const openSignature = () => { setScreenResult(null); setCommandOpen(false); setSettingsOpen(false); setDictateOpen(false); setScreenSelection(null); setSignOpen(true); };
   const beginScreenTool = scope => {
     if (!screenSelection) return;
@@ -2410,12 +2498,13 @@ function App() {
     // auto-sized block layout, which can expand its nested scroller, clamp its
     // scrollTop to zero, and then shrink it again. The saved scroll position
     // cannot recover from that browser-side clamp.
-    if (settingsOpen) {
+    if (settingsOpen && !state.wakeWord?.surface) {
       if (layoutWideRef.current !== wide) layoutWideRef.current = wide;
       send('layout', {
         wide,
         allowLarge: true,
         settingsOpen: true,
+        wakeSurface: false,
         page: displayPage,
         generation: state.compactRenderGeneration ?? 0,
       });
@@ -2435,7 +2524,9 @@ function App() {
       // Otherwise height:100% feeds the previous shell height back into native
       // layout and short pages cannot shrink after a tab or shape change.
       const pageRoot = content.firstElementChild;
-      const preferredHeight = Number(pageRoot?.dataset.layoutHeight);
+      // Capture errors need room without changing the normal compact footprint.
+      const captureHeight = state.wakeWord?.surface ? Number(pageRoot?.querySelector?.('.wake-listening-surface[data-layout-height]')?.dataset.layoutHeight) || 0 : 0;
+      const preferredHeight = Math.max(Number(pageRoot?.dataset.layoutHeight) || 0, captureHeight);
       let naturalHeight;
       if (Number.isFinite(preferredHeight) && preferredHeight > 0) {
         naturalHeight = Math.min(preferredHeight, 480);
@@ -2464,7 +2555,7 @@ function App() {
       const height = Math.ceil((bar?.offsetHeight ?? 43) + naturalHeight
         + parseFloat(styles.paddingTop) + parseFloat(styles.paddingBottom));
       const allowLarge = settingsOpen || (displayPage === 'Home' && (!!screenResult || commandOpen || signOpen || (dictateOpen && dictateMode === 'home' && dictateTranscriptExpanded))) || displayPage === 'Agents' || displayPage === 'Ask' || displayPage === 'Convert';
-      if (force || Math.abs(height - last) >= 4 || lastWide !== wide || lastAllowLarge !== allowLarge || lastSettingsOpen !== settingsOpen) { last = height; lastWide = wide; lastAllowLarge = allowLarge; lastSettingsOpen = settingsOpen; layoutWideRef.current = wide; send('layout', { height, wide, allowLarge, settingsOpen, page: displayPage, generation: state.compactRenderGeneration ?? 0 }); }
+      if (force || Math.abs(height - last) >= 4 || lastWide !== wide || lastAllowLarge !== allowLarge || lastSettingsOpen !== settingsOpen) { last = height; lastWide = wide; lastAllowLarge = allowLarge; lastSettingsOpen = settingsOpen; layoutWideRef.current = wide; send('layout', { height, wide, allowLarge, settingsOpen: settingsOpen && !state.wakeWord?.surface, wakeSurface: !!state.wakeWord?.surface, wakeRevision: state.wakeWord?.revision ?? 0, page: displayPage, generation: state.compactRenderGeneration ?? 0 }); }
     };
     let frame = 0;
     let forceNext = false;
@@ -2474,17 +2565,32 @@ function App() {
       frame = requestAnimationFrame(() => { frame = 0; const forced = forceNext; forceNext = false; report(forced); });
     };
     const observer = new ResizeObserver(() => schedule());
+    let observedRoot = null;
+    const observeRoot = () => {
+      if (observedRoot === content.firstElementChild) return;
+      if (observedRoot) observer.unobserve(observedRoot);
+      observedRoot = content.firstElementChild;
+      if (observedRoot) observer.observe(observedRoot);
+    };
     observer.observe(content);
-    if (content.firstElementChild) observer.observe(content.firstElementChild);
+    observeRoot();
+    // Fixed-height agent views change their preferred height without resizing
+    // the viewport. Watch that contract, not every streamed agent snapshot.
+    const mutations = new MutationObserver(records => {
+      if (!records.some(record => record.type === 'attributes' || record.target === content)) return;
+      observeRoot();
+      schedule();
+    });
+    mutations.observe(content, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-layout-height'] });
     const requestLayout = () => schedule(true);
     window.islandRequestLayout = requestLayout;
     schedule(true);
-    return () => { observer.disconnect(); cancelAnimationFrame(frame); if (window.islandRequestLayout === requestLayout) delete window.islandRequestLayout; };
+    return () => { mutations.disconnect(); observer.disconnect(); cancelAnimationFrame(frame); if (window.islandRequestLayout === requestLayout) delete window.islandRequestLayout; };
   // Notes and Reminders can have different intrinsic heights while the
   // flex-sized workspace keeps the same observed outer size. Re-run the
   // existing measurement when its internal tab changes instead of trusting
   // ResizeObserver to notice a change hidden by the fixed viewport.
-  }, [displayPage, noteView, showReminderCalendar, signOpen, state.expanded, state.compactRenderGeneration, state.agents, state.weatherData, state.noteFolders?.length, showFolderInput, folderEditing, dictateOpen, dictateMode, dictateTranscriptExpanded, screenSelection, screenResult, commandOpen, settingsOpen]);
+  }, [displayPage, noteView, showReminderCalendar, signOpen, state.expanded, state.compactRenderGeneration, state.wakeWord?.surface, state.wakeWord?.revision, state.weatherData, state.noteFolders?.length, showFolderInput, folderEditing, dictateOpen, dictateMode, dictateTranscriptExpanded, screenSelection, screenResult, commandOpen, settingsOpen]);
   const clips = state.clipboard ?? [];
   const homeClips = (state.homeClipboard ?? clips).map(item => ({ item, index: clips.indexOf(item) })).filter(({ index }) => index >= 0);
   const filteredClips = clips.map((item, index) => ({ item, index })).filter(({ item }) => item.toLocaleLowerCase().includes(clipboardQuery.toLocaleLowerCase()));
@@ -2650,36 +2756,10 @@ function App() {
   const daily = forecast?.daily;
   const weekLow = Math.min(...(daily?.temperature_2m_min ?? [0]));
   const weekHigh = Math.max(...(daily?.temperature_2m_max ?? [1]));
-  const mediaDurationMs = state.media?.duration_ms ?? 0;
   const outputVolume = volumeDraft ?? state.outputVolume ?? 0;
   const outputDeviceLabel = state.selectedOutputDeviceId
     ? (state.outputDevices ?? []).find(device => device.id === state.selectedOutputDeviceId)?.name ?? 'Audio output'
     : 'System default';
-  const mediaPositionMs = Math.min(mediaDurationMs || Number.MAX_SAFE_INTEGER,
-    (state.media?.position_ms ?? 0) + (state.media?.playing && mediaReceivedAt ? Math.max(0, mediaClock - mediaReceivedAt) : 0));
-  const mediaSeekTo = positionMs => {
-    if (!mediaDurationMs || !state.media?.can_seek) return;
-    const nextPosition = Math.max(0, Math.min(mediaDurationMs, Math.round(positionMs)));
-    if (seekPendingRef.current === nextPosition && seekTimerRef.current) return;
-    seekPendingRef.current = nextPosition;
-    setSeekDraftMs(nextPosition);
-    clearTimeout(seekTimerRef.current);
-    seekTimerRef.current = setTimeout(() => {
-      seekPendingRef.current = null;
-      setSeekDraftMs(null);
-      seekTimerRef.current = null;
-    }, 2200);
-    send('mediaSeek', { positionMs: nextPosition });
-  };
-  useEffect(() => {
-    const target = seekPendingRef.current;
-    const observed = state.media?.position_ms;
-    if (target == null || observed == null || Math.abs(observed - target) > 1800) return;
-    clearTimeout(seekTimerRef.current);
-    seekTimerRef.current = null;
-    seekPendingRef.current = null;
-    setSeekDraftMs(null);
-  }, [state.media?.position_ms]);
   const flushVolume = () => {
     clearTimeout(volumeTimerRef.current);
     volumeTimerRef.current = null;
@@ -2708,7 +2788,7 @@ function App() {
       indicator.style.width = `${spring.width}px`;
     };
     cancelAnimationFrame(spring.frame);
-    if (!spring.placed || spring.node !== indicator || state.shellSettings?.reducedMotion || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    if (!spring.placed || spring.node !== indicator || state.shellSettings?.reducedMotion || state.shellSettings?.systemReducedMotion || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       spring.node = indicator;
       Object.assign(spring, { x: targetX, width: targetWidth, vx: 0, vw: 0, placed: true });
       paint();
@@ -2737,7 +2817,7 @@ function App() {
     };
     spring.frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(spring.frame);
-  }, [page, visible.join('|'), state.expanded, settingsOpen, state.shellSettings?.reducedMotion]);
+  }, [page, visible.join('|'), state.expanded, settingsOpen, state.shellSettings?.reducedMotion, state.shellSettings?.systemReducedMotion]);
   const rainCandidate = upcomingRain(state.weatherData, weatherClockNow);
   const updateCandidates = [
     state.opencode?.updateAvailable && !state.opencode?.installing && { id: 'opencode', label: 'OpenCode', version: state.opencode.latestVersion, busy: !!(state.opencode.activeCount || state.agents?.opencode?.activeCount) },
@@ -2785,7 +2865,7 @@ function App() {
       visible: !state.expanded && !state.compactFaded,
     });
   }, [compactStatus.id, compactStatus.payload?.feedback?.id, state.expanded, state.compactFaded]);
-  return <div data-reduced-motion={!!state.shellSettings?.reducedMotion} className={'island accent-' + accentGradient + ' ' + (state.dark ? 'dark' : 'light') + (state.expanded ? ' expanded' : ' compact') + ((state.shellSettings?.shape || 'notch') === 'capsule' ? ' capsule-shape' : ' notch-shape') + ' ' + shellPhase + (state.compactFaded ? ' compact-faded' : '') + (fileDragOver ? ' file-dragging' : '') + (state.wakeWord?.surface ? ' voice-surface-open' : '') + (settingsOpen ? ' settings-open' : '') + (settingsClosing ? ' settings-closing' : '') + (settingsReturning ? ' settings-returning' : '')}
+  return <div data-reduced-motion={!!(state.shellSettings?.reducedMotion || state.shellSettings?.systemReducedMotion)} className={'island accent-' + accentGradient + ' ' + (state.dark ? 'dark' : 'light') + (state.expanded ? ' expanded' : ' compact') + ((state.shellSettings?.shape || 'notch') === 'capsule' ? ' capsule-shape' : ' notch-shape') + ' ' + shellPhase + (state.compactFaded ? ' compact-faded' : '') + (fileDragOver ? ' file-dragging' : '') + (state.wakeWord?.surface ? ' voice-surface-open' : '') + (settingsOpen ? ' settings-open' : '') + (settingsClosing ? ' settings-closing' : '') + (settingsReturning ? ' settings-returning' : '')}
     onFocusCapture={event => { if (isEditor(event.target)) send('textFocus'); }}
     onBlurCapture={event => { if (isEditor(event.target)) queueMicrotask(() => { if (!isEditor(document.activeElement)) send('textBlur'); }); }}>
     {!state.expanded ? <CompactTransition state={state} compactStatus={compactStatus} batteryView={batteryView} screenRecordingAt={screenRecordingAt} screenRecordingElapsed={screenRecordingElapsed} screenRecordingStopping={screenRecordingStopping} contextTools={contextTools} onRunContextTool={runContextAction} /> : <>
@@ -2797,33 +2877,21 @@ function App() {
       {!settingsOpen && <button className={'icon-button ' + (settingsOpen ? 'pinned' : '')} title="Island settings" aria-label="Island settings" aria-pressed={settingsOpen} onClick={() => { setSignOpen(false); setDictateOpen(false); setScreenSelection(null); setCommandOpen(false); setSettingsOpen(open => !open); }}><Icon name="Settings" /></button>}
     </header>
     {state.dropActive && <div className={'convert-native-drop intent-' + state.dropIntent} role="group" aria-label="Choose a drop destination" aria-live="polite"><div className={state.dropIntent === 1 ? 'active' : state.dropIntent === 3 ? 'is-disabled' : ''}><Icon name="File" size={23} /><strong>Convert</strong><small>{state.dropIntent === 3 ? 'Files only' : 'Resize or change format'}</small></div><div className={state.dropIntent === 2 ? 'active' : ''}><Icon name="Shelf" size={23} /><strong>Shelf</strong><small>Save for later</small></div></div>}
-    <main className="body" ref={bodyRef}><div className="page-content entering" key={displayPage}><PageBoundary key={`${displayPage}:${settingsOpen ? settingsSection : 'page'}:${commandOpen}:${signOpen}`}>
+    <main className="body" ref={bodyRef}><div className="page-content entering" key={`${displayPage}:${settingsOpen ? 'settings' : 'page'}`}><PageBoundary key={`${displayPage}:${settingsOpen ? 'settings' : 'page'}:${commandOpen}:${signOpen}`}>
       {settingsOpen ? <SettingsPanel state={state} batteryView={batteryView} setBatteryView={setBatteryView} accentGradient={accentGradient} setAccentGradient={setAccentGradient} mediaCardStyle={mediaCardStyle} setMediaCardStyle={setMediaCardStyle} homeActions={homeActions} setHomeActions={setHomeActions} compactPriorityOrder={compactPriorityOrder} setCompactPriorityOrder={setCompactPriorityOrder} section={settingsSection} setSection={setSettingsSection} sectionScrollPositions={settingsScrollPositions} /> : <>
       {displayPage === 'Home' && (commandOpen ? <CommandPage query={commandQuery} setQuery={setCommandQuery} state={state} onClose={() => setCommandOpen(false)} onRoute={routeCommand} /> : signOpen ? <div className="home-layout sign-home-layout"><SignaturePanel onBack={() => setSignOpen(false)} strokesRef={signatureStrokesRef} /></div> : <div className="home-layout" data-layout-height={dictateOpen && dictateMode === 'home' && dictateTranscriptExpanded ? 380 : undefined}>
         <div className={'home-grid ' + (!screenSelection && !dictateOpen && state.media ? 'has-media ' : '') + (screenSelection ? 'is-tool-selecting ' : '') + (dictateOpen ? 'is-dictating' : '')}>
           {dictateOpen ? <div className="home-dictate-slot" ref={homeDictateSlotRef} /> : screenSelection ? <ScreenSelectionSetup mode={screenSelection} onBack={() => setScreenSelection(null)} onSelect={beginScreenTool} recordQuality={recordQuality} onRecordQualityChange={quality => { setRecordQuality(quality); try { window.localStorage.setItem('island.screen-record-quality.v1', quality); } catch {} }} /> : <>
           <section className={'home-primary ' + (state.media ? `has-player media-card-${mediaCardStyle}-mode ` : '') + (state.media?.artwork && mediaCardStyle === 'backdrop' ? 'media-card-has-artwork ' : '') + (!state.media && !state.activeRuns && !homeClips.length ? 'is-welcome' : '')} aria-label={state.media ? 'Now playing' : state.activeRuns ? 'Agent activity' : homeClips.length ? 'Recent clipboard' : 'Welcome'}>
             {state.media && mediaCardStyle === 'backdrop' && state.media.artwork && <div className="media-backdrop" aria-hidden="true"><img src={state.media.artwork} alt="" draggable="false" /><span /></div>}
-            {(state.media || state.activeRuns || homeClips.length > 0) && <div className="primary-heading"><span className="eyebrow">{state.media ? state.media.playing ? 'Now playing' : 'Paused' : state.activeRuns ? 'Agents running' : 'Recent clipboard'}</span>{state.media ? <>{(state.media.sessions ?? []).length > 1 ? <MediaSessionSwitcher sessions={state.media.sessions} selectedId={state.media.session_id} onSelect={id => send('mediaSelect', { id })} reducedMotion={!!state.shellSettings?.reducedMotion} /> : <span className="primary-count">{mediaSourceName(state.media.source)}</span>}</> : <span className="primary-count">{state.activeRuns ? `${state.activeRuns} agents` : homeClips.length}</span>}</div>}
+            {(state.media || state.activeRuns || homeClips.length > 0) && <div className="primary-heading"><span className="eyebrow">{state.media ? state.media.playing ? 'Now playing' : 'Paused' : state.activeRuns ? 'Agents running' : 'Recent clipboard'}</span>{state.media ? <>{(state.media.sessions ?? []).length > 1 ? <MediaSessionSwitcher sessions={state.media.sessions} selectedId={state.media.session_id} onSelect={id => send('mediaSelect', { id })} reducedMotion={!!(state.shellSettings?.reducedMotion || state.shellSettings?.systemReducedMotion)} /> : <span className="primary-count">{mediaSourceName(state.media.source)}</span>}</> : <span className="primary-count">{state.activeRuns ? `${state.activeRuns} agents` : homeClips.length}</span>}</div>}
             {state.media ? <div className={'media-content ' + (mediaCardStyle === 'backdrop' ? 'media-content-backdrop' : '')}>
               <div className={'media-art ' + (state.media.artwork ? 'has-art' : '')}>
                 {state.media.artwork ? <img src={state.media.artwork} alt="Album artwork" /> : <Icon name="Play" size={24} />}
               </div>
               <div className="media-main">
                 <div className="media-title"><strong title={state.media.title || mediaSourceName(state.media.source)}>{state.media.title || mediaSourceName(state.media.source)}</strong>{state.media.artist && <span title={state.media.artist}>{state.media.artist}</span>}</div>
-                <div className="media-progress" aria-label="Playback timeline">
-                  <input className="media-seek" type="range" min="0" max={mediaDurationMs || 1} step="500" aria-label="Seek in current media" disabled={!state.media.can_seek} value={seekDraftMs ?? mediaPositionMs} style={{ '--range-progress': `${mediaDurationMs ? Math.min(100, (seekDraftMs ?? mediaPositionMs) / mediaDurationMs * 100) : 0}%` }} onChange={event => setSeekDraftMs(Number(event.currentTarget.value))} onPointerUp={event => mediaSeekTo(Number(event.currentTarget.value))} onPointerCancel={event => mediaSeekTo(Number(event.currentTarget.value))} onKeyUp={event => mediaSeekTo(Number(event.currentTarget.value))} onBlur={event => { if (seekDraftMs != null) mediaSeekTo(Number(event.currentTarget.value)); }} />
-                  <div className="media-times"><small>{mediaTime(seekDraftMs ?? mediaPositionMs)}</small><small>{mediaTime(mediaDurationMs || null)}</small></div>
-                </div>
-                <div className="media-controls">
-                  <span className="media-control-side">{state.media.can_seek && <button type="button" aria-label="Back 10 seconds" title="Back 10 seconds" onClick={() => mediaSeekTo(mediaPositionMs - 10000)}><Icon name="Back10" size={18} /></button>}</span>
-                  <span className="media-control-center">
-                    {state.media.can_previous && <button type="button" aria-label="Previous track" title="Previous track" onClick={() => send('mediaPrevious')}><Icon name="Previous" size={18} /></button>}
-                    {state.media.can_toggle && <button type="button" className="media-play" aria-label={state.media.playing ? 'Pause' : 'Play'} title={state.media.playing ? 'Pause' : 'Play'} onClick={() => send('mediaToggle')}><Icon name={state.media.playing ? 'Pause' : 'Play'} size={18} /></button>}
-                    {state.media.can_next && <button type="button" aria-label="Next track" title="Next track" onClick={() => send('mediaNext')}><Icon name="Next" size={18} /></button>}
-                  </span>
-                  <span className="media-control-side">{state.media.can_seek && <button type="button" aria-label="Forward 10 seconds" title="Forward 10 seconds" onClick={() => mediaSeekTo(mediaPositionMs + 10000)}><Icon name="Forward10" size={18} /></button>}</span>
-                </div>
+                <MediaTransport media={state.media} receivedAt={mediaReceivedAt} />
               </div>
             </div>
               : state.activeRuns ? <><div className="home-agent-status"><div><strong className="primary-title">{state.status || 'Agent activity'}</strong><p className="primary-detail">{state.activity || 'Waiting for the next provider update'}</p></div></div><button className="primary-action" onClick={() => nav('Agents')}>View activity</button></>
@@ -2885,7 +2953,7 @@ function App() {
         <div className="section-head"><span className="eyebrow">FILES AT HAND · {shelf.length}</span><button className="subtle-action" onClick={() => nav('Convert')}>Convert files</button>{shelf.length > 0 && <button className="subtle-action" onClick={() => send('shelfClear')}>Clear shelf</button>}</div>
         <div className={'shelf-grid scroll-list ' + (shelf.length ? '' : 'is-empty')}>{shelf.length ? shelf.map((item, index) => <div className={'shelf-item ' + (shelfDrag?.from === index ? 'is-dragging ' : '') + (shelfDrag?.from !== shelfDrag?.to && shelfDrag?.to === index ? 'is-drop-target' : '')} key={`${item}-${index}`} data-shelf-index={index} tabIndex={0} role="group" aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight Alt+ArrowUp Alt+ArrowDown" aria-label={`Shelf item ${index + 1}; drag to reorder, or use Alt plus an arrow key`}
           onKeyDown={event => { if (!event.altKey || !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return; event.preventDefault(); const to = Math.max(0, Math.min(shelf.length - 1, index + (['ArrowLeft', 'ArrowUp'].includes(event.key) ? -1 : 1))); if (to !== index) send('shelfMove', { from: index, to }); }}>
-          <button className="shelf-file" type="button" draggable="false" title="Drag to reorder · click to open" aria-label={`Open ${item || `shelf item ${index + 1}`}; drag to reorder`} onPointerDown={event => beginShelfPointer(event, index)} onPointerMove={moveShelfPointer} onPointerUp={finishShelfPointer} onPointerCancel={cancelShelfPointer} onClick={event => { if (suppressShelfClickRef.current) { event.preventDefault(); event.stopPropagation(); suppressShelfClickRef.current = false; return; } send('shelfOpen', { index }); }}><ShelfVisual kind={state.shelfKinds?.[index]} visual={state.shelfIcons?.[index]} /></button>
+          <button className="shelf-file" type="button" draggable="false" title="Drag to reorder · click to open" aria-label={`Open ${item || `shelf item ${index + 1}`}; drag to reorder`} onPointerDown={event => beginShelfPointer(event, index)} onPointerMove={moveShelfPointer} onPointerUp={finishShelfPointer} onPointerCancel={cancelShelfPointer} onLostPointerCapture={cancelShelfPointer} onClick={event => { if (suppressShelfClickRef.current) { event.preventDefault(); event.stopPropagation(); suppressShelfClickRef.current = false; return; } send('shelfOpen', { index }); }}><ShelfVisual kind={state.shelfKinds?.[index]} visual={state.shelfIcons?.[index]} /></button>
           <button type="button" draggable="false" className="shelf-remove-button" title="Remove from Shelf" aria-label={`Remove ${item || `shelf item ${index + 1}`} from Shelf`} onClick={event => { event.stopPropagation(); send('shelfRemove', { index }); }}><span aria-hidden="true">×</span></button>
         </div>) : <div className={'empty-state shelf-empty ' + (fileDragOver ? 'file-dragover' : '')}><Icon name="Shelf" size={27} /><strong>{fileDragOver ? 'Drop here' : 'Drop files onto the island'}</strong><span>They stay on this shelf until you clear it.</span></div>}</div>
       </section>}
@@ -2893,7 +2961,7 @@ function App() {
         <div className="editor-column"><div className="section-head"><span className="eyebrow">SCRATCHPAD</span><small>{text.length} chars · {text.trim() ? text.trim().split(/\s+/).length : 0} words · {text ? text.split('\n').length : 0} lines</small></div><textarea aria-label="Text scratchpad" value={text} onChange={event => { setText(event.target.value); send('textSet', { value: event.target.value }); }} placeholder="Type, paste, or bring in clipboard text…" /></div>
         <div className="tool-grid"><span className="tool-heading">TOOLS</span>{[['Paste text','textReadClipboard'],['Copy text','textCopy'],['Uppercase','textUpper'],['Lowercase','textLower'],['Trim space','textTrim'],['Clear','textClear']].map(([label, kind]) => <button key={kind} onClick={() => send(kind)}>{label}</button>)}{futureAction('Title case')}{futureAction('JSON format')}{futureAction('Base64')}{futureAction('Make QR')}</div>
       </section>}
-      {['Agents', 'Ask'].includes(displayPage) && <AgentsWorkspace voiceSurface={!!state.wakeWord?.surface} askMode={displayPage === 'Ask'} state={state} Icon={Icon} send={send} onDictate={options => { const autoSubmit = options?.autoSubmit === true; setHoldCapture(options?.hold === true); if (options?.hold) window.islandHoldReleased = false; if ((!autoSubmit || options?.hold) && ['arming', 'listening'].includes(state.wakeWord?.status)) send('wakeWordSet', { enabled: false, phrase: state.wakeWord?.phrase }); setAgentDictateAutoSubmit(autoSubmit); setSettingsOpen(false); setDictateMode('agent'); setDictateOpen(true); }} dictateActive={dictateOpen && dictateMode === 'agent'} dictateSlotRef={agentDictateSlotRef} dictatedText={agentDictatedText} dictatedAutoSubmit={agentDictateAutoSubmit} onDictatedTextConsumed={() => { setAgentDictatedText(''); setAgentDictateAutoSubmit(false); }} renderAnswer={renderOpenCodeReply} openCodeProfiles={<OpenCodeAgentManager agents={visibleOpenCodeAgents} models={openCode.models || []} notice={openCode.notice} error={openCode.agentError} onRefresh={() => send('opencodeAgentsRefresh')} onSave={profile => send('opencodeSaveAgent', profile)} onDelete={id => send('opencodeDeleteAgent', { id })} />} />}
+      {['Agents', 'Ask'].includes(displayPage) && <AgentsWorkspace voiceSurface={!!state.wakeWord?.surface} askMode={displayPage === 'Ask'} state={state} Icon={Icon} send={send} onDictate={options => { const autoSubmit = options?.autoSubmit === true; setHoldCapture(options?.hold === true); if (options?.hold) window.islandHoldReleased = false; if ((!autoSubmit || options?.hold) && ['arming', 'listening'].includes(state.wakeWord?.status)) send('wakeWordSet', { enabled: false, phrase: state.wakeWord?.phrase }); setAgentDictateAutoSubmit(autoSubmit); setSettingsOpen(false); setDictateMode('agent'); setDictateOpen(true); }} dictateActive={dictateOpen && dictateMode === 'agent'} dictateSlotRef={agentDictateSlotRef} dictatedText={agentDictatedText} dictatedAutoSubmit={agentDictateAutoSubmit} onDictatedTextConsumed={() => { setAgentDictatedText(''); setAgentDictateAutoSubmit(false); setHoldCapture(false); window.islandHoldReleased = false; }} renderAnswer={renderOpenCodeReply} openCodeProfiles={<OpenCodeAgentManager agents={visibleOpenCodeAgents} models={openCode.models || []} notice={openCode.notice} error={openCode.agentError} onRefresh={() => send('opencodeAgentsRefresh')} onSave={profile => send('opencodeSaveAgent', profile)} onDelete={id => send('opencodeDeleteAgent', { id })} />} />}
       {displayPage === 'Note' && <section className="note-workspace">
         <div className="note-mode-switch" role="tablist" aria-label="Notes and reminders"><button type="button" role="tab" aria-selected={noteView === 'notes'} className={noteView === 'notes' ? 'active' : ''} onClick={() => { setNoteView('notes'); setShowReminderCalendar(false); }}>Notes</button><button type="button" role="tab" aria-selected={noteView === 'reminders'} className={noteView === 'reminders' ? 'active' : ''} onClick={() => { setNoteView('reminders'); setShowReminderCalendar(false); }}>Reminders{state.noteReminderAt && <i className={state.noteReminderDue ? 'is-due' : ''} />}</button></div>
         {showReminderCalendar ? <ReminderCalendar initialAt={state.noteReminderAt} backLabel={noteView === 'notes' ? 'Notes' : 'Reminders'} onClose={closeReminderCalendar} onSet={at => { send('noteReminderSet', { at }); setShowReminderCalendar(false); }} /> : noteView === 'notes' ? <>
@@ -2954,7 +3022,7 @@ function App() {
       </>}
     </PageBoundary></div></main>
     </>}
-    {dictateOpen && dictatePortalTarget && createPortal(<DictatePanel captureSensitivity={readAgentPreferences().transcriptionSensitivity} pauseMs={readAgentPreferences().speechPauseMs} noiseSuppression={readAgentPreferences().speechNoiseSuppression} minimal={!!state.wakeWord?.surface && !holdCapture} holdCapture={holdCapture} autoSubmit={agentDictateAutoSubmit && !holdCapture} compact={dictateMode === 'agent'} speechSettings={state.speechSettings} onClose={() => { if (dictateMode === 'agent' && agentDictateAutoSubmit) send('wakeWordResume', { phrase: state.wakeWord?.phrase || 'Hey Island' }); setAgentDictateAutoSubmit(false); setDictateOpen(false); }} onInsert={dictateMode === 'agent' ? value => { setAgentDictatedText(value); setDictateOpen(false); } : undefined} transcriptExpanded={dictateTranscriptExpanded} onTranscriptExpandedChange={setDictateTranscriptExpanded} />, dictatePortalTarget)}
+    {dictateOpen && dictatePortalTarget && createPortal(<DictatePanel captureSensitivity={readAgentPreferences().transcriptionSensitivity} pauseMs={readAgentPreferences().speechPauseMs} noiseSuppression={readAgentPreferences().speechNoiseSuppression} minimal={!!state.wakeWord?.surface && !holdCapture} holdCapture={holdCapture} autoSubmit={agentDictateAutoSubmit && !holdCapture} compact={dictateMode === 'agent'} speechSettings={state.speechSettings} onClose={() => { if (state.wakeWord?.surface && !holdCapture) { send('voiceSurface', { open: false, dismiss: true }); } else if (dictateMode === 'agent' && agentDictateAutoSubmit) send('wakeWordResume', { phrase: state.wakeWord?.phrase || 'Hey Island' }); setHoldCapture(false); window.islandHoldReleased = false; setAgentDictateAutoSubmit(false); setDictateOpen(false); }} onInsert={dictateMode === 'agent' ? value => { setAgentDictatedText(value); setDictateOpen(false); } : undefined} transcriptExpanded={dictateTranscriptExpanded} onTranscriptExpandedChange={setDictateTranscriptExpanded} />, dictatePortalTarget)}
   </div>;
 }
 

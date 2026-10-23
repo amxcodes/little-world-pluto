@@ -6,6 +6,8 @@
 .settings-topbar > span { padding-left:12px; border-left:1px solid var(--line); color:var(--muted); font-size:12px; }
 .settings-open .settings-page { gap:0; }
 .settings-open .settings-page { animation:settings-open-arrive 230ms cubic-bezier(.2,.8,.2,1) both; }
+.settings-open .page-content { animation:none; }
+.settings-content { animation:settings-section-enter 150ms ease-out both; }
 .settings-closing .settings-page { animation:settings-open-depart 170ms cubic-bezier(.4,0,.7,.3) both; pointer-events:none; }
 .settings-returning .bar > nav { animation:settings-return-home 180ms cubic-bezier(.2,.8,.2,1) both; }
 @keyframes settings-open-arrive { from { opacity:.65; transform:translateY(5px) scale(.99); filter:blur(2px); } to { opacity:1; transform:translateY(0) scale(1); filter:blur(0); } }

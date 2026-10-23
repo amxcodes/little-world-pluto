@@ -31,7 +31,7 @@ jobs:
         working-directory: island-ui
         run: |
           npm ci
-          node --test tests/agent-navigation.test.mjs tests/voice-capture.test.mjs tests/voice-submit.test.mjs
+          node --test tests/agent-navigation.test.mjs tests/voice-capture.test.mjs tests/voice-submit.test.mjs tests/motion-lifecycle.test.mjs
           npm run build
           git diff --exit-code -- dist/index.html
 

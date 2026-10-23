@@ -77,12 +77,13 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     HWND_TOPMOST, IsChild, IsWindow, IsZoomed, KillTimer, LWA_ALPHA, MB_OK, MSG,
     MWMO_INPUTAVAILABLE, MsgWaitForMultipleObjectsEx, PM_REMOVE, PeekMessageW, PostMessageW,
     PostQuitMessage, QS_ALLINPUT, RI_MOUSE_LEFT_BUTTON_DOWN, RI_MOUSE_LEFT_BUTTON_UP,
-    RegisterClassW, SM_CXSCREEN, SM_CYSCREEN, SW_HIDE, SW_SHOWNOACTIVATE, SWP_NOACTIVATE,
-    SWP_SHOWWINDOW, SetForegroundWindow, SetLayeredWindowAttributes, SetTimer,
-    SetWindowDisplayAffinity, SetWindowLongPtrW, SetWindowPos, ShowWindow, TranslateMessage,
-    ULW_ALPHA, UpdateLayeredWindow, WM_APP, WM_INPUT, WM_LBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEMOVE,
-    WM_NCCREATE, WM_NCHITTEST, WM_QUIT, WM_TIMER, WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE,
-    WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP, WindowFromPoint,
+    RegisterClassW, SM_CXSCREEN, SM_CYSCREEN, SPI_GETCLIENTAREAANIMATION, SW_HIDE,
+    SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_SHOWWINDOW, SetForegroundWindow,
+    SetLayeredWindowAttributes, SetTimer, SetWindowDisplayAffinity, SetWindowLongPtrW,
+    SetWindowPos, ShowWindow, SystemParametersInfoW, TranslateMessage, ULW_ALPHA,
+    UpdateLayeredWindow, WM_APP, WM_INPUT, WM_LBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEMOVE,
+    WM_NCCREATE, WM_NCHITTEST, WM_QUIT, WM_SETTINGCHANGE, WM_TIMER, WNDCLASSW, WS_EX_LAYERED,
+    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP, WindowFromPoint,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{SW_RESTORE, SW_SHOW, ShowWindowAsync};
 
@@ -2487,6 +2488,7 @@ pub struct EdgeShell {
     accent_gradient: crate::storage::StoredAccentGradient,
     media_card_style: crate::storage::StoredMediaCardStyle,
     reduced_motion: bool,
+    system_reduced_motion: bool,
     hover_open_delay_ms: u32,
     hover_close_delay_ms: u32,
     click_to_open: bool,
@@ -3101,6 +3103,7 @@ impl EdgeShell {
             accent_gradient: startup.accent_gradient,
             media_card_style: startup.media_card_style,
             reduced_motion: startup.reduced_motion,
+            system_reduced_motion: system_reduced_motion(),
             hover_open_delay_ms: startup.hover_open_delay.as_millis() as u32,
             hover_close_delay_ms: startup.hover_close_delay.as_millis() as u32,
             click_to_open: startup.click_to_open,
@@ -3614,6 +3617,7 @@ impl EdgeShell {
             "excludeFromScreenCapture": self.exclude_from_screen_capture,
             "screenCaptureExclusionSupported": self.screen_capture_exclusion_supported,
             "reducedMotion": self.reduced_motion,
+            "systemReducedMotion": self.system_reduced_motion,
             "hoverOpen": self.hover_open_delay_ms,
             "hoverClose": self.hover_close_delay_ms,
             "openOnClick": self.click_to_open,
@@ -4197,6 +4201,12 @@ impl EdgeShell {
                     redraw = false;
                 }
                 "voiceSurface" => {
+                    if value["dismiss"].as_bool().unwrap_or(false) && self.wake_surface {
+                        // Escape/silence use the same retained content exit as
+                        // an outside click; do not reset width mid-collapse.
+                        self.handle_outside_click();
+                        return;
+                    }
                     self.wake_surface = value["open"].as_bool().unwrap_or(false);
                     if !self.wake_surface {
                         self.set_expanded_body_width(self.wide_layout);
@@ -4232,7 +4242,11 @@ impl EdgeShell {
                     redraw = false;
                 }
                 "wakeWordResume" => {
-                    if self.wake_word_status != "triggered" {
+                    if self.wake_word_status != "triggered"
+                        || value["revision"]
+                            .as_u64()
+                            .is_some_and(|revision| revision != self.wake_word_revision)
+                    {
                         return;
                     }
                     let phrase = value["phrase"].as_str().unwrap_or(&self.wake_word_phrase);
@@ -4831,6 +4845,15 @@ impl EdgeShell {
                         || value["generation"].as_u64()
                             != Some(self.react_compact_render_generation)
                         || value["page"].as_str() != Some(self.page.title())
+                    {
+                        continue;
+                    }
+                    // A pre-trigger Agents measurement may have the same page
+                    // and render generation. It must not resize this wake cycle.
+                    if value["wakeSurface"].as_bool().unwrap_or(false)
+                        != (self.wake_surface || self.wake_closing)
+                        || (self.wake_surface
+                            && value["wakeRevision"].as_u64() != Some(self.wake_word_revision))
                     {
                         continue;
                     }
@@ -6646,6 +6669,8 @@ impl EdgeShell {
                     if self.modules.agents {
                         self.wake_surface = true;
                         self.wake_closing = false;
+                        self.settings_layout_open = false;
+                        self.settings_layout_height = None;
                         self.expanded_body_width = 480.0;
                         self.expanded_body_height = 90.0;
                         self.page = ShellPage::Agents;
@@ -6837,7 +6862,15 @@ impl EdgeShell {
             return Ok(());
         }
         self.reduced_motion = reduced_motion;
-        if reduced_motion {
+        self.apply_motion_preference()
+    }
+
+    fn motion_reduced(&self) -> bool {
+        self.reduced_motion || self.system_reduced_motion
+    }
+
+    fn apply_motion_preference(&mut self) -> Result<(), String> {
+        if self.motion_reduced() {
             let target = self.visual_target();
             self.width_motion.snap_to(target.0);
             self.height_motion.snap_to(target.1);
@@ -7666,8 +7699,10 @@ impl EdgeShell {
     fn handle_outside_click(&mut self) {
         if self.wake_surface {
             if let Some(view) = &self.react_view {
-                let _ = view
-                    .evaluate_script("window.dispatchEvent(new Event('island:voice-dismiss'));");
+                let _ = view.evaluate_script(&format!(
+                    "window.dispatchEvent(new CustomEvent('island:voice-dismiss', {{detail: {{revision: {}}}}}));",
+                    self.wake_word_revision
+                ));
             }
             self.wake_surface = false;
             self.wake_closing = true;
@@ -8067,7 +8102,9 @@ impl EdgeShell {
     fn restore_foreground(&mut self) {
         unsafe { KillTimer(self.window, FOCUS_RESTORE_TIMER_ID) };
         let target = std::mem::replace(&mut self.previous_foreground, null_mut());
-        if !self.is_external_window(target) {
+        let foreground = unsafe { GetForegroundWindow() };
+        // A deliberate Alt+Tab/click during the delay owns the new focus.
+        if !self.is_external_window(target) || self.is_external_window(foreground) {
             return;
         }
         if unsafe { SetForegroundWindow(target) } == 0 {
@@ -8242,7 +8279,7 @@ impl EdgeShell {
             }
         } else if self.react_visible
             && self.content_exit_deadline.is_none()
-            && !self.reduced_motion
+            && !self.motion_reduced()
             && !self.reducer.snapshot().fullscreen
         {
             self.content_exit_deadline = Some(now + CONTENT_EXIT_DURATION);
@@ -8277,7 +8314,7 @@ impl EdgeShell {
                 // Cached UI stays visible while any slow provider refreshes.
                 self.prepare_page_content();
             }
-            if self.reduced_motion {
+            if self.motion_reduced() {
                 self.width_motion.snap_to(target.0);
                 self.height_motion.snap_to(target.1);
                 snapped = true;
@@ -8328,7 +8365,7 @@ impl EdgeShell {
         } else {
             0.0
         };
-        if self.reduced_motion {
+        if self.motion_reduced() {
             self.tuck_motion.snap_to(tuck_target);
         } else {
             self.tuck_motion
@@ -8345,7 +8382,7 @@ impl EdgeShell {
             2 => 1.0,
             _ => 0.0,
         };
-        if self.reduced_motion {
+        if self.motion_reduced() {
             self.drop_motion.snap_to(drop_target);
         } else {
             self.drop_motion
@@ -8353,7 +8390,7 @@ impl EdgeShell {
         }
         let drop_animating = self.drop_motion.advance(elapsed);
         let feedback_animating = self.screen_feedback_animation(now).1;
-        let live_compact_animation = !self.reduced_motion
+        let live_compact_animation = !self.motion_reduced()
             && !self.screen_feedback_active()
             && self.reducer.snapshot().mode == ShellMode::Resting
             && self.opencode.active_count > 0
@@ -8517,7 +8554,9 @@ impl EdgeShell {
     }
 
     fn expanded_layout_height(&self) -> f64 {
-        if self.settings_layout_open {
+        if self.wake_surface || self.wake_closing {
+            self.expanded_body_height
+        } else if self.settings_layout_open {
             self.settings_layout_height
                 .unwrap_or(self.expanded_body_height)
         } else {
@@ -8625,7 +8664,7 @@ impl EdgeShell {
     }
 
     fn screen_feedback_animation(&self, now: std::time::Instant) -> (f64, bool) {
-        if self.reduced_motion {
+        if self.motion_reduced() {
             return (1.0, false);
         }
         let Some(feedback) = self.selected_compact_feedback() else {
@@ -8820,12 +8859,12 @@ impl EdgeShell {
                 + ((body_height.min(SHELF_PEEK_SIZE.1) * scale - f64::from(card_height)) / 2.0)
                     .max(0.0);
             let press = self.drop_motion.value();
-            let convert_y = if self.reduced_motion {
+            let convert_y = if self.motion_reduced() {
                 0.0
             } else {
                 ((-press).max(0.0) * 5.0 - press.max(0.0) * 2.0) * scale
             };
-            let shelf_y = if self.reduced_motion {
+            let shelf_y = if self.motion_reduced() {
                 0.0
             } else {
                 (press.max(0.0) * 5.0 - (-press).max(0.0) * 2.0) * scale
@@ -9481,6 +9520,18 @@ unsafe extern "system" fn shell_window_proc(
             unsafe { (&mut *owner).drain_commands() };
         }
         return 0;
+    }
+    if message == WM_SETTINGCHANGE {
+        let owner = unsafe { &*callbacks }.owner.load(Ordering::Acquire);
+        if !owner.is_null() {
+            let owner = unsafe { &mut *owner };
+            let reduced = system_reduced_motion();
+            if owner.system_reduced_motion != reduced {
+                owner.system_reduced_motion = reduced;
+                let _ = owner.apply_motion_preference();
+                owner.push_react_state();
+            }
+        }
     }
     if message == WM_POWERBROADCAST {
         let owner = unsafe { &*callbacks }.owner.load(Ordering::Acquire);
@@ -11382,6 +11433,20 @@ fn battery_percentage(battery_flag: u8, battery_life_percent: u8) -> Option<u8> 
 
 fn last_error(context: &str) -> String {
     format!("{context}: {}", std::io::Error::last_os_error())
+}
+
+// Windows' animation preference applies to native geometry and web content.
+fn system_reduced_motion() -> bool {
+    let mut enabled: i32 = 1;
+    let ok = unsafe {
+        SystemParametersInfoW(
+            SPI_GETCLIENTAREAANIMATION,
+            0,
+            (&mut enabled as *mut i32).cast(),
+            0,
+        )
+    };
+    ok != 0 && enabled == 0
 }
 
 #[cfg(test)]

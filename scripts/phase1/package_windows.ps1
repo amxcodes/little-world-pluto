@@ -2,6 +2,8 @@
 param(
     [string]$OutputDirectory = (Join-Path $PSScriptRoot '..\..\target\windows-package'),
     [string]$BinaryPath = (Join-Path $PSScriptRoot '..\..\target\release\pluto.exe'),
+    [string]$SigningCertificateThumbprint = $env:PLUTO_SIGNING_CERT_THUMBPRINT,
+    [string]$TimestampUrl = 'https://timestamp.digicert.com',
     [switch]$SkipBuild
 )
 
@@ -24,16 +26,14 @@ if (-not $cargoVersionLine) { throw 'A three-part numeric package version was no
 $productVersion = $cargoVersionLine.Matches[0].Groups[1].Value
 $packageVersion = "$productVersion.0"
 $packagePath = Join-Path $outputRoot "Pluto-$packageVersion.msix"
-$publicCertificatePath = Join-Path $outputRoot 'Pluto-Developer.cer'
-$temporarySigningCertificatePath = Join-Path $outputRoot '.Pluto-Developer-temp.pfx'
+$publicCertificatePath = Join-Path $outputRoot 'Pluto-Signing.cer'
 $manifestTemplatePath = Join-Path $repoRoot 'packaging\windows\AppxManifest.xml'
 $binaryPath = [System.IO.Path]::GetFullPath($BinaryPath)
 $binaryPrefix = $targetRoot.TrimEnd('\') + '\'
 if (-not $binaryPath.StartsWith($binaryPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
     throw "Binary must remain under the repository target directory: $targetRoot"
 }
-$certificate = $null
-$signingKey = $null
+$signingCertificate = $null
 
 $rustc = Get-Command rustc -ErrorAction Stop
 $rustHost = (& $rustc.Source -vV | Select-String '^host: ').ToString().Substring(6)
@@ -57,6 +57,49 @@ if (-not $sdkTools) { throw "MakeAppx and SignTool for $architecture were not fo
 $makeAppx = Join-Path $sdkTools 'makeappx.exe'
 $signTool = Join-Path $sdkTools 'signtool.exe'
 
+if ([string]::IsNullOrWhiteSpace($SigningCertificateThumbprint)) {
+    throw @'
+A trusted code-signing certificate is required for a release. Install it, with its private key, in Cert:\CurrentUser\My and pass -SigningCertificateThumbprint (or set PLUTO_SIGNING_CERT_THUMBPRINT). Self-signed certificates are for local testing and are not accepted here.
+'@
+}
+$normalizedThumbprint = $SigningCertificateThumbprint -replace '\s', ''
+$certificatePath = "Cert:\CurrentUser\My\$normalizedThumbprint"
+if (-not (Test-Path -LiteralPath $certificatePath)) {
+    throw "Signing certificate $normalizedThumbprint was not found in Cert:\CurrentUser\My."
+}
+$signingCertificate = Get-Item -LiteralPath $certificatePath
+if (-not $signingCertificate.HasPrivateKey) {
+    throw "Signing certificate $normalizedThumbprint has no accessible private key."
+}
+$now = [DateTime]::UtcNow
+if ($now -lt $signingCertificate.NotBefore.ToUniversalTime() -or $now -ge $signingCertificate.NotAfter.ToUniversalTime()) {
+    throw "Signing certificate is not currently valid (valid through $($signingCertificate.NotAfter.ToUniversalTime().ToString('u')))."
+}
+$codeSigningOid = '1.3.6.1.5.5.7.3.3'
+$eku = $signingCertificate.Extensions |
+    Where-Object { $_ -is [System.Security.Cryptography.X509Certificates.X509EnhancedKeyUsageExtension] } |
+    Select-Object -First 1
+if (-not $eku -or -not ($eku.EnhancedKeyUsages | Where-Object { $_.Value -eq $codeSigningOid })) {
+    throw "Signing certificate $normalizedThumbprint does not allow Code Signing."
+}
+$manifestTemplate = [System.IO.File]::ReadAllText($manifestTemplatePath)
+$publisherMatch = [regex]::Match($manifestTemplate, 'Publisher="([^"]+)"')
+if (-not $publisherMatch.Success -or $signingCertificate.Subject -cne $publisherMatch.Groups[1].Value) {
+    $manifestPublisher = if ($publisherMatch.Success) { $publisherMatch.Groups[1].Value } else { '<missing>' }
+    throw "Certificate subject '$($signingCertificate.Subject)' must exactly match the MSIX manifest publisher '$manifestPublisher'."
+}
+$chain = [System.Security.Cryptography.X509Certificates.X509Chain]::new()
+try {
+    [void]$chain.ChainPolicy.ApplicationPolicy.Add([System.Security.Cryptography.Oid]::new($codeSigningOid))
+    if (-not $chain.Build($signingCertificate)) {
+        $chainErrors = ($chain.ChainStatus | ForEach-Object { $_.StatusInformation.Trim() } | Where-Object { $_ }) -join '; '
+        throw "Signing certificate does not chain to a trusted root for code signing: $chainErrors"
+    }
+}
+finally {
+    $chain.Dispose()
+}
+
 New-Item -ItemType Directory -Path $outputRoot -Force | Out-Null
 if (Test-Path -LiteralPath $staging) {
     $resolvedStaging = [System.IO.Path]::GetFullPath($staging)
@@ -73,7 +116,6 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "Cargo release build failed with exit code $LASTEXITCODE." }
     }
     if (-not (Test-Path -LiteralPath $binaryPath)) { throw "Product executable not found: $binaryPath" }
-    Copy-Item -LiteralPath $binaryPath -Destination (Join-Path $staging 'Pluto.exe') -Force
 
     $assetRoot = Join-Path $repoRoot 'packaging\windows\Assets'
     foreach ($assetName in @('StoreLogo.png', 'Square150x150Logo.png', 'Square44x44Logo.png')) {
@@ -84,7 +126,7 @@ try {
         Copy-Item -LiteralPath $assetPath -Destination (Join-Path $staging "Assets\$assetName") -Force
     }
 
-    $manifest = [System.IO.File]::ReadAllText($manifestTemplatePath)
+    $manifest = $manifestTemplate
     $manifest = $manifest.Replace('@@PACKAGE_VERSION@@', $packageVersion)
     $manifest = $manifest.Replace('@@PROCESSOR_ARCHITECTURE@@', $architecture)
     [System.IO.File]::WriteAllText(
@@ -93,55 +135,34 @@ try {
         [System.Text.UTF8Encoding]::new($false)
     )
 
-    $publisher = 'CN=Littleworld Pluto'
-    # Use an exportable ephemeral key. Creating a certificate in the Windows
-    # personal store can fail in managed build environments without enrollment
-    # rights, and the private key must never enter the MSIX staging directory.
-    $signingKey = [System.Security.Cryptography.RSA]::Create(2048)
-    $request = [System.Security.Cryptography.X509Certificates.CertificateRequest]::new(
-        $publisher,
-        $signingKey,
-        [System.Security.Cryptography.HashAlgorithmName]::SHA256,
-        [System.Security.Cryptography.RSASignaturePadding]::Pkcs1
-    )
-    $request.CertificateExtensions.Add([System.Security.Cryptography.X509Certificates.X509BasicConstraintsExtension]::new($false, $false, 0, $true))
-    $request.CertificateExtensions.Add([System.Security.Cryptography.X509Certificates.X509KeyUsageExtension]::new(
-        [System.Security.Cryptography.X509Certificates.X509KeyUsageFlags]::DigitalSignature, $true
-    ))
-    $extendedUsage = [System.Security.Cryptography.OidCollection]::new()
-    $extendedUsage.Add([System.Security.Cryptography.Oid]::new('1.3.6.1.5.5.7.3.3')) | Out-Null
-    $request.CertificateExtensions.Add([System.Security.Cryptography.X509Certificates.X509EnhancedKeyUsageExtension]::new($extendedUsage, $true))
-    $certificate = $request.CreateSelfSigned([DateTimeOffset]::Now.AddMinutes(-5), [DateTimeOffset]::Now.AddDays(30))
     [System.IO.File]::WriteAllBytes(
         $publicCertificatePath,
-        $certificate.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert)
+        $signingCertificate.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert)
     )
-    $random = [System.Security.Cryptography.RandomNumberGenerator]::Create()
-    $randomBytes = New-Object byte[] 24
-    $random.GetBytes($randomBytes)
-    $random.Dispose()
-    $signingPassword = [Convert]::ToBase64String($randomBytes)
-    [System.IO.File]::WriteAllBytes(
-        $temporarySigningCertificatePath,
-        $certificate.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Pfx, $signingPassword)
-    )
+
+    & $signTool sign /fd SHA256 /tr $TimestampUrl /td SHA256 /s My /sha1 $normalizedThumbprint /v $binaryPath
+    if ($LASTEXITCODE -ne 0) { throw "SignTool could not sign the executable (exit code $LASTEXITCODE)." }
+    & $signTool verify /pa /v $binaryPath
+    if ($LASTEXITCODE -ne 0) { throw "SignTool could not verify the executable signature (exit code $LASTEXITCODE)." }
+    Copy-Item -LiteralPath $binaryPath -Destination (Join-Path $staging 'Pluto.exe') -Force
 
     if (Test-Path -LiteralPath $packagePath) { Remove-Item -LiteralPath $packagePath -Force }
     & $makeAppx pack /d $staging /p $packagePath /o
     if ($LASTEXITCODE -ne 0) { throw "MakeAppx failed with exit code $LASTEXITCODE." }
-    & $signTool sign /fd SHA256 /f $temporarySigningCertificatePath /p $signingPassword /v $packagePath
+    & $signTool sign /fd SHA256 /tr $TimestampUrl /td SHA256 /s My /sha1 $normalizedThumbprint /v $packagePath
     if ($LASTEXITCODE -ne 0) { throw "SignTool failed with exit code $LASTEXITCODE." }
+    & $signTool verify /pa /v $packagePath
+    if ($LASTEXITCODE -ne 0) { throw "SignTool could not verify the MSIX signature (exit code $LASTEXITCODE)." }
 
     $hash = (Get-FileHash -LiteralPath $packagePath -Algorithm SHA256).Hash
     Write-Output "PASS product release build: $binaryPath"
     Write-Output "PASS MakeAppx package: $packagePath"
-    Write-Output "PASS SignTool developer signing: $publisher"
-    Write-Output "Public certificate for local trust workflows: $publicCertificatePath"
+    Write-Output "PASS trusted Authenticode signing: $($signingCertificate.Subject)"
+    Write-Output "PASS SHA-256 RFC 3161 timestamp: $TimestampUrl"
+    Write-Output "Public signing certificate: $publicCertificatePath"
     Write-Output "Architecture: $architecture; SHA-256: $hash"
     Write-Output 'Install/upgrade/uninstall is not performed by this script.'
 }
 finally {
-    if (Test-Path -LiteralPath $temporarySigningCertificatePath) { Remove-Item -LiteralPath $temporarySigningCertificatePath -Force }
-    if ($certificate) { $certificate.Dispose() }
-    if ($signingKey) { $signingKey.Dispose() }
+    if ($signingCertificate) { $signingCertificate.Dispose() }
 }

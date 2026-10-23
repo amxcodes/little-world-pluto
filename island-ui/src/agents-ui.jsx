@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AgentPresentationView } from './agent-presentation.jsx';
 import { AgentOptions } from './agent-options.jsx';
+import { WakeEyes } from './wake-eyes.jsx';
 
 export const defaultAskInstructions = 'Write a short, natural spoken answer that the user can read aloud from a small teleprompter. Lead directly with the answer. Usually use 2–5 short sentences, with one sentence per line and a blank line between ideas. Use familiar words and natural contractions. Avoid em dashes, headings, bullet lists, markdown decoration, emojis, tables, diagrams, and introductory filler. Keep the wording human and conversational, not like an essay. Give more detail only when the question requires it. Do not invent personal experiences or facts about the user. State uncertainty plainly when needed.';
 
@@ -84,7 +85,7 @@ function useAgentPreferences() {
   return [preferences, change];
 }
 
-const plainVoiceText = text => String(text || '').replace(/```island-ui[^\n]*\n[\s\S]*?(?:```|$)/gi, '').replace(/\*\*([^*]+)\*\*/g, '$1').replace(/`([^`]+)`/g, '$1');
+const plainVoiceText = text => String(text || '').replace(/```island-ui[^\n]*\n[\s\S]*?(?:```|$)/gi, '').replace(/\*\*/g, '').replace(/`/g, '');
 const providerName = id => id === 'codex' ? 'Codex' : 'OpenCode';
 const sendAgent = (send, provider, action, data = {}) => send('agentAction', { provider, action, ...data });
 const cleanOptions = options => (options || []).filter(option => option?.id && (option.type === 'boolean' || (option.type === 'select' && Array.isArray(option.options))));
@@ -446,6 +447,7 @@ export function AgentsWorkspace({ state, Icon, send, renderAnswer, openCodeProfi
   });
   const [contextOpen, setContextOpen] = useState(false);
   const [pendingVoice, setPendingVoice] = useState(() => workspaceMemory.wakeTranscript);
+  const [voiceAnswerRevision, setVoiceAnswerRevision] = useState(0);
   const voiceLoadRequest = useRef('');
   const [provider, setProvider] = useState(() => window.islandAgentFocus?.provider || workspaceMemory.provider || readAgentPreferences().defaultProvider);
   const lastDefaultProvider = useRef(preferences.defaultProvider);
@@ -483,7 +485,7 @@ export function AgentsWorkspace({ state, Icon, send, renderAnswer, openCodeProfi
     const text = dictatedText?.trim();
     if (!text) return;
     if (dictatedAutoSubmit) {
-      const pending = { text, mode: askMode ? 'ask' : voiceSurface ? 'wake' : 'agent', ...((!askMode && workspaceMemory.wakeTarget) || { provider, sessionId: state.agents?.[provider]?.selectedId || '' }) };
+      const pending = { text, mode: askMode ? 'ask' : voiceSurface ? 'wake' : 'agent', revision: state.wakeWord?.revision, ...((!askMode && workspaceMemory.wakeTarget) || { provider, sessionId: state.agents?.[provider]?.selectedId || '' }) };
       workspaceMemory.wakeTranscript = pending;
       setPendingVoice(pending);
       voiceLoadRequest.current = '';
@@ -502,9 +504,14 @@ export function AgentsWorkspace({ state, Icon, send, renderAnswer, openCodeProfi
   }, [dictatedText, dictatedAutoSubmit]);
   const agent = state.agents?.[provider] || {};
   const wakeWord = state.wakeWord || {};
+  const wakeCapturePending = voiceSurface && wakeWord.status === 'triggered'
+    && !!wakeWord.revision && wakeWord.revision !== workspaceMemory.lastWakeRevision;
   useEffect(() => {
     if (!wakeWord.revision || wakeWord.revision === workspaceMemory.lastWakeRevision || wakeWord.status !== 'triggered') return;
     workspaceMemory.lastWakeRevision = wakeWord.revision;
+    workspaceMemory.wakeAwaitingAnswer = null;
+    workspaceMemory.wakeTranscript = null;
+    setPendingVoice(null);
     const savedWake = workspaceMemory.wakeSessions?.[provider];
     workspaceMemory.wakeTarget = { provider, sessionId: state.agents?.[provider]?.sessions?.some(item => item.id === savedWake) ? savedWake : '' };
     setView('task');
@@ -512,6 +519,16 @@ export function AgentsWorkspace({ state, Icon, send, renderAnswer, openCodeProfi
     setDetailsOpen(false);
     onDictate?.({ autoSubmit: true });
   }, [wakeWord.revision, wakeWord.status]);
+  useEffect(() => {
+    const dismiss = event => {
+      if (event?.detail?.revision != null && event.detail.revision !== wakeWord.revision) return;
+      workspaceMemory.wakeAwaitingAnswer = null;
+      workspaceMemory.wakeTranscript = null;
+      setPendingVoice(null);
+    };
+    window.addEventListener('island:voice-dismiss', dismiss);
+    return () => window.removeEventListener('island:voice-dismiss', dismiss);
+  }, [wakeWord.revision]);
   const sessions = agent.sessions || [];
   const session = sessions.find(item => item.id === agent.selectedId);
   const response = agent.response?.sessionId === session?.id ? agent.response : null;
@@ -711,6 +728,7 @@ export function AgentsWorkspace({ state, Icon, send, renderAnswer, openCodeProfi
     pendingRevision.current[provider] = { revision: agent.operationRevision || 0, preserveDraft };
     submitted.current[provider] = { revision: agent.operationRevision || 0, text, files: [...attachedFiles] };
     setSending(current => ({ ...current, [provider]: true }));
+    if (responseMode === 'ask' || responseMode === 'wake') setVoiceAnswerRevision(value => value + 1);
     const systemPrompt = responseMode === 'ask'
       ? 'Island response mode: spoken-script\n' + [preferences.askInstructions ?? defaultAskInstructions, `Context supplied by the user for this conversation:\n${askContext}`].filter(Boolean).join('\n\n')
       : responseMode === 'wake'
@@ -739,17 +757,20 @@ export function AgentsWorkspace({ state, Icon, send, renderAnswer, openCodeProfi
     if (!submitText(transcript, [], true, pending.mode)) return;
     workspaceMemory.wakeTranscript = null;
     setPendingVoice(null);
-    workspaceMemory.wakeAwaitingAnswer = !askMode;
+    workspaceMemory.wakeAwaitingAnswer = pending.mode === 'wake' ? { provider, revision: pending.revision, operationRevision: agent.operationRevision || 0 } : null;
   }, [pendingVoice, agent.connected, agent.installing, agent.activeCount, agent.selectedId, session?.id, session?.active, session?.ready, sending[provider], provider, askContext]);
   useEffect(() => {
-    if (workspaceMemory.wakeAwaitingAnswer && session?.id) {
+    const awaiting = workspaceMemory.wakeAwaitingAnswer;
+    if (!awaiting || awaiting.provider !== provider || awaiting.revision !== wakeWord.revision || dictateActive || wakeCapturePending) return;
+    if ((agent.operationRevision || 0) <= awaiting.operationRevision) return;
+    if (session?.id) {
       workspaceMemory.wakeSessions ||= {}; workspaceMemory.wakeSessions[provider] = session.id;
     }
-    if (!workspaceMemory.wakeAwaitingAnswer || session?.active || sending[provider] || response?.waiting) return;
+    if (session?.active || sending[provider] || response?.waiting) return;
     if (!response?.text && !response?.presentation && !agent.error) return;
-    workspaceMemory.wakeAwaitingAnswer = false;
-    send('wakeWordResume', { phrase: wakeWord.phrase || 'Hey Island' });
-  }, [session?.active, sending[provider], response?.waiting, response?.text, agent.error]);
+    workspaceMemory.wakeAwaitingAnswer = null;
+    send('wakeWordResume', { phrase: wakeWord.phrase || 'Hey Island', revision: wakeWord.revision });
+  }, [session?.active, sending[provider], response?.waiting, response?.text, agent.error, agent.operationRevision, provider, wakeWord.revision, dictateActive, wakeCapturePending]);
   const changeDraft = value => setDrafts(current => ({ ...current, [provider]: value }));
   const updateMention = (value, caret) => {
     const before = value.slice(0, caret);
@@ -800,22 +821,24 @@ export function AgentsWorkspace({ state, Icon, send, renderAnswer, openCodeProfi
 
   const voiceThinking = !!(dictatedText?.trim() || pendingVoice || sending[provider] || response?.waiting || session?.active);
   const voiceAwaitingText = !!(dictatedText?.trim() || pendingVoice || sending[provider] || (voiceThinking && !response?.text));
+  const wakeCompact = voiceSurface && !askMode && ((dictateActive || wakeCapturePending)
+    || (!agent.error && decisions.length === 0 && (voiceAwaitingText || (!response?.text && !response?.presentation))));
   const thinkingIndicator = <div className="voice-thinking" role="status"><span aria-hidden="true"><i/><i/><i/></span>Thinking…</div>;
   if (askMode && contextOpen) return <section className="voice-answer-surface is-ask ask-context-page" data-layout-height={330}>
     <header><strong>Context</strong></header>
     <label className="ask-context">Background and preferences<textarea autoFocus value={askContext} onChange={e => { setAskContext(e.target.value); try { localStorage.setItem('island.ask.context', e.target.value); } catch {} }} placeholder="What is this conversation about? What should the answers take into account?" /></label>
     <footer><button type="button" onClick={() => setContextOpen(false)}><Icon name="PreviousMonth" size={15}/>Back to Ask</button></footer>
   </section>;
-  if (voiceSurface || askMode) return <section className={'voice-answer-surface ' + (askMode ? 'is-ask' : 'is-wake')} data-layout-height={dictateActive && voiceSurface && !askMode ? 90 : 330}>
+  if (voiceSurface || askMode) return <section className={'voice-answer-surface ' + (askMode ? 'is-ask' : 'is-wake')} data-wake-phase={wakeCompact ? "compact" : "answer"} data-layout-height={wakeCompact ? 34 : 330}>
     {(!voiceSurface || askMode) && <header><strong>{askMode ? 'Ask' : 'Voice'}</strong><span>{dictateActive ? 'Microphone' : voiceThinking ? 'Thinking' : 'Ready'}</span>
       {askMode && <button onClick={() => setContextOpen(!contextOpen)} aria-expanded={contextOpen}>Context</button>}
       <button onClick={() => { send('voiceSurface', { open: false }); send('page', { page: 'Agents' }); }}>Session</button>
       {voiceSurface && <button aria-label="Dismiss voice answer" onClick={() => { if (dictateActive) window.dispatchEvent(new Event('island:voice-dismiss')); send('voiceSurface', { open: false, dismiss: true }); }}><Icon name="Cancel" size={15}/></button>}
     </header>}
     {contextOpen && <label className="ask-context">Background and preferences<textarea value={askContext} onChange={e => { setAskContext(e.target.value); try { localStorage.setItem('island.ask.context', e.target.value); } catch {} }} placeholder="What is this conversation about?" /></label>}
-    {dictateActive ? <div key="capture" className="voice-capture"><div ref={dictateSlotRef}/></div> : <>
+    {(dictateActive || wakeCapturePending) ? <div key="capture" className="voice-capture"><div ref={dictateSlotRef}/></div> : <>
       {decisions.map(decision => decision.kind === 'approval' ? <ApprovalCard key={decision.item.id} permission={decision.item} provider={provider} send={send} Icon={Icon}/> : <QuestionCard key={decision.item.id} question={decision.item} provider={provider} send={send} Icon={Icon}/>)}
-      <div key="answer" className="voice-answer-text" aria-busy={voiceThinking} aria-live="polite">{agent.error ? <p role="alert">{agent.error}</p> : voiceAwaitingText ? thinkingIndicator : response?.text || (!voiceSurface && response?.presentation) ? <>{!voiceSurface && response?.presentation && <AgentPresentationView presentation={response.presentation}/>} {(askMode || voiceSurface) ? (voiceSurface ? plainVoiceText(response.text) : response.text || '').split(/\n+/).filter(Boolean).map((line, index) => <div className="ask-answer-line" key={`${session?.id}:${index}`} style={{ '--line-delay': `${Math.min(index, 6) * 45}ms` }}>{voiceSurface ? line : renderAnswer(line)}</div>) : renderAnswer(response.text || '')}</> : voiceThinking ? thinkingIndicator : voiceSurface && response?.presentation ? 'This response has no text summary. Its details are available in Agents → Sessions.' : 'Ask a question to begin.'}</div>
+      <div key={`${provider}:${voiceAnswerRevision}`} className="voice-answer-text" aria-busy={voiceThinking} aria-live="polite">{agent.error ? <p role="alert">{agent.error}</p> : wakeCompact ? <div className="wake-listening-surface" role="status" aria-label="Thinking"><WakeEyes phase="thinking" /></div> : voiceAwaitingText ? thinkingIndicator : response?.text || (!voiceSurface && response?.presentation) ? <>{!voiceSurface && response?.presentation && <AgentPresentationView presentation={response.presentation}/>} {(askMode || voiceSurface) ? (voiceSurface ? plainVoiceText(response.text) : response.text || '').split(/\n+/).filter(Boolean).map((line, index) => <div className="ask-answer-line" key={`${voiceAnswerRevision}:${index}`} style={{ '--line-delay': `${Math.min(index, 6) * 45}ms` }}>{voiceSurface ? line : renderAnswer(line)}</div>) : renderAnswer(response.text || '')}</> : voiceThinking ? thinkingIndicator : voiceSurface && response?.presentation ? 'This response has no text summary. Its details are available in Agents → Sessions.' : 'Ask a question to begin.'}</div>
       {askMode && <button className="ask-hold" disabled={!state.speechSettings?.configured || !agent.connected || session?.active} onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); onDictate?.({ autoSubmit: true, hold: true }); }} onPointerUp={() => { window.islandHoldReleased = true; window.dispatchEvent(new Event('island:hold-release')); }} onPointerCancel={() => { window.islandHoldReleased = true; window.dispatchEvent(new Event('island:hold-release')); }} onKeyDown={e => { if (e.key === "Enter") onDictate?.({ autoSubmit: true, hold: true }); }}>Hold Space to ask · microphone</button>}
     </>}
   </section>;

@@ -575,14 +575,7 @@ try {{
 "#
     );
     let mut command = Command::new("powershell.exe");
-    command.args([
-        "-NoProfile",
-        "-NonInteractive",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-Command",
-        &script,
-    ]);
+    command.args(["-NoProfile", "-NonInteractive", "-Command", &script]);
     if !run_hidden_with_timeout(&mut command, Duration::from_secs(300))? || !destination.is_file() {
         return Err("OpenCode installation failed. Check the internet connection and available disk space, then retry.".into());
     }

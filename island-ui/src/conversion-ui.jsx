@@ -5,7 +5,6 @@ const formatNames = { jpg: 'JPEG', png: 'PNG', webp: 'WebP', bmp: 'Bitmap', tiff
 const formatDetails = { jpg: 'Compact photos · no transparency', png: 'Lossless · preserves transparency', webp: 'Lossless · modern web images', bmp: 'Uncompressed bitmap', tiff: 'High-fidelity image', gif: 'Still image export', mp4: 'H.264 video · AAC audio', mov: 'H.264 video · AAC audio', mkv: 'H.264 video · AAC audio', webm: 'VP9 video · Opus audio', avi: 'MPEG-4 video · MP3 audio', wmv: 'Windows Media video · audio', mp3: 'Widely compatible audio', m4a: 'AAC audio · M4A container', aac: 'AAC audio · broad device support', wav: 'Uncompressed audio', flac: 'Lossless audio', ogg: 'Vorbis audio', opus: 'Opus audio', aiff: 'Uncompressed AIFF audio', wma: 'Windows Media audio', srt: 'SubRip subtitle text', vtt: 'Web Video Text Tracks', txt: 'Subtitle dialogue only' };
 const labels = { ready: 'Ready', inspecting: 'Inspecting', queued: 'Queued', running: 'Converting', complete: 'Saved', failed: 'Needs attention', unsupported: 'Unavailable', cancelled: 'Cancelled' };
 const defaultsKey = 'island.conversion.defaults.v1';
-let lastHandledDropHandoff = 0;
 export const readConversionDefaults = () => {
   try {
     const saved = JSON.parse(localStorage.getItem(defaultsKey) || '{}');
@@ -56,11 +55,20 @@ export function ConversionWorkspace({ state, send, onSettings, Icon }) {
   const [smaller, setSmaller] = useState(false);
   const [quality, setQuality] = useState(() => readConversionDefaults().quality);
   const [excluded, setExcluded] = useState([]);
-  const [dropArrivalId, setDropArrivalId] = useState(0);
+  const dropArrivalId = Number(state.dropHandoffId) || 0;
+  const seenItems = useRef(new Map());
+  const itemIds = JSON.stringify(items.map(item => item.id));
+  const arrivalOrder = useMemo(() => {
+    let next = 0;
+    return new Map(items.map(item => [item.id, seenItems.current.get(item.id) ?? next++]));
+  }, [itemIds]);
+  useEffect(() => { seenItems.current = arrivalOrder; }, [arrivalOrder]);
   const seenReadyItems = useRef(new Set());
   const kinds = useMemo(() => [...new Set(items.filter(i => ['image', 'video', 'audio', 'subtitle'].includes(i.kind)).map(i => i.kind))], [items]);
   useEffect(() => { if (kinds.length && !kinds.includes(kind)) setKind(kinds[0]); }, [kinds.join('|'), kind]);
   useEffect(() => {
+    const currentIds = new Set(items.map(item => item.id));
+    for (const id of seenReadyItems.current) if (!currentIds.has(id)) seenReadyItems.current.delete(id);
     const newlyInspected = items.filter(item => item.status !== 'inspecting'
       && ['image', 'video', 'audio', 'subtitle'].includes(item.kind)
       && !seenReadyItems.current.has(item.id));
@@ -68,14 +76,6 @@ export function ConversionWorkspace({ state, send, onSettings, Icon }) {
     const latest = newlyInspected.at(-1);
     if (latest) setKind(latest.kind);
   }, [items]);
-  useEffect(() => {
-    const handoffId = Number(state.dropHandoffId) || 0;
-    if (!handoffId || handoffId <= lastHandledDropHandoff) return undefined;
-    lastHandledDropHandoff = handoffId;
-    setDropArrivalId(handoffId);
-    const timer = window.setTimeout(() => setDropArrivalId(current => current === handoffId ? 0 : current), 900);
-    return () => window.clearTimeout(timer);
-  }, [state.dropHandoffId]);
   useEffect(() => { if ((kind === 'audio' || kind === 'subtitle') && mode === 'resize' || kind === 'subtitle' && mode === 'fit') setMode('convert'); }, [kind, mode]);
   const group = items.filter(i => i.kind === kind && i.formats.length && i.status !== 'complete');
   const selected = group.filter(i => !excluded.includes(i.id));
@@ -101,13 +101,13 @@ export function ConversionWorkspace({ state, send, onSettings, Icon }) {
     <div className="convert-body">
       <div className="convert-source">
         <div className={`convert-transformation ${busy && !data.inspecting ? 'is-working' : ''}`}>
-          <div><FileFigure format={active?.name?.split('.').at(-1)} kind={active?.kind} stack={items.length > 1} /><span>Original</span></div>
+          <div key={dropArrivalId}><FileFigure format={active?.name?.split('.').at(-1)} kind={active?.kind} stack={items.length > 1} /><span>Original</span></div>
           <span className={`convert-connector ${busy ? 'is-active' : ''}`} aria-hidden="true">{[0, 1, 2, 3].map(index => <i key={index} style={{ '--block-index': index }} />)}</span>
           <div><FileFigure format={format} kind={active?.kind} output progress={active?.status === 'running' ? active.progress : null} /><span>{formatNames[format] || 'Output'}</span></div>
         </div>
         <div className="convert-queue" aria-label="Batch files">
           {!items.length && <div className="convert-empty"><strong>Your files, ready for a new format.</strong><span>Drop files on Convert, or add them here.</span><button onClick={() => send('conversionPick')}>Choose files</button></div>}
-    {items.map((item, index) => <div className={`convert-queue-row is-${item.status}`} key={item.id} style={{ '--arrival-delay': `${Math.min(index, 8) * 34}ms` }}>
+    {items.map(item => <div className={`convert-queue-row is-${item.status}${arrivalOrder.has(item.id) ? ' is-arriving' : ''}`} key={item.id} style={{ '--arrival-delay': `${Math.min(arrivalOrder.get(item.id) || 0, 8) * 34}ms` }}>
             <input type="checkbox" aria-label={`Include ${item.name}`} disabled={busy || !item.formats.length || item.status === 'complete'}
               checked={item.kind === kind && !excluded.includes(item.id) && !!item.formats.length && item.status !== 'complete'}
               onChange={() => { if (kind !== item.kind) { setKind(item.kind); setExcluded(ids => ids.filter(id => id !== item.id)); }

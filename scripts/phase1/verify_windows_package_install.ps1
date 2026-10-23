@@ -1,7 +1,7 @@
 #Requires -Version 7.1
 param(
     [string]$PackagePath = (Join-Path $PSScriptRoot '..\..\target\windows-package\Pluto-0.1.0.0.msix'),
-    [string]$PublicCertificatePath = (Join-Path $PSScriptRoot '..\..\target\windows-package\Pluto-Developer.cer'),
+    [string]$PublicCertificatePath = (Join-Path $PSScriptRoot '..\..\target\windows-package\Pluto-Signing.cer'),
     [switch]$CurrentUserTrust
 )
 

@@ -43,6 +43,12 @@ test('Ask, wake answers, Agents and settings render with both providers', async 
             }
           }
           assert.match(renderToStaticMarkup(<AgentSettings {...common} state={{}}/>), /Providers/);
+          const waking = renderToStaticMarkup(<AgentsWorkspace {...common} voiceSurface state={{ wakeWord: { revision: 101, status: 'triggered' }, agents: {} }}/>);
+          assert.match(waking, /data-layout-height="34"/);
+          assert.doesNotMatch(waking, /Ask a question to begin/);
+          const thinking = renderToStaticMarkup(<AgentsWorkspace {...common} voiceSurface state={{ agents: {} }}/>);
+          assert.match(thinking, /data-phase="thinking"/);
+          assert.match(thinking, /data-layout-height="34"/);
         }
         localStorage.getItem = () => { throw new Error('Storage unavailable'); };
         assert.match(renderToStaticMarkup(<AgentsWorkspace {...common} askMode state={{}}/>), /voice-answer-surface/);
