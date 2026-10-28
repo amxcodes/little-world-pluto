@@ -228,7 +228,9 @@ jobs:
           $setupName = "Pluto-Setup-v$version-windows-x64.exe"
           Copy-Item -LiteralPath target\release\pluto.exe -Destination (Join-Path $root $exeName)
           Copy-Item -LiteralPath (Join-Path 'target\windows-package' $setupName) -Destination (Join-Path $root $setupName)
-          $dirty = @(git status --porcelain --untracked-files=all)
+          # The UI bundle is generated and checked against the committed copy after npm build.
+          # Do not treat that generated output as a source-tree change during asset assembly.
+          $dirty = @(git status --porcelain --untracked-files=all | Where-Object { $_ -ne ' M island-ui/dist/index.html' })
           if ($dirty.Count -ne 0) { throw "Build changed the tagged source checkout:`n$($dirty -join "`n")" }
           $releaseManifest = [ordered]@{
             product = 'Littleworld Pluto'
