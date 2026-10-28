@@ -48,6 +48,11 @@ jobs:
       - name: Audit Rust dependencies
         shell: pwsh
         run: |
+          $windowsGraph = cargo tree --locked --target x86_64-pc-windows-msvc -e all
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($windowsGraph -match 'quick-xml v0\.38\.4') {
+            throw 'The documented quick-xml audit exception is no longer outside the Windows dependency graph.'
+          }
           cargo install --locked --version 0.22.2 cargo-audit
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo audit

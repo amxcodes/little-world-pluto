@@ -1,0 +1,7 @@
+[advisories]
+# quick-xml 0.38.4 is retained in Cargo.lock through zbus_xml 5.1.0, but it
+# is not in Pluto's resolved Windows dependency graph (`cargo tree --target all
+# -e all`). The two XML denial-of-service advisories cannot affect the Windows
+# executable. Remove these exceptions as soon as zbus_xml updates to
+# quick-xml >= 0.41.0, or if Pluto starts building the affected graph.
+ignore = ["RUSTSEC-2026-0194", "RUSTSEC-2026-0195"]
