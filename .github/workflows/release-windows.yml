@@ -346,12 +346,24 @@ jobs:
           $program = Join-Path $installDir 'Pluto.exe'
           $uninstaller = Join-Path $installDir 'unins000.exe'
           if (-not (Test-Path -LiteralPath $program) -or -not (Test-Path -LiteralPath $uninstaller)) { throw 'Installer did not place Pluto and its uninstaller.' }
+          $releaseProgram = Join-Path 'target\release-assets' "Pluto-v$version-windows-x64.exe"
+          if ((Get-FileHash -LiteralPath $program -Algorithm SHA256).Hash -cne (Get-FileHash -LiteralPath $releaseProgram -Algorithm SHA256).Hash) {
+            throw 'Installed Pluto.exe differs from the signed release executable.'
+          }
           foreach ($signedFile in @($program, $uninstaller)) {
             $signature = Get-AuthenticodeSignature -LiteralPath $signedFile
-            if ($signature.Status -notin @('Valid', 'NotTrusted') -or $null -eq $signature.SignerCertificate -or
+            if ($null -eq $signature.SignerCertificate -or $null -eq $signature.TimeStamperCertificate -or
                 $signature.SignerCertificate.Thumbprint -ine $env:PLUTO_SIGNING_CERT_THUMBPRINT) {
               throw "Installed file signature is invalid: $signedFile"
             }
+            $signerPem = Join-Path $env:RUNNER_TEMP "pluto-smoke-signer-$([Guid]::NewGuid().ToString('N')).pem"
+            try {
+              $signerBase64 = [Convert]::ToBase64String($signature.SignerCertificate.Export([Security.Cryptography.X509Certificates.X509ContentType]::Cert), [Base64FormattingOptions]::InsertLineBreaks)
+              [IO.File]::WriteAllLines($signerPem, [string[]]@('-----BEGIN CERTIFICATE-----', $signerBase64, '-----END CERTIFICATE-----'), [Text.UTF8Encoding]::new($false))
+              & $env:PLUTO_OSSLSIGNCODE_PATH verify -CAfile $signerPem -TSA-CAfile $env:PLUTO_HTTPS_CA_FILE -in $signedFile
+              if ($LASTEXITCODE -ne 0) { throw "Installed file signature or timestamp verification failed: $signedFile" }
+            }
+            finally { if (Test-Path -LiteralPath $signerPem) { Remove-Item -LiteralPath $signerPem -Force } }
           }
           if ((Get-ItemPropertyValue -Path $runKey -Name LittleWorldIsland) -cne "`"$program`"") { throw 'Installer did not migrate the enabled startup path.' }
           $removed = Start-Process -FilePath $uninstaller -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART') -Wait -PassThru -WindowStyle Hidden
