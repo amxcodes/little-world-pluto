@@ -3,7 +3,8 @@ param(
     [string]$OutputDirectory = (Join-Path $PSScriptRoot '..\..\target\windows-package'),
     [string]$BinaryPath = (Join-Path $PSScriptRoot '..\..\target\release\pluto.exe'),
     [string]$SigningCertificateThumbprint = $env:PLUTO_SIGNING_CERT_THUMBPRINT,
-    [string]$TimestampUrl = 'https://timestamp.digicert.com',
+    [string]$TimestampUrl = 'https://rfc3161.ai.moda',
+    [string]$TimestampToolPath = $env:PLUTO_OSSLSIGNCODE_PATH,
     [switch]$SkipBuild
 )
 $ErrorActionPreference = 'Stop'
@@ -28,6 +29,9 @@ $previousCompany = $env:PLUTO_SIGNING_COMPANY_NAME
 $previousPublisher = $env:PLUTO_SIGNING_PUBLISHER
 $previousThumbprint = $env:PLUTO_SIGNING_CERT_THUMBPRINT
 $previousRequiredResource = $env:PLUTO_REQUIRE_WINDOWS_VERSION_RESOURCE
+$previousSignTool = $env:PLUTO_SIGNTOOL_PATH
+$previousTimestampTool = $env:PLUTO_OSSLSIGNCODE_PATH
+$previousTimestampUrl = $env:PLUTO_TIMESTAMP_URL
 try {
     if (-not $cert.HasPrivateKey) { throw 'Signing certificate has no private key.' }
     $now = [DateTime]::UtcNow
@@ -57,6 +61,13 @@ try {
         ForEach-Object { Join-Path $_.FullName 'x64\signtool.exe' } |
         Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
     if (-not $sdk) { throw 'Windows SDK x64 SignTool was not found.' }
+    $timestampTool = if ($TimestampToolPath) { $TimestampToolPath } else { (Get-Command osslsigncode.exe -ErrorAction SilentlyContinue).Source }
+    if (-not $timestampTool -or -not (Test-Path -LiteralPath $timestampTool -PathType Leaf)) { throw 'HTTPS timestamp tool osslsigncode.exe was not found.' }
+    if (-not $env:PLUTO_HTTPS_CA_FILE -or -not (Test-Path -LiteralPath $env:PLUTO_HTTPS_CA_FILE -PathType Leaf)) { throw 'Trusted HTTPS CA bundle was not found.' }
+    if ($TimestampUrl -notmatch '^https://') { throw 'An HTTPS RFC 3161 timestamp URL is required.' }
+    $env:PLUTO_SIGNTOOL_PATH = $sdk
+    $env:PLUTO_OSSLSIGNCODE_PATH = $timestampTool
+    $env:PLUTO_TIMESTAMP_URL = $TimestampUrl
     $iscc = (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source
     if (-not $iscc) {
         $iscc = @('C:\Program Files (x86)\Inno Setup 6\ISCC.exe', 'C:\Program Files\Inno Setup 6\ISCC.exe') |
@@ -73,15 +84,14 @@ try {
         $info.OriginalFilename -ne 'pluto.exe' -or $info.FileVersion -ne "$version.0" -or
         $info.ProductVersion -ne "$version.0") { throw "Pluto executable version resource does not match $version.0." }
     New-Item -ItemType Directory -Path $out -Force | Out-Null
-    & $sdk sign /fd SHA256 /tr $TimestampUrl /td SHA256 /s My /sha1 $thumbprint $binary
-    if ($LASTEXITCODE -ne 0) { throw "Could not sign Pluto.exe ($LASTEXITCODE)." }
+    & (Join-Path $PSScriptRoot 'sign_windows_file.ps1') -FilePath $binary
     $binarySignature = Get-AuthenticodeSignature -LiteralPath $binary
-    if ($binarySignature.Status -notin @('Valid', 'NotTrusted') -or $null -eq $binarySignature.SignerCertificate -or
+    if ($null -eq $binarySignature.SignerCertificate -or $null -eq $binarySignature.TimeStamperCertificate -or
         $binarySignature.SignerCertificate.Thumbprint -ine $thumbprint) { throw 'Pluto.exe signature verification failed.' }
     $env:PLUTO_VERSION = $version
     $env:PLUTO_BINARY = $binary
     try {
-        $sign = '-spluto=$q{0}$q sign /fd SHA256 /tr {1} /td SHA256 /s My /sha1 {2} $f' -f $sdk, $TimestampUrl, $thumbprint
+        $sign = '-spluto=$q{0}$q -NoProfile -NonInteractive -File $q{1}$q -FilePath $f' -f (Get-Command pwsh.exe).Source, (Join-Path $PSScriptRoot 'sign_windows_file.ps1')
         & $iscc $sign "-o$out" (Join-Path $root 'packaging\windows\Pluto.iss')
         if ($LASTEXITCODE -ne 0) { throw "Inno Setup build failed ($LASTEXITCODE)." }
     }
@@ -91,7 +101,7 @@ try {
     }
     if (-not (Test-Path -LiteralPath $setup -PathType Leaf)) { throw "Installer not produced: $setup" }
     $setupSignature = Get-AuthenticodeSignature -LiteralPath $setup
-    if ($setupSignature.Status -notin @('Valid', 'NotTrusted') -or $null -eq $setupSignature.SignerCertificate -or
+    if ($null -eq $setupSignature.SignerCertificate -or $null -eq $setupSignature.TimeStamperCertificate -or
         $setupSignature.SignerCertificate.Thumbprint -ine $thumbprint) { throw 'Installer signature verification failed.' }
     Write-Output "PASS signed Pluto.exe and installer: $setup"
     Write-Output "SHA-256: $((Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash)"
@@ -101,5 +111,8 @@ finally {
     $env:PLUTO_SIGNING_PUBLISHER = $previousPublisher
     $env:PLUTO_SIGNING_CERT_THUMBPRINT = $previousThumbprint
     $env:PLUTO_REQUIRE_WINDOWS_VERSION_RESOURCE = $previousRequiredResource
+    $env:PLUTO_SIGNTOOL_PATH = $previousSignTool
+    $env:PLUTO_OSSLSIGNCODE_PATH = $previousTimestampTool
+    $env:PLUTO_TIMESTAMP_URL = $previousTimestampUrl
     $cert.Dispose()
 }
