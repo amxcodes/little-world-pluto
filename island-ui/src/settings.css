@@ -5,13 +5,17 @@
 .settings-topbar > strong { font-size:14px; font-weight:620; }
 .settings-topbar > span { padding-left:12px; border-left:1px solid var(--line); color:var(--muted); font-size:12px; }
 .settings-open .settings-page { gap:0; }
-.settings-open .settings-page { animation:settings-open-arrive 230ms cubic-bezier(.2,.8,.2,1) both; }
+/* Match the native 480-point settings surface minus its 32-point inset from
+   the first commit, before the WebView resize arrives. The parent clips the
+   final layout while expanding instead of reflowing a short initial page. */
+.island.settings-open:not(.voice-surface-open) { height:448px; }
+.settings-open .settings-page { animation:settings-open-arrive 150ms ease-out both; }
 .settings-open .page-content { animation:none; }
 .settings-content { animation:settings-section-enter 150ms ease-out both; }
 .settings-closing .settings-page { animation:settings-open-depart 170ms cubic-bezier(.4,0,.7,.3) both; pointer-events:none; }
 .settings-returning .bar > nav { animation:settings-return-home 180ms cubic-bezier(.2,.8,.2,1) both; }
-@keyframes settings-open-arrive { from { opacity:.65; transform:translateY(5px) scale(.99); filter:blur(2px); } to { opacity:1; transform:translateY(0) scale(1); filter:blur(0); } }
-@keyframes settings-open-depart { from { opacity:1; transform:translateY(0) scale(1); filter:blur(0); } to { opacity:0; transform:translateY(5px) scale(.99); filter:blur(2px); } }
+@keyframes settings-open-arrive { from { opacity:.8; } to { opacity:1; } }
+@keyframes settings-open-depart { from { opacity:1; } to { opacity:0; } }
 @keyframes settings-return-home { from { opacity:.92; transform:translateY(1px); } to { opacity:1; transform:translateY(0); } }
 .settings-open .settings-workspace { grid-template-columns:46px minmax(0,1fr); grid-template-rows:minmax(0,1fr); gap:16px; }
 .settings-open .settings-sidebar { display:flex; flex-direction:column; align-items:center; justify-content:flex-start; gap:4px; padding:2px 10px 2px 0; border-bottom:0; border-right:1px solid var(--line); overflow-y:auto; }
@@ -56,7 +60,8 @@
 .settings-open .settings-speech-layout .settings-field input { font-size:12px; min-height:36px; }
 .settings-open .settings-model-options button { font-size:10px; white-space:normal; overflow-wrap:anywhere; }
 .settings-open .settings-custom-endpoint { font-size:10px; min-height:28px; }
-.settings-open .settings-speech-footer { position:sticky; bottom:0; padding:12px 2px 2px; background:var(--bg); border-top:1px solid var(--line); font-size:11px; }
+.settings-open .settings-content[data-section="dictation"] { padding-bottom:0; }
+.settings-open .settings-speech-footer { position:sticky; bottom:0; z-index:2; padding:12px 2px 10px; background:var(--bg); border-top:1px solid var(--line); font-size:11px; box-shadow:0 10px 0 var(--bg); }
 .settings-open .settings-speech-footer .settings-save { min-height:33px; border-radius:10px; padding:7px 14px; }
 .settings-open .settings-speech-footer .settings-save:not(:disabled):hover { background:var(--accent-gradient); color:var(--accent-ink); filter:brightness(1.08); }
 /* Speech choices use the same filled selection as conversion formats. */
@@ -106,10 +111,10 @@
 .settings-protected-strip { display:flex; align-items:center; gap:9px; padding:13px 12px; background:var(--card); border:1px solid var(--line); border-radius:12px; font-size:11px; flex-wrap:wrap; }
 .settings-protected-strip > svg { color:var(--accent); }
 .settings-protected-strip > span { color:var(--muted); font-size:10px; margin-left:auto; }
-.settings-lane-tabs { display:flex; gap:18px; border-bottom:1px solid var(--line); margin:12px 0; }
-.settings-lane-tabs > button { padding:10px 2px; border:0; border-bottom:2px solid transparent; border-radius:0; color:var(--muted); background:transparent; font-size:12px; }
-.settings-lane-tabs > button.selected { border-bottom-color:var(--accent); color:var(--text); }
-.settings-lane-tabs > button:hover { color:var(--text); background:transparent; }
+.settings-lane-tabs { display:flex; width:fit-content; gap:4px; padding:3px; border:1px solid var(--line); border-radius:999px; margin:12px 0; background:var(--card); }
+.settings-lane-tabs > button { min-height:30px; padding:6px 14px; border:0; border-radius:999px; color:var(--muted); background:transparent; font-size:12px; }
+.settings-lane-tabs > button.selected { background:var(--accent-gradient); color:var(--accent-ink); }
+.settings-lane-tabs > button:hover:not(.selected) { color:var(--text); background:var(--card-hover); }
 .settings-priority-items { list-style:none; padding:0; margin:0 0 14px; display:grid; gap:5px; }
 .settings-priority-items > li { display:flex; align-items:center; gap:12px; padding:10px 12px 10px 5px; border:1px solid var(--line); border-radius:11px; background:var(--card); transition:background-color 140ms,opacity 140ms; }
 .settings-priority-items > li.is-dragging { background:color-mix(in srgb,var(--accent) 12%,var(--card)); border-color:var(--accent); }

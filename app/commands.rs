@@ -18,13 +18,18 @@ pub struct FileEntry {
 }
 
 impl FileEntry {
-    pub fn launch(&self) -> Result<(), LaunchError> {
-        use std::os::windows::ffi::OsStrExt;
-        use windows_sys::Win32::UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL};
+    fn validated_target(&self) -> Result<&std::path::Path, LaunchError> {
         let path = std::path::Path::new(&self.path);
         if !path.is_absolute() || !path.exists() {
             return Err(LaunchError);
         }
+        Ok(path)
+    }
+
+    pub fn launch(&self) -> Result<(), LaunchError> {
+        use std::os::windows::ffi::OsStrExt;
+        use windows_sys::Win32::UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL};
+        let path = self.validated_target()?;
         let verb: Vec<u16> = "open".encode_utf16().chain(Some(0)).collect();
         let target: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
         let result = unsafe {
@@ -660,7 +665,7 @@ mod tests {
     }
 
     #[test]
-    fn project_folder_target_requires_an_existing_absolute_directory() {
+    fn file_launch_target_requires_an_existing_absolute_path() {
         let unique = format!(
             "island-project-folder-{}-{}",
             std::process::id(),
@@ -674,18 +679,20 @@ mod tests {
         let file = root.join("not-a-directory.txt");
         std::fs::write(&file, b"fixture").unwrap();
 
-        assert!(super::validated_directory_target(&root).is_ok());
+        let entry = |path: &std::path::Path| super::FileEntry {
+            name: "fixture".into(),
+            path: path.to_string_lossy().into_owned(),
+        };
+        // Validation must not launch Explorer or another application during tests.
+        assert!(entry(&root).validated_target().is_ok());
+        assert!(entry(&file).validated_target().is_ok());
         assert_eq!(
-            super::validated_directory_target(std::path::Path::new("relative")),
-            Err(super::OpenDirectoryError::InvalidPath)
+            entry(std::path::Path::new("relative")).validated_target(),
+            Err(super::LaunchError)
         );
         assert_eq!(
-            super::validated_directory_target(&root.join("missing")),
-            Err(super::OpenDirectoryError::Missing)
-        );
-        assert_eq!(
-            super::validated_directory_target(&file),
-            Err(super::OpenDirectoryError::NotDirectory)
+            entry(&root.join("missing")).validated_target(),
+            Err(super::LaunchError)
         );
 
         std::fs::remove_dir_all(root).unwrap();

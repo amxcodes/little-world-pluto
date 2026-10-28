@@ -9,7 +9,7 @@ use pluto::visual::ShapeMode;
 use rusqlite::ffi::ErrorCode;
 use rusqlite::{Connection, OptionalExtension, params};
 
-const SCHEMA_VERSION: i64 = 11;
+const SCHEMA_VERSION: i64 = 15;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum StoredTheme {
@@ -43,8 +43,12 @@ pub enum StoredAccentGradient {
     #[default]
     Lime,
     Ice,
-    Rose,
     Violet,
+    Mint,
+    Honey,
+    Ruby,
+    Cobalt,
+    Slate,
 }
 
 impl StoredAccentGradient {
@@ -52,8 +56,12 @@ impl StoredAccentGradient {
         match self {
             Self::Lime => "lime",
             Self::Ice => "ice",
-            Self::Rose => "rose",
             Self::Violet => "violet",
+            Self::Mint => "mint",
+            Self::Honey => "honey",
+            Self::Ruby => "ruby",
+            Self::Cobalt => "cobalt",
+            Self::Slate => "slate",
         }
     }
 
@@ -61,8 +69,12 @@ impl StoredAccentGradient {
         match value {
             "lime" => Some(Self::Lime),
             "ice" => Some(Self::Ice),
-            "rose" => Some(Self::Rose),
             "violet" => Some(Self::Violet),
+            "mint" => Some(Self::Mint),
+            "honey" => Some(Self::Honey),
+            "ruby" => Some(Self::Ruby),
+            "cobalt" => Some(Self::Cobalt),
+            "slate" => Some(Self::Slate),
             _ => None,
         }
     }
@@ -74,6 +86,9 @@ pub enum StoredMediaCardStyle {
     Standard,
     Backdrop,
     Studio,
+    Segments,
+    Halo,
+    Mosaic,
 }
 
 impl StoredMediaCardStyle {
@@ -82,6 +97,9 @@ impl StoredMediaCardStyle {
             Self::Standard => "standard",
             Self::Backdrop => "backdrop",
             Self::Studio => "studio",
+            Self::Segments => "segments",
+            Self::Halo => "halo",
+            Self::Mosaic => "mosaic",
         }
     }
 
@@ -90,6 +108,9 @@ impl StoredMediaCardStyle {
             "standard" => Some(Self::Standard),
             "backdrop" => Some(Self::Backdrop),
             "studio" => Some(Self::Studio),
+            "segments" => Some(Self::Segments),
+            "halo" => Some(Self::Halo),
+            "mosaic" => Some(Self::Mosaic),
             _ => None,
         }
     }
@@ -122,14 +143,14 @@ impl Default for StoredSettings {
         Self {
             theme: StoredTheme::System,
             accent_gradient: StoredAccentGradient::Lime,
-            media_card_style: StoredMediaCardStyle::Standard,
+            media_card_style: StoredMediaCardStyle::Backdrop,
             shape: ShapeMode::Notch,
             zoom: 1.0,
             reduced_motion: false,
             hover_open_delay_ms: HOVER_OPEN_DELAY.as_millis() as u32,
             hover_close_delay_ms: HOVER_CLOSE_DELAY.as_millis() as u32,
-            click_to_open: false,
-            close_on_outside_click: false,
+            click_to_open: true,
+            close_on_outside_click: true,
             folded_transparency_percent: 0,
             open_transparency_percent: 0,
             clock_indicator_enabled: true,
@@ -175,8 +196,10 @@ impl SettingsStore {
             )
             .map_err(|_| StorageError::Unavailable)?;
         if changed == 0 {
-            let mut settings = StoredSettings::default();
-            settings.theme = theme;
+            let settings = StoredSettings {
+                theme,
+                ..StoredSettings::default()
+            };
             self.save(settings)?;
         }
         Ok(())
@@ -523,6 +546,36 @@ fn migrate(connection: &mut Connection) -> Result<(), StorageError> {
             )
             .map_err(|_| StorageError::Unavailable)?;
     }
+    if version <= 11 {
+        transaction.execute_batch("ALTER TABLE preferences RENAME COLUMN accent_gradient TO legacy_accent_gradient;
+            ALTER TABLE preferences ADD COLUMN accent_gradient TEXT NOT NULL DEFAULT 'lime' CHECK(accent_gradient IN ('lime','ice','rose','violet','amber','mint','peach'));
+            UPDATE preferences SET accent_gradient = legacy_accent_gradient;
+            ALTER TABLE preferences DROP COLUMN legacy_accent_gradient;
+            PRAGMA user_version = 12;").map_err(|_| StorageError::Unavailable)?;
+    }
+    if version <= 12 {
+        transaction.execute_batch("ALTER TABLE preferences RENAME COLUMN media_card_style TO legacy_media_card_style;
+            ALTER TABLE preferences ADD COLUMN media_card_style TEXT NOT NULL DEFAULT 'standard' CHECK(media_card_style IN ('standard','backdrop','studio','segments','halo','mosaic'));
+            UPDATE preferences SET media_card_style = legacy_media_card_style;
+            ALTER TABLE preferences DROP COLUMN legacy_media_card_style;
+            PRAGMA user_version = 13;").map_err(|_| StorageError::Unavailable)?;
+    }
+    if version <= 13 {
+        transaction.execute_batch("ALTER TABLE preferences RENAME COLUMN accent_gradient TO legacy_accent_gradient;
+            ALTER TABLE preferences ADD COLUMN accent_gradient TEXT NOT NULL DEFAULT 'lime' CHECK(accent_gradient IN ('lime','ice','rose','violet','amber','mint','peach','cocoa','honey','dusk'));
+            UPDATE preferences SET accent_gradient = legacy_accent_gradient;
+            ALTER TABLE preferences DROP COLUMN legacy_accent_gradient;
+            PRAGMA user_version = 14;").map_err(|_| StorageError::Unavailable)?;
+    }
+    if version <= 14 {
+        transaction.execute_batch("ALTER TABLE preferences RENAME COLUMN accent_gradient TO legacy_accent_gradient;
+            ALTER TABLE preferences ADD COLUMN accent_gradient TEXT NOT NULL DEFAULT 'lime' CHECK(accent_gradient IN ('lime','ice','violet','mint','honey','ruby','cobalt','slate'));
+            UPDATE preferences SET accent_gradient = CASE legacy_accent_gradient
+                WHEN 'rose' THEN 'ruby' WHEN 'amber' THEN 'honey' WHEN 'peach' THEN 'honey'
+                WHEN 'cocoa' THEN 'slate' WHEN 'dusk' THEN 'violet' ELSE legacy_accent_gradient END;
+            ALTER TABLE preferences DROP COLUMN legacy_accent_gradient;
+            PRAGMA user_version = 15;").map_err(|_| StorageError::Unavailable)?;
+    }
     transaction.commit().map_err(|_| StorageError::Unavailable)
 }
 
@@ -574,8 +627,53 @@ fn move_corrupt_database(path: &Path) -> Result<PathBuf, StorageError> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn fresh_preferences_use_the_requested_notch_defaults() {
+        let settings = StoredSettings::default();
+        assert_eq!(settings.shape, ShapeMode::Notch);
+        assert_eq!(settings.media_card_style, StoredMediaCardStyle::Backdrop);
+        assert!(settings.click_to_open);
+        assert!(settings.close_on_outside_click);
+        assert_eq!(settings.folded_transparency_percent, 0);
+        assert_eq!(settings.open_transparency_percent, 0);
+    }
+
     fn memory() -> SettingsStore {
         SettingsStore::from_connection(Connection::open_in_memory().unwrap()).unwrap()
+    }
+
+    #[test]
+    fn legacy_media_styles_migrate_and_all_designs_persist() {
+        let mut store = memory();
+        let original = StoredSettings {
+            media_card_style: StoredMediaCardStyle::Backdrop,
+            theme: StoredTheme::Light,
+            ..StoredSettings::default()
+        };
+        store.save(original).unwrap();
+        // Recreate the v12 CHECK constraint to exercise the actual upgrade path.
+        store.connection.execute_batch("ALTER TABLE preferences RENAME COLUMN media_card_style TO newer_media_card_style;
+            ALTER TABLE preferences ADD COLUMN media_card_style TEXT NOT NULL DEFAULT 'standard' CHECK(media_card_style IN ('standard','backdrop'));
+            UPDATE preferences SET media_card_style = newer_media_card_style;
+            ALTER TABLE preferences DROP COLUMN newer_media_card_style;
+            PRAGMA user_version = 12;").unwrap();
+        migrate(&mut store.connection).unwrap();
+        assert_eq!(store.load().unwrap(), original);
+        for media_card_style in [
+            StoredMediaCardStyle::Standard,
+            StoredMediaCardStyle::Backdrop,
+            StoredMediaCardStyle::Studio,
+            StoredMediaCardStyle::Segments,
+            StoredMediaCardStyle::Halo,
+            StoredMediaCardStyle::Mosaic,
+        ] {
+            let settings = StoredSettings {
+                media_card_style,
+                ..original
+            };
+            store.save(settings).unwrap();
+            assert_eq!(store.load().unwrap(), settings);
+        }
     }
 
     #[test]
@@ -585,7 +683,7 @@ mod tests {
         let shortcuts = crate::shortcuts::ShortcutSet::default();
         let value = StoredSettings {
             theme: StoredTheme::Light,
-            accent_gradient: StoredAccentGradient::Rose,
+            accent_gradient: StoredAccentGradient::Ruby,
             media_card_style: StoredMediaCardStyle::Backdrop,
             shape: ShapeMode::Capsule,
             zoom: 1.2,
@@ -605,6 +703,19 @@ mod tests {
         };
         store.save(value).unwrap();
         assert_eq!(store.load().unwrap(), value);
+        for accent_gradient in [
+            StoredAccentGradient::Cobalt,
+            StoredAccentGradient::Mint,
+            StoredAccentGradient::Slate,
+        ] {
+            let themed = StoredSettings {
+                accent_gradient,
+                ..value
+            };
+            store.save(themed).unwrap();
+            assert_eq!(store.load().unwrap(), themed);
+        }
+        store.save(value).unwrap();
         let invalid = StoredSettings {
             zoom: f32::NAN,
             ..value
@@ -613,6 +724,29 @@ mod tests {
         assert_eq!(store.load().unwrap(), value);
         store.save(StoredSettings::default()).unwrap();
         assert_eq!(store.load().unwrap(), StoredSettings::default());
+    }
+
+    #[test]
+    fn retired_accent_migrates_to_visible_palette() {
+        let mut store = memory();
+        store.save(StoredSettings::default()).unwrap();
+        store.connection.execute_batch("ALTER TABLE preferences RENAME COLUMN accent_gradient TO newer_accent_gradient;
+            ALTER TABLE preferences ADD COLUMN accent_gradient TEXT NOT NULL DEFAULT 'rose' CHECK(accent_gradient IN ('lime','rose'));
+            UPDATE preferences SET accent_gradient = 'rose';
+            ALTER TABLE preferences DROP COLUMN newer_accent_gradient;
+            PRAGMA user_version = 14;").unwrap();
+        migrate(&mut store.connection).unwrap();
+        assert_eq!(
+            store.load().unwrap().accent_gradient,
+            StoredAccentGradient::Ruby
+        );
+        assert_eq!(
+            store
+                .connection
+                .query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
+                .unwrap(),
+            15
+        );
     }
 
     #[test]
@@ -657,7 +791,9 @@ mod tests {
         assert!(settings.battery_indicator_enabled);
         assert!(settings.clock_indicator_enabled);
         assert!(settings.privacy_indicator_enabled);
-        assert_eq!(version, 10);
+        assert_eq!(version, super::SCHEMA_VERSION);
+        assert!(!settings.click_to_open);
+        assert!(!settings.close_on_outside_click);
     }
 
     #[test]
@@ -717,8 +853,10 @@ mod tests {
                 .connection
                 .query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
                 .unwrap(),
-            10
+            super::SCHEMA_VERSION
         );
+        assert!(!settings.click_to_open);
+        assert!(!settings.close_on_outside_click);
     }
 
     #[test]

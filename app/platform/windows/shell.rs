@@ -29,7 +29,10 @@ use windows_sys::Win32::Foundation::{
     LPARAM, LRESULT, POINT, RECT, SIZE, SYSTEMTIME, SetLastError, WAIT_FAILED, WAIT_OBJECT_0,
     WPARAM,
 };
-use windows_sys::Win32::Graphics::Dwm::{DWM_TIMING_INFO, DwmGetCompositionTimingInfo};
+use windows_sys::Win32::Graphics::Dwm::{
+    DWM_TIMING_INFO, DWMWA_EXTENDED_FRAME_BOUNDS, DwmGetCompositionTimingInfo,
+    DwmGetWindowAttribute,
+};
 use windows_sys::Win32::Graphics::Gdi::{
     AC_SRC_ALPHA, AC_SRC_OVER, ANTIALIASED_QUALITY, BI_RGB, BITMAP, BITMAPINFO, BITMAPINFOHEADER,
     CLIP_DEFAULT_PRECIS, CombineRgn, CreateCompatibleDC, CreateDIBSection, CreateFontW,
@@ -116,6 +119,29 @@ fn load_agent_preferences() -> Option<serde_json::Value> {
     Some(value)
 }
 
+fn saved_meeting_agent_config(provider: &str) -> Vec<(String, String)> {
+    let Some(preferences) = load_agent_preferences() else {
+        return Vec::new();
+    };
+    preferences["provider"][provider]["config"]
+        .as_object()
+        .map(|config| {
+            config
+                .iter()
+                .take(24)
+                .filter_map(|(id, value)| {
+                    let value = value.as_str()?;
+                    (id.len() <= 128
+                        && value.len() <= 512
+                        && !id.chars().any(char::is_control)
+                        && !value.chars().any(char::is_control))
+                    .then(|| (id.clone(), value.to_owned()))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 fn save_agent_preferences(value: &serde_json::Value) {
     if !matches!(
         value["defaultProvider"].as_str(),
@@ -133,10 +159,10 @@ fn save_agent_preferences(value: &serde_json::Value) {
     let Some(path) = agent_preferences_path() else {
         return;
     };
-    if let Some(parent) = path.parent() {
-        if std::fs::create_dir_all(parent).is_err() {
-            return;
-        }
+    if let Some(parent) = path.parent()
+        && std::fs::create_dir_all(parent).is_err()
+    {
+        return;
     }
     let _ = std::fs::write(path, encoded);
 }
@@ -242,13 +268,13 @@ const COMPACT_STATUS_SPRING: Spring = Spring {
 // Keep the shell's first response quick, with slight overdamping to prevent
 // the 1 px overshoot that was visible at the end of the contour transition.
 const SHELL_OPEN_SPRING: Spring = Spring {
-    stiffness: 540.0,
-    damping: 51.0,
+    stiffness: 760.0,
+    damping: 58.0,
     mass: 1.0,
 };
 const SHELL_COLLAPSE_SPRING: Spring = Spring {
-    stiffness: 640.0,
-    damping: 56.0,
+    stiffness: 880.0,
+    damping: 63.0,
     mass: 1.0,
 };
 const MA_NOACTIVATE: LRESULT = 3;
@@ -265,7 +291,7 @@ const WM_APP_SHELL_STOP: u32 = WM_APP + 0x53;
 const WM_APP_REACT: u32 = WM_APP + 0x54;
 const WM_APP_SCREEN_OVERLAY_DONE: u32 = WM_APP + 0x55;
 const FOCUS_RESTORE_TIMER_ID: usize = 0x1D53;
-const FULLSCREEN_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(250);
+const FULLSCREEN_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(100);
 const FOCUS_RESTORE_DELAY: std::time::Duration = std::time::Duration::from_millis(150);
 const SHELF_PEEK_SIZE: (f64, f64) = (360.0, 86.0);
 const LIGHT_SHELL_BACKGROUND: (u8, u8, u8) = (246, 246, 247);
@@ -298,10 +324,19 @@ struct NoteFolder {
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
+struct QuickReminder {
+    text: String,
+    at: u64,
+    notified: bool,
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 struct NoteBook {
     folders: Vec<NoteFolder>,
     selected: usize,
     reminder_at: Option<u64>,
+    #[serde(default)]
+    quick_reminders: Vec<QuickReminder>,
 }
 
 impl NoteBook {
@@ -440,7 +475,7 @@ fn media_artwork(
         .unwrap_or_default()
         .trim()
         .to_ascii_lowercase();
-    let mime = detected_mime.or_else(|| match declared_mime.as_str() {
+    let mime = detected_mime.or(match declared_mime.as_str() {
         "image/jpeg" | "image/png" | "image/webp" | "image/bmp" | "image/gif" | "image/avif" => {
             Some(declared_mime.as_str())
         }
@@ -480,7 +515,8 @@ fn spawn_media_observer() -> (Sender<MediaAction>, Receiver<Option<MediaSnapshot
         let mut manager_event_tokens: Option<(Option<i64>, Option<i64>)> = None;
         let mut observed_session: Option<Session> = None;
         let mut session_event_tokens: Option<(Option<i64>, Option<i64>, Option<i64>)> = None;
-        let mut cached_metadata: Option<(String, String, String, Option<Arc<str>>, u64)> = None;
+        type MediaMetadata = (String, String, String, Option<Arc<str>>, u64);
+        let mut cached_metadata: Option<MediaMetadata> = None;
         let mut artwork_revision = 0u64;
         let mut refresh_metadata_at = std::time::Instant::now();
         let mut selected_session_id: Option<String> = None;
@@ -1204,10 +1240,26 @@ enum ShellPage {
     Note,
     Weather,
     Controls,
+    Meetings,
+    Expand,
+}
+
+#[derive(Clone)]
+enum ClipboardMediaSource {
+    File(std::path::PathBuf),
+    Data(u32, Vec<u8>),
+}
+
+#[derive(Clone)]
+struct ClipboardMedia {
+    kind: &'static str,
+    label: String,
+    preview: Option<String>,
+    source: ClipboardMediaSource,
 }
 
 impl ShellPage {
-    const ALL: [Self; 10] = [
+    const ALL: [Self; 12] = [
         Self::Home,
         Self::Clipboard,
         Self::Shelf,
@@ -1218,6 +1270,8 @@ impl ShellPage {
         Self::Note,
         Self::Weather,
         Self::Controls,
+        Self::Meetings,
+        Self::Expand,
     ];
 
     const fn title(self) -> &'static str {
@@ -1232,6 +1286,8 @@ impl ShellPage {
             Self::Note => "Note",
             Self::Weather => "Weather",
             Self::Controls => "Controls",
+            Self::Meetings => "Meetings",
+            Self::Expand => "Expand",
         }
     }
 
@@ -1246,6 +1302,8 @@ impl ShellPage {
             Self::Note => modules.note,
             Self::Weather => modules.weather,
             Self::Controls => modules.controls,
+            Self::Meetings => modules.meetings,
+            Self::Expand => modules.expand,
         }
     }
 }
@@ -1261,6 +1319,8 @@ pub struct ModuleSettings {
     pub note: bool,
     pub weather: bool,
     pub controls: bool,
+    pub meetings: bool,
+    pub expand: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -1415,7 +1475,6 @@ fn read_radios(toggle: Option<RadioToggle>, cached: RadioSnapshot) -> RadioSnaps
             wifi,
             bluetooth: cached.bluetooth,
             message: Some("Windows Bluetooth radio service is unavailable.".into()),
-            ..Default::default()
         };
     }
     let result = (|| -> windows_core::Result<RadioSnapshot> {
@@ -1487,7 +1546,6 @@ fn read_radios(toggle: Option<RadioToggle>, cached: RadioSnapshot) -> RadioSnaps
         wifi,
         bluetooth: cached.bluetooth,
         message: Some(format!("Bluetooth radio unavailable ({error}).")),
-        ..Default::default()
     })
 }
 
@@ -1501,7 +1559,7 @@ pub struct ClipboardSettings {
 impl Default for ClipboardSettings {
     fn default() -> Self {
         Self {
-            history_limit: 200,
+            history_limit: 50,
             capture_enabled: true,
         }
     }
@@ -1518,6 +1576,8 @@ impl Default for ModuleSettings {
             note: true,
             weather: true,
             controls: true,
+            meetings: true,
+            expand: true,
         }
     }
 }
@@ -1782,7 +1842,7 @@ fn resolve_drop_intent(callbacks: &ShellCallbacks, x: i32, y: i32, release: bool
 }
 
 impl ShelfDropTarget {
-    fn new(callbacks: &Arc<ShellCallbacks>) -> IDropTarget {
+    fn create_interface(callbacks: &Arc<ShellCallbacks>) -> IDropTarget {
         ShelfDropTarget {
             callbacks: Arc::clone(callbacks),
             accepts_files: AtomicBool::new(false),
@@ -2315,12 +2375,16 @@ impl CommandFileResult {
     }
 }
 
+type CommandAppIcons = (String, Vec<(String, Option<String>)>);
+type WeatherResult = Result<(Vec<String>, serde_json::Value), String>;
+
 pub struct EdgeShell {
     window: HWND,
     _ole_apartment: OleDropTargetApartment,
     drop_target: Option<IDropTarget>,
     drop_catcher: HWND,
     drop_catcher_region: Option<(i32, i32, i32, i32, i32, ShapeMode)>,
+    meeting_loopback: Option<super::meeting_audio::MeetingLoopback>,
     drag_hover_stop: Arc<AtomicBool>,
     drag_hover_worker: Option<JoinHandle<()>>,
     raw_input_registered: bool,
@@ -2357,17 +2421,19 @@ pub struct EdgeShell {
     activity_receiver: Option<Receiver<ObservedActivity>>,
     activity_poll_at: std::time::Instant,
     opencode_actions: Sender<crate::opencode_control::Action>,
-    opencode_receiver: Receiver<crate::opencode_control::Snapshot>,
-    opencode: crate::opencode_control::Snapshot,
+    opencode_receiver: pluto::latest::Receiver<Arc<crate::opencode_control::Snapshot>>,
+    opencode: Arc<crate::opencode_control::Snapshot>,
     acp_opencode_actions: Sender<crate::agent_acp::Action>,
-    acp_opencode_receiver: Receiver<crate::agent_acp::Snapshot>,
+    acp_opencode_receiver: pluto::latest::Receiver<crate::agent_acp::Snapshot>,
     acp_opencode: crate::agent_acp::Snapshot,
     acp_codex_actions: Sender<crate::agent_acp::Action>,
-    acp_codex_receiver: Receiver<crate::agent_acp::Snapshot>,
+    acp_codex_receiver: pluto::latest::Receiver<crate::agent_acp::Snapshot>,
     acp_codex: crate::agent_acp::Snapshot,
     privacy_indicator_enabled: bool,
     page: ShellPage,
     converter: crate::conversion::Converter,
+    meetings: crate::meetings::Meetings,
+    updater: crate::update::Updater,
     react_view: Option<wry::WebView>,
     react_messages: Receiver<String>,
     screen_overlay_sender: Sender<crate::platform::windows::screen_overlay::ResultEvent>,
@@ -2411,8 +2477,11 @@ pub struct EdgeShell {
     startup_status: crate::platform::windows::startup::StartupTaskStatus,
     startup_pending: bool,
     react_ready: bool,
+    glass_material: bool,
+    glass_motion: bool,
     react_visible: bool,
     react_compact_visible: bool,
+    react_view_shown: bool,
     react_compact_faded: bool,
     react_compact_render_generation: u64,
     pending_react_compact_render: Option<u64>,
@@ -2422,12 +2491,16 @@ pub struct EdgeShell {
     react_bounds: Option<(i32, i32, u32, u32)>,
     content_exit_deadline: Option<std::time::Instant>,
     last_react_state: String,
+    agent_state_dirty: bool,
+    opencode_state_dirty: bool,
     foreground_app: Option<ForegroundAppSnapshot>,
     foreground_app_poll_at: std::time::Instant,
     last_react_artwork_revision: Option<u64>,
     last_react_shelf_revision: Option<u64>,
     modules: ModuleSettings,
     clipboard_items: Vec<String>,
+    clipboard_media: Vec<ClipboardMedia>,
+    text_expander: crate::platform::windows::text_expander::Settings,
     clipboard_history_enabled: bool,
     clipboard_limit: usize,
     clipboard_listener_registered: bool,
@@ -2450,8 +2523,8 @@ pub struct EdgeShell {
     command_app_query: String,
     command_app_results: Vec<String>,
     command_app_icons: HashMap<String, Option<String>>,
-    command_app_icon_sender: Sender<(String, Vec<(String, Option<String>)>)>,
-    command_app_icon_receiver: Receiver<(String, Vec<(String, Option<String>)>)>,
+    command_app_icon_sender: Sender<CommandAppIcons>,
+    command_app_icon_receiver: Receiver<CommandAppIcons>,
     command_app_icon_generation: Arc<AtomicU64>,
     command_icon_cache: Arc<Mutex<HashMap<std::path::PathBuf, Option<String>>>>,
     command_apps_receiver: Option<Receiver<Vec<crate::commands::AppEntry>>>,
@@ -2483,7 +2556,7 @@ pub struct EdgeShell {
     weather_error: Option<String>,
     weather_updated_at: Option<u64>,
     weather_last_attempt: Option<std::time::Instant>,
-    weather_receiver: Option<Receiver<Result<(Vec<String>, serde_json::Value), String>>>,
+    weather_receiver: Option<Receiver<WeatherResult>>,
     dark_theme: bool,
     accent_gradient: crate::storage::StoredAccentGradient,
     media_card_style: crate::storage::StoredMediaCardStyle,
@@ -2868,7 +2941,7 @@ impl EdgeShell {
         // window. Ask the Shell to deliver CF_HDROP as WM_DROPFILES here.
         unsafe { DragAcceptFiles(window, 1) };
         let drop_target = if ole_apartment.initialized {
-            let target = ShelfDropTarget::new(&callbacks);
+            let target = ShelfDropTarget::create_interface(&callbacks);
             // WebView2 children and the shaped catcher still use OLE when
             // they own the hit-test point.
             Some(target)
@@ -2934,6 +3007,7 @@ impl EdgeShell {
             drop_target,
             drop_catcher: null_mut(),
             drop_catcher_region: None,
+            meeting_loopback: None,
             drag_hover_stop: Arc::new(AtomicBool::new(false)),
             drag_hover_worker: None,
             raw_input_registered: false,
@@ -2974,7 +3048,7 @@ impl EdgeShell {
             activity_poll_at: std::time::Instant::now(),
             opencode_actions,
             opencode_receiver,
-            opencode: crate::opencode_control::Snapshot::default(),
+            opencode: Arc::new(crate::opencode_control::Snapshot::default()),
             acp_opencode_actions,
             acp_opencode_receiver,
             acp_opencode: crate::agent_acp::Snapshot::default(),
@@ -2984,6 +3058,8 @@ impl EdgeShell {
             privacy_indicator_enabled: startup.privacy_indicator_enabled,
             page: ShellPage::Home,
             converter: crate::conversion::Converter::default(),
+            meetings: crate::meetings::Meetings::default(),
+            updater: crate::update::Updater::default(),
             react_view: None,
             react_messages,
             screen_overlay_sender,
@@ -3023,8 +3099,11 @@ impl EdgeShell {
             startup_status: crate::platform::windows::startup::StartupTaskStatus::Checking,
             startup_pending: false,
             react_ready: false,
+            glass_material: false,
+            glass_motion: false,
             react_visible: false,
             react_compact_visible: false,
+            react_view_shown: false,
             react_compact_faded: false,
             react_compact_render_generation: 0,
             pending_react_compact_render: None,
@@ -3034,12 +3113,16 @@ impl EdgeShell {
             react_bounds: None,
             content_exit_deadline: None,
             last_react_state: String::new(),
+            agent_state_dirty: true,
+            opencode_state_dirty: true,
             foreground_app: None,
             foreground_app_poll_at: std::time::Instant::now(),
             last_react_artwork_revision: None,
             last_react_shelf_revision: None,
             modules,
             clipboard_items: Vec::new(),
+            clipboard_media: Vec::new(),
+            text_expander: crate::platform::windows::text_expander::load(),
             clipboard_history_enabled: load_clipboard_history_enabled(),
             clipboard_limit: load_clipboard_settings().history_limit,
             clipboard_listener_registered: false,
@@ -3168,6 +3251,7 @@ impl EdgeShell {
         shell.clipboard_listener_registered = unsafe {
             windows_sys::Win32::System::DataExchange::AddClipboardFormatListener(shell.window)
         } != 0;
+        crate::platform::windows::text_expander::configure(shell.window, &shell.text_expander);
         let shelf_icon_sender = shell.shelf_icon_sender.clone();
         let shelf_paths = shell.shelf_items.clone();
         thread::spawn(move || {
@@ -3252,7 +3336,7 @@ impl EdgeShell {
         }
 
         for child in child_windows(self.window) {
-            let target = ShelfDropTarget::new(&self.callbacks);
+            let target = ShelfDropTarget::create_interface(&self.callbacks);
             let child_window = windows_startup::Win32::Foundation::HWND(child as _);
             // Another WebView2 component may have registered its own target
             // before the child became part of this view. This view owns every
@@ -3434,11 +3518,18 @@ impl EdgeShell {
                     .body(std::borrow::Cow::Borrowed(html.as_bytes()))
                     .expect("the embedded Pluto page response is valid")
             })
+            // Meetings requests microphone access only after Start. System
+            // playback uses the native loopback path, without screen access.
+            .with_permission_handler(|kind| match kind {
+                wry::PermissionKind::Microphone => wry::PermissionResponse::Allow,
+                _ => wry::PermissionResponse::Default,
+            })
             .with_https_scheme(true)
             .with_url("island://localhost/")
             // WebView2's first visible compositor frame otherwise paints its
             // default white surface before the embedded CSS is presented.
             // Alpha zero lets the already-painted native island show through.
+            .with_transparent(true)
             .with_background_color((0, 0, 0, 0))
             .with_visible(false)
             .with_focused(false)
@@ -3473,7 +3564,13 @@ impl EdgeShell {
         }
     }
 
-    fn react_state(&self, include_media_artwork: bool, include_shelf_icons: bool) -> String {
+    fn react_state(
+        &self,
+        include_media_artwork: bool,
+        include_shelf_icons: bool,
+        include_agents: bool,
+        include_opencode: bool,
+    ) -> String {
         let modules = serde_json::json!({
             "clipboard": self.modules.clipboard,
             "shelf": self.modules.shelf,
@@ -3483,6 +3580,8 @@ impl EdgeShell {
             "note": self.modules.note,
             "weather": self.modules.weather,
             "controls": self.modules.controls,
+            "meetings": self.modules.meetings,
+            "expand": self.modules.expand,
         });
         let mut power = SYSTEM_POWER_STATUS::default();
         let power_available = unsafe { GetSystemPowerStatus(&mut power) } != 0;
@@ -3508,7 +3607,7 @@ impl EdgeShell {
             "modules": modules,
             "activity": self.activity.details,
             "agentRuns": self.activity.agent_runs,
-            "opencode": self.opencode,
+
             "clipboard": self.clipboard_items.iter().take(self.clipboard_limit).collect::<Vec<_>>(),
             "clipboardCapturing": self.clipboard_history_enabled && self.clipboard_listener_registered,
             "shelf": self.shelf_items.iter().map(|path| path.file_name().unwrap_or_default().to_string_lossy().into_owned()).collect::<Vec<_>>(),
@@ -3519,6 +3618,7 @@ impl EdgeShell {
             "noteFolderSelected": self.notebook.selected,
             "noteReminderAt": self.notebook.reminder_at,
             "noteReminderDue": self.notebook.reminder_at.is_some_and(|at| at <= unix_seconds()),
+            "noteQuickReminders": self.notebook.quick_reminders,
             "commandResult": self.command_result,
             "commandError": self.command_error,
             "media": self.media,
@@ -3548,12 +3648,19 @@ impl EdgeShell {
         });
         state["foregroundApp"] = serde_json::json!(self.foreground_app);
         state["conversion"] = serde_json::json!(self.converter.state);
+        state["meetings"] = serde_json::json!(self.meetings.state);
+        state["appUpdate"] = serde_json::json!(self.updater.state);
         state["dropIntent"] = serde_json::json!(self.callbacks.drop_intent.load(Ordering::Acquire));
         state["dropActive"] =
             serde_json::json!(self.callbacks.shelf_drag_active.load(Ordering::Acquire));
         state["dropHandoffId"] = serde_json::json!(self.drop_handoff_sequence);
-        state["agents"] =
-            serde_json::json!({"opencode": self.acp_opencode, "codex": self.acp_codex});
+        if include_agents {
+            state["agents"] =
+                serde_json::json!({"opencode": self.acp_opencode, "codex": self.acp_codex});
+        }
+        if include_opencode {
+            state["opencode"] = serde_json::json!(self.opencode);
+        }
         let approvals = [(&self.acp_opencode, "opencode"), (&self.acp_codex, "codex")];
         let approval_count = approvals
             .iter()
@@ -3658,6 +3765,8 @@ impl EdgeShell {
                 "filePath": feedback.file_path,
             })));
         state["clockLabel"] = serde_json::json!(current_clock_label());
+        state["textExpander"] = serde_json::json!({"enabled": self.text_expander.enabled, "entries": self.text_expander.entries});
+        state["clipboardMedia"] = serde_json::json!(self.clipboard_media.iter().map(|item| serde_json::json!({"kind": item.kind, "label": item.label, "preview": item.preview})).collect::<Vec<_>>());
         state["clockEnabled"] = serde_json::json!(self.clock_indicator_enabled);
         state["batteryEnabled"] = serde_json::json!(self.battery_indicator_enabled);
         state["homeClipboard"] = serde_json::json!(
@@ -3714,8 +3823,17 @@ impl EdgeShell {
             .as_ref()
             .is_some_and(|media| self.last_react_artwork_revision != Some(media.artwork_revision));
         let include_shelf_icons = self.last_react_shelf_revision != Some(self.shelf_revision);
-        let state = self.react_state(include_media_artwork, include_shelf_icons);
+        let include_agents = self.agent_state_dirty || self.last_react_state.is_empty();
+        let include_opencode = self.opencode_state_dirty || self.last_react_state.is_empty();
+        let state = self.react_state(
+            include_media_artwork,
+            include_shelf_icons,
+            include_agents,
+            include_opencode,
+        );
         if state == self.last_react_state {
+            self.agent_state_dirty = false;
+            self.opencode_state_dirty = false;
             return;
         }
         if let Some(view) = &self.react_view
@@ -3724,6 +3842,8 @@ impl EdgeShell {
                 .is_ok()
         {
             self.last_react_state = state;
+            self.agent_state_dirty = false;
+            self.opencode_state_dirty = false;
             self.last_react_artwork_revision = media_artwork_revision;
             self.last_react_shelf_revision = Some(self.shelf_revision);
         }
@@ -3766,6 +3886,17 @@ impl EdgeShell {
     }
 
     fn react_panel_bounds(&self) -> (i32, i32, u32, u32) {
+        // Voice light reaches the contour; normal pages keep their safe inset.
+        if self.wake_surface || self.wake_closing {
+            return (
+                (f64::from(self.shape.body_inset()) * self.scale).round() as i32,
+                (f64::from(self.shape.top_gap()) * self.scale).round() as i32,
+                (self.expanded_body_width * self.scale).round().max(1.0) as u32,
+                (self.expanded_layout_height() * self.scale)
+                    .round()
+                    .max(1.0) as u32,
+            );
+        }
         let x = ((f64::from(self.shape.body_inset()) + 12.0) * self.scale).round() as i32;
         // The 12-point horizontal inset stays inside the 32-point capsule
         // corner at this 16-point vertical inset, including the lower edge.
@@ -3774,8 +3905,9 @@ impl EdgeShell {
         let width = ((self.expanded_body_width - 24.0) * self.scale)
             .round()
             .max(1.0) as u32;
-        // Keep the WebView at its final size while the native contour moves.
-        // Repeated child HWND resizes compete with painting and delay content.
+        // Keep the WebView inside the native shell contour. A child HWND is
+        // rectangular and can paint through the layered window's rounded
+        // lower corners when its viewport reaches the host tail.
         let content_height = self.expanded_layout_height();
         let height = ((content_height - 32.0) * self.scale).round().max(1.0) as u32;
         (x, y, width, height)
@@ -3794,20 +3926,32 @@ impl EdgeShell {
     fn react_compact_bounds(&self) -> (i32, i32, u32, u32) {
         // Follow the native spring so privacy controls do not jump straight to
         // the final edge when the contextual toolbar closes.
-        let pill_width = if self.height_motion.value() <= f64::from(FOLDED_HEIGHT) + 1.0
-            && self.animation_target.1 <= f64::from(FOLDED_HEIGHT) + 1.0
-        {
-            self.width_motion.value()
-        } else {
-            self.folded_target_width()
-        };
-        let width = centered_pixel_width((pill_width - 8.0) * self.scale, self.screen_width);
+        // Use the same continuous width as the silhouette. Switching from the
+        // destination width to the live width at the final height threshold
+        // briefly widened the content again during collapse.
+        // The material expands around a stationary compact composition. Do not
+        // stretch its flex row toward the new edges before the page handoff.
+        let pill_width = self
+            .width_motion
+            .value()
+            .min(self.folded_target_width())
+            .max(self.shape.folded_body_width());
+        // A 4pt glass inset let the rectangular child reach into the rounded
+        // lower corners. Keep this correction gated to glass mode.
+        let compact_inset = if self.glass_material { 16.0 } else { 8.0 };
+        let width =
+            centered_pixel_width((pill_width - compact_inset) * self.scale, self.screen_width);
         let x = centered_pixel_origin(self.width, width as i32);
         let y = ((f64::from(self.shape.top_gap()) + 2.0) * self.scale).round() as i32;
         // All compact states, including screen-tool feedback, share one row.
-        // A taller WebView child could paint before the native height spring
-        // reached it, leaving the bottom of the label below the notch.
-        (x, y, width, (28.0 * self.scale).round().max(1.0) as u32)
+        // A square glass child must end inside the rounded bottom of the mask.
+        let compact_height = 28.0;
+        (
+            x,
+            y,
+            width,
+            (compact_height * self.scale).round().max(1.0) as u32,
+        )
     }
 
     fn sync_react_view(&mut self, body_width: f64, body_height: f64) {
@@ -3867,8 +4011,20 @@ impl EdgeShell {
         // compact tree. Shrinking first can expose a blank frame in WebView2.
         let awaiting_compact_render =
             compact_visible && self.pending_react_compact_render.is_some();
-        let bounds = if awaiting_compact_render && self.react_visible {
-            self.react_panel_bounds_at_width(body_width)
+        let bounds = if awaiting_compact_render {
+            // react_visible becomes false on the first handoff frame; it
+            // cannot guard later frames while the acknowledgement is pending.
+            let (_, y, width, height) = self
+                .react_bounds
+                .unwrap_or_else(|| self.react_panel_bounds_at_width(body_width));
+            // Retain the viewport size, not its old parent-relative origin:
+            // the parent is moving left/right around the display center.
+            (
+                centered_pixel_origin(self.width, width as i32),
+                y,
+                width,
+                height,
+            )
         } else if compact_visible || self.reducer.snapshot().mode == ShellMode::Tucked {
             self.react_compact_bounds()
         } else {
@@ -3903,13 +4059,9 @@ impl EdgeShell {
             self.react_visible = visible;
             self.react_compact_visible = compact_visible;
             self.push_react_state();
-            if let Some(view) = &self.react_view {
-                let _ = view.set_visible(visible || compact_visible);
-            }
-            if entering_expanded {
-                if let Some(view) = &self.react_view {
-                    let _ = view.evaluate_script("window.islandShellPhase?.('enter');");
-                }
+
+            if entering_expanded && let Some(view) = &self.react_view {
+                let _ = view.evaluate_script("window.islandShellPhase?.('enter');");
             }
             if entering_compact {
                 self.refresh_react_drop_targets();
@@ -3938,6 +4090,16 @@ impl EdgeShell {
                 self.drop_targets_refresh_attempts = 0;
                 self.content_exit_deadline = None;
             }
+        }
+        // Reconcile the actual child window after a delayed paint/resume too.
+        // A previous set_visible failure must not leave a logically visible
+        // compact surface permanently hidden behind the native backing.
+        let show_view = visible || compact_visible;
+        if self.react_view_shown != show_view
+            && let Some(view) = &self.react_view
+            && view.set_visible(show_view).is_ok()
+        {
+            self.react_view_shown = show_view;
         }
         if compact_fade_changed
             || ((visible || compact_visible)
@@ -3975,36 +4137,145 @@ impl EdgeShell {
             let mut redraw = true;
             match kind {
                 "conversionPick" => {
-                    if !self.converter.state.busy {
-                        if let Some(paths) = pick_opencode_files(self.window) {
-                            self.open_conversion(
-                                paths.into_iter().map(std::path::PathBuf::from).collect(),
-                                false,
-                            );
-                        }
+                    if !self.converter.state.busy
+                        && let Some(paths) = pick_opencode_files(self.window)
+                    {
+                        self.open_conversion(
+                            paths.into_iter().map(std::path::PathBuf::from).collect(),
+                            false,
+                        );
                     }
                 }
                 "conversionDestination" => {
-                    if !self.converter.state.busy {
-                        if let Some(path) = pick_opencode_folder(self.window) {
-                            self.converter.destination(path);
-                        }
+                    if !self.converter.state.busy
+                        && let Some(path) = pick_opencode_folder(self.window)
+                    {
+                        self.converter.destination(path);
                     }
                 }
                 "conversionDestinationClear" => self.converter.destination(String::new()),
                 "conversionEngine" => {
-                    if !self.converter.state.busy {
-                        if let Some(paths) = pick_opencode_files(self.window) {
-                            if let Some(path) = paths.first() {
-                                self.converter.engine(path.into());
-                            }
-                        }
+                    if !self.converter.state.busy
+                        && let Some(paths) = pick_opencode_files(self.window)
+                        && let Some(path) = paths.first()
+                    {
+                        self.converter.engine(path.into());
                     }
                 }
                 "conversionEngineInstall" => self.converter.install_engine(),
                 "conversionEngineCheckUpdate" => self.converter.check_engine_update(),
                 "conversionEngineRemove" => self.converter.remove_engine(),
                 "conversionEngineForget" => self.converter.forget_engine(),
+                "meetingEngineInstall" => self.meetings.install_runtime(),
+                "meetingEngineCheckUpdate" => self.meetings.check_update(),
+                "appUpdateCheck" => self.updater.check(),
+                "appUpdateInstall" => self.updater.install(),
+                "meetingEngineRemove" => self.meetings.remove_runtime(),
+                "meetingModelInstall" => self.meetings.install_model(),
+                "meetingModelRemove" => self.meetings.remove_model(),
+                "meetingSourceSet" => self
+                    .meetings
+                    .set_source(value["source"].as_str().unwrap_or("microphone")),
+                "meetingLanguageSet" => self
+                    .meetings
+                    .set_language(value["language"].as_str().unwrap_or("en-US")),
+                "meetingMicSensitivitySet" => self
+                    .meetings
+                    .set_mic_sensitivity(value["value"].as_u64().unwrap_or(55).min(100) as u8),
+                "meetingStart" => {
+                    self.meetings.start();
+                    if !self.meetings.state.active {
+                        self.meeting_loopback = None;
+                    }
+                }
+                "meetingStop" => {
+                    self.meeting_loopback = None;
+                    self.meetings.stop();
+                }
+                "meetingPause" => self.meetings.set_paused(true),
+                "meetingResume" => self.meetings.set_paused(false),
+                "meetingCaptureStatus" => self
+                    .meetings
+                    .capture_status(value["status"].as_str().unwrap_or("")),
+                "meetingCaptureFailed" => {
+                    self.meeting_loopback = None;
+                    self.meetings
+                        .capture_failed(value["message"].as_str().unwrap_or(""));
+                }
+                "meetingSystemAudioStart" => {
+                    self.meeting_loopback = None;
+                    self.meeting_loopback = Some(super::meeting_audio::MeetingLoopback::start(
+                        self.window as isize,
+                    ));
+                }
+                "meetingSystemAudioStop" => {
+                    self.meeting_loopback = None;
+                }
+                "meetingTranscript" => self.meetings.transcript(
+                    value["text"].as_str().unwrap_or(""),
+                    value["final"].as_bool().unwrap_or(false),
+                    value["elapsedSeconds"].as_f64().unwrap_or(0.0),
+                    value["source"].as_str().unwrap_or(""),
+                ),
+                "meetingSessionRename" => self.meetings.rename_session(
+                    value["id"].as_str().unwrap_or(""),
+                    value["title"].as_str().unwrap_or(""),
+                ),
+                "meetingSessionDelete" => self
+                    .meetings
+                    .delete_session(value["id"].as_str().unwrap_or("")),
+                "meetingOptimizePrepare" => match value["provider"].as_str() {
+                    Some("codex")
+                        if !self.acp_codex.connected
+                            && !self.acp_codex.installing
+                            && !self.acp_codex.authenticating =>
+                    {
+                        let _ = self
+                            .acp_codex_actions
+                            .send(crate::agent_acp::Action::Connect);
+                    }
+                    Some("opencode")
+                        if !self.acp_opencode.connected
+                            && !self.acp_opencode.installing
+                            && !self.acp_opencode.authenticating =>
+                    {
+                        let _ = self
+                            .acp_opencode_actions
+                            .send(crate::agent_acp::Action::Connect);
+                    }
+                    _ => {}
+                },
+                "meetingOptimizeStart" => {
+                    let id = value["id"].as_str().unwrap_or("");
+                    match value["provider"].as_str() {
+                        Some("codex") => self.meetings.start_optimization(
+                            id,
+                            "codex",
+                            saved_meeting_agent_config("codex"),
+                            &self.acp_codex,
+                            &self.acp_codex_actions,
+                        ),
+                        Some("opencode") => self.meetings.start_optimization(
+                            id,
+                            "opencode",
+                            saved_meeting_agent_config("opencode"),
+                            &self.acp_opencode,
+                            &self.acp_opencode_actions,
+                        ),
+                        _ => {}
+                    }
+                    self.push_react_state();
+                }
+                "meetingOptimizeAccept" => {
+                    self.meetings
+                        .accept_optimization(value["id"].as_str().unwrap_or(""));
+                    self.push_react_state();
+                }
+                "meetingOptimizeDecline" => {
+                    self.meetings
+                        .decline_optimization(value["id"].as_str().unwrap_or(""));
+                    self.push_react_state();
+                }
                 "systemUpdate" => match value["component"].as_str() {
                     Some("ffmpeg") if self.converter.state.update_available => {
                         self.converter.install_engine()
@@ -4069,9 +4340,13 @@ impl EdgeShell {
                 }
                 "compactRenderReady" => {
                     let generation = value["generation"].as_u64();
-                    if generation.is_some() && generation == self.pending_react_compact_render {
+                    if generation == Some(self.react_compact_render_generation)
+                        && self.react_compact_visible
+                        && !self.wants_expanded_without_exit()
+                    {
                         self.pending_react_compact_render = None;
                         self.pending_react_compact_since = None;
+                        self.last_react_state.clear();
                         self.react_compact_render_ready = true;
                         self.request_tick();
                     }
@@ -4360,28 +4635,24 @@ impl EdgeShell {
                         .send(crate::opencode_control::Action::Catalog(directory));
                 }
                 "opencodePickFolder" => {
-                    if let Some(folder) = pick_opencode_folder(self.window) {
-                        if let Some(view) = self.react_view.as_ref() {
-                            if let Ok(encoded) = serde_json::to_string(&folder) {
-                                let _ = view.evaluate_script(&format!(
-                                    "window.islandFolderPicked?.({encoded});"
-                                ));
-                            }
-                        }
+                    if let Some(folder) = pick_opencode_folder(self.window)
+                        && let Some(view) = self.react_view.as_ref()
+                        && let Ok(encoded) = serde_json::to_string(&folder)
+                    {
+                        let _ = view
+                            .evaluate_script(&format!("window.islandFolderPicked?.({encoded});"));
                     }
                     self.reducer
                         .dispatch(ShellEvent::Open, std::time::Instant::now());
                     self.request_tick();
                 }
                 "opencodePickFiles" => {
-                    if let Some(paths) = pick_opencode_files(self.window) {
-                        if let Some(view) = self.react_view.as_ref() {
-                            if let Ok(encoded) = serde_json::to_string(&paths) {
-                                let _ = view.evaluate_script(&format!(
-                                    "window.islandFilesPicked?.({encoded});"
-                                ));
-                            }
-                        }
+                    if let Some(paths) = pick_opencode_files(self.window)
+                        && let Some(view) = self.react_view.as_ref()
+                        && let Ok(encoded) = serde_json::to_string(&paths)
+                    {
+                        let _ = view
+                            .evaluate_script(&format!("window.islandFilesPicked?.({encoded});"));
                     }
                     self.reducer
                         .dispatch(ShellEvent::Open, std::time::Instant::now());
@@ -4735,6 +5006,7 @@ impl EdgeShell {
                         }
                     }
                     if push_agent_state {
+                        self.agent_state_dirty = true;
                         self.push_react_state();
                     }
                 }
@@ -4808,17 +5080,17 @@ impl EdgeShell {
                             Err(error) => result["skillsError"] = serde_json::json!(error),
                         }
                     }
-                    if action == "skillRead" {
-                        if let Some(name) = value["name"].as_str().filter(|name| name.len() <= 64) {
-                            match library::read_skill(name) {
-                                Ok(content) => {
-                                    result["skill"] =
-                                        serde_json::json!({"name":name,"content":content});
-                                }
-                                Err(error) => {
-                                    result["ok"] = serde_json::json!(false);
-                                    result["error"] = serde_json::json!(error);
-                                }
+                    if action == "skillRead"
+                        && let Some(name) = value["name"].as_str().filter(|name| name.len() <= 64)
+                    {
+                        match library::read_skill(name) {
+                            Ok(content) => {
+                                result["skill"] =
+                                    serde_json::json!({"name":name,"content":content});
+                            }
+                            Err(error) => {
+                                result["ok"] = serde_json::json!(false);
+                                result["error"] = serde_json::json!(error);
                             }
                         }
                     }
@@ -4883,7 +5155,8 @@ impl EdgeShell {
                         && let Some(height) = value["height"].as_f64()
                         && height.is_finite()
                     {
-                        let measured = (height.ceil() + 32.0).clamp(
+                        let inset = if self.wake_surface { 0.0 } else { 32.0 };
+                        let measured = (height.ceil() + inset).clamp(
                             if self.wake_surface {
                                 90.0
                             } else {
@@ -4940,6 +5213,14 @@ impl EdgeShell {
                     }
                     self.callbacks.context.request_repaint();
                     self.push_react_state();
+                }
+                "glassMaterial" => {
+                    if let Some(enabled) = value["enabled"].as_bool() {
+                        self.glass_material = enabled;
+                        self.glass_motion = value["motion"].as_bool().unwrap_or(false);
+                        let _ = self.apply_motion_preference();
+                        self.request_tick();
+                    }
                 }
                 "appearanceSet" => {
                     let mut changes = Vec::with_capacity(2);
@@ -5135,6 +5416,8 @@ impl EdgeShell {
                         "note" => modules.note = enabled,
                         "weather" => modules.weather = enabled,
                         "controls" => modules.controls = enabled,
+                        "meetings" => modules.meetings = enabled,
+                        "expand" => modules.expand = enabled,
                         _ => continue,
                     }
                     if save_module_settings(modules) {
@@ -5206,7 +5489,79 @@ impl EdgeShell {
                 }
                 "clipboardClear" => {
                     self.clipboard_items.clear();
+                    self.clipboard_media.clear();
                     self.screen_clipboard_values.clear();
+                }
+                "clipboardMediaCopy" => {
+                    if let Some(index) = value["index"].as_u64()
+                        && let Some(item) = self.clipboard_media.get(index as usize)
+                    {
+                        match &item.source {
+                            ClipboardMediaSource::File(path) => {
+                                let _ = copy_file_to_clipboard(path);
+                            }
+                            ClipboardMediaSource::Data(format, bytes) => {
+                                let _ = write_clipboard_media(*format, bytes);
+                            }
+                        }
+                    }
+                }
+                "textExpanderSet" => {
+                    let next = crate::platform::windows::text_expander::Settings {
+                        enabled: value["enabled"]
+                            .as_bool()
+                            .unwrap_or(self.text_expander.enabled),
+                        entries: self.text_expander.entries.clone(),
+                    };
+                    if crate::platform::windows::text_expander::save(&next)
+                        && crate::platform::windows::text_expander::configure(self.window, &next)
+                    {
+                        self.text_expander = next;
+                    }
+                }
+                "textExpanderAdd" => {
+                    let Some(trigger) = value["trigger"].as_str() else {
+                        continue;
+                    };
+                    let Some(replacement) = value["replacement"].as_str() else {
+                        continue;
+                    };
+                    let entry = crate::platform::windows::text_expander::Entry {
+                        trigger: trigger.trim().to_owned(),
+                        replacement: replacement.to_owned(),
+                    };
+                    if !crate::platform::windows::text_expander::valid(&entry)
+                        || self.text_expander.entries.len() >= 100
+                        || self
+                            .text_expander
+                            .entries
+                            .iter()
+                            .any(|current| current.trigger.eq_ignore_ascii_case(&entry.trigger))
+                    {
+                        continue;
+                    }
+                    self.text_expander.entries.push(entry);
+                    if crate::platform::windows::text_expander::save(&self.text_expander) {
+                        crate::platform::windows::text_expander::configure(
+                            self.window,
+                            &self.text_expander,
+                        );
+                    }
+                }
+                "textExpanderRemove" => {
+                    if let Some(index) = value["index"]
+                        .as_u64()
+                        .and_then(|value| usize::try_from(value).ok())
+                        && index < self.text_expander.entries.len()
+                    {
+                        self.text_expander.entries.remove(index);
+                        if crate::platform::windows::text_expander::save(&self.text_expander) {
+                            crate::platform::windows::text_expander::configure(
+                                self.window,
+                                &self.text_expander,
+                            );
+                        }
+                    }
                 }
                 "clipboardCopy" => {
                     if let Some(index) = value["index"].as_u64()
@@ -5474,6 +5829,8 @@ impl EdgeShell {
                     }
                     self.note_dirty = true;
                     self.save_note();
+                    self.push_react_state();
+                    redraw = false;
                 }
                 "noteFolderAdd" => {
                     if self.notebook.folders.len() < 16 {
@@ -5489,6 +5846,8 @@ impl EdgeShell {
                             self.save_note();
                         }
                     }
+                    self.push_react_state();
+                    redraw = false;
                 }
                 "noteFolderSelect" => {
                     if let Some(index) = value["index"].as_u64().map(|value| value as usize)
@@ -5500,6 +5859,8 @@ impl EdgeShell {
                         self.note_dirty = true;
                         self.save_note();
                     }
+                    self.push_react_state();
+                    redraw = false;
                 }
                 "noteFolderRename" => {
                     if let Some(index) = value["index"].as_u64().map(|value| value as usize)
@@ -5512,6 +5873,8 @@ impl EdgeShell {
                         self.note_dirty = true;
                         self.save_note();
                     }
+                    self.push_react_state();
+                    redraw = false;
                 }
                 "noteFolderDelete" => {
                     if let Some(index) = value["index"].as_u64().map(|value| value as usize)
@@ -5529,6 +5892,8 @@ impl EdgeShell {
                         self.note_dirty = true;
                         self.save_note();
                     }
+                    self.push_react_state();
+                    redraw = false;
                 }
                 "noteReminderSet" => {
                     let due = value["at"].as_u64();
@@ -5540,6 +5905,48 @@ impl EdgeShell {
                         self.save_note();
                         self.clock_refresh_at = std::time::Instant::now();
                     }
+                    self.push_react_state();
+                    redraw = false;
+                }
+                "noteQuickReminderAdd" => {
+                    let now = unix_seconds();
+                    if let (Some(text), Some(at)) = (value["text"].as_str(), value["at"].as_u64()) {
+                        let text = text.trim();
+                        if !text.is_empty()
+                            && text.len() <= 200
+                            && at > now
+                            && at < now.saturating_add(365 * 86400)
+                            && self.notebook.quick_reminders.len() < 50
+                            && !self
+                                .notebook
+                                .quick_reminders
+                                .iter()
+                                .any(|item| item.text == text && item.at == at)
+                        {
+                            self.notebook.quick_reminders.push(QuickReminder {
+                                text: text.to_owned(),
+                                at,
+                                notified: false,
+                            });
+                            self.notebook.quick_reminders.sort_by_key(|item| item.at);
+                            self.note_dirty = true;
+                            self.save_note();
+                            self.clock_refresh_at = std::time::Instant::now();
+                        }
+                    }
+                    self.push_react_state();
+                    redraw = false;
+                }
+                "noteQuickReminderRemove" => {
+                    if let Some(index) = value["index"].as_u64().map(|value| value as usize)
+                        && index < self.notebook.quick_reminders.len()
+                    {
+                        self.notebook.quick_reminders.remove(index);
+                        self.note_dirty = true;
+                        self.save_note();
+                    }
+                    self.push_react_state();
+                    redraw = false;
                 }
                 "noteReminderClear" => {
                     self.notebook.reminder_at = None;
@@ -5558,6 +5965,8 @@ impl EdgeShell {
                     self.note_dirty = true;
                     self.save_note();
                     self.clock_refresh_at = std::time::Instant::now();
+                    self.push_react_state();
+                    redraw = false;
                 }
                 "commandEvaluate" => {
                     let query = value["query"].as_str().unwrap_or("");
@@ -6033,6 +6442,8 @@ impl EdgeShell {
             mode,
             full_screen,
             quality,
+            self.glass_material,
+            self.dark_theme,
         );
         self.request_tick();
     }
@@ -6241,7 +6652,7 @@ impl EdgeShell {
             }
             let selected_and_visible = !clocks_paused
                 && selected_id == Some(feedback.id)
-                && Self::feedback_matches_compact_status(feedback, &status)
+                && Self::feedback_matches_compact_status(feedback, status)
                 && feedback.next_visible_at.is_none();
             if selected_and_visible {
                 if feedback.expires_at.is_none()
@@ -6514,11 +6925,10 @@ impl EdgeShell {
     }
 
     fn send_screen_tool_result(&self, payload: serde_json::Value) {
-        if let Some(view) = &self.react_view {
-            if let Ok(encoded) = serde_json::to_string(&payload) {
-                let _ =
-                    view.evaluate_script(&format!("window.islandScreenToolResult?.({encoded});"));
-            }
+        if let Some(view) = &self.react_view
+            && let Ok(encoded) = serde_json::to_string(&payload)
+        {
+            let _ = view.evaluate_script(&format!("window.islandScreenToolResult?.({encoded});"));
         }
     }
 
@@ -6866,7 +7276,9 @@ impl EdgeShell {
     }
 
     fn motion_reduced(&self) -> bool {
-        self.reduced_motion || self.system_reduced_motion
+        self.reduced_motion
+            || self.system_reduced_motion
+            || (self.glass_material && !self.glass_motion)
     }
 
     fn apply_motion_preference(&mut self) -> Result<(), String> {
@@ -6973,30 +7385,28 @@ impl EdgeShell {
         }
         self.hide_in_fullscreen = enabled;
         self.fullscreen_poll_at = std::time::Instant::now();
-        if !enabled {
-            if self.reducer.snapshot().fullscreen {
-                self.reducer.dispatch(
-                    ShellEvent::FullscreenChanged(false),
-                    self.fullscreen_poll_at,
-                );
-                let media_playing = self.media.as_ref().is_some_and(|media| {
-                    media.playing || media.sessions.iter().any(|session| session.playing)
-                });
-                let browser_foreground = self
-                    .foreground_app
-                    .as_ref()
-                    .is_some_and(|app| app.kind == "browser");
-                if media_playing || browser_foreground {
-                    self.reducer
-                        .dispatch(ShellEvent::Tuck, self.fullscreen_poll_at);
-                }
+        if !enabled && self.reducer.snapshot().fullscreen {
+            self.reducer.dispatch(
+                ShellEvent::FullscreenChanged(false),
+                self.fullscreen_poll_at,
+            );
+            let media_playing = self.media.as_ref().is_some_and(|media| {
+                media.playing || media.sessions.iter().any(|session| session.playing)
+            });
+            let browser_foreground = self
+                .foreground_app
+                .as_ref()
+                .is_some_and(|app| app.kind == "browser");
+            if media_playing || browser_foreground {
+                self.reducer
+                    .dispatch(ShellEvent::Tuck, self.fullscreen_poll_at);
             }
         }
         self.update_suppression_visibility();
         self.request_tick();
     }
 
-    fn apply_display_affinity(&self) -> bool {
+    fn apply_display_affinity(&mut self) -> bool {
         let affinity = if self.exclude_from_screen_capture || self.screen_recording_stop.is_some() {
             WDA_EXCLUDEFROMCAPTURE
         } else {
@@ -7019,12 +7429,12 @@ impl EdgeShell {
         }
     }
 
-    fn poll_fullscreen(&mut self, now: std::time::Instant) {
+    fn poll_fullscreen(&mut self, now: std::time::Instant) -> bool {
         let media_playing = self.media.as_ref().is_some_and(|media| {
             media.playing || media.sessions.iter().any(|session| session.playing)
         });
         if now < self.fullscreen_poll_at {
-            return;
+            return false;
         }
         let browser_foreground = self
             .foreground_app
@@ -7040,7 +7450,7 @@ impl EdgeShell {
             && !browser_fullscreen
             && !self.reducer.snapshot().fullscreen
         {
-            return;
+            return false;
         }
         let fullscreen = foreground_covers_primary(self.window);
         // Keep a small top-edge reveal target even while the overlay is hidden.
@@ -7059,7 +7469,8 @@ impl EdgeShell {
         let suppress = fullscreen
             && (self.hide_in_fullscreen || media_playing || browser_foreground)
             && !reveal;
-        self.reducer
+        let changed = self
+            .reducer
             .dispatch(ShellEvent::FullscreenChanged(suppress), now);
         if suppress {
             self.callbacks
@@ -7071,6 +7482,7 @@ impl EdgeShell {
         }
         self.fullscreen_poll_at = now + FULLSCREEN_POLL_INTERVAL;
         self.update_suppression_visibility();
+        changed
     }
 
     fn update_suppression_visibility(&mut self) {
@@ -7080,16 +7492,21 @@ impl EdgeShell {
         }
         self.fullscreen_hidden = suspended;
         self.callbacks.is_open.store(false, Ordering::Release);
+        // Keep the shell window alive during a fullscreen tuck so the same
+        // spring can animate it away and reveal it again under the top edge.
+        // Power suspension still hides the HWND entirely.
+        let fullscreen_tucked = suspended && self.reducer.snapshot().fullscreen;
         unsafe {
             ShowWindow(
                 self.window,
-                if suspended {
-                    SW_HIDE
-                } else {
+                if !suspended || fullscreen_tucked {
                     SW_SHOWNOACTIVATE
+                } else {
+                    SW_HIDE
                 },
             );
         }
+        self.last_frame = std::time::Instant::now();
         self.sync_drop_catcher();
     }
 
@@ -7135,23 +7552,22 @@ impl EdgeShell {
     fn merge_activity(&mut self) -> Result<(), String> {
         let mut next = ActivityIndicators::default();
         let mut lines = Vec::new();
-        if self.privacy_indicator_enabled {
-            if let Some(privacy) = self
+        if self.privacy_indicator_enabled
+            && let Some(privacy) = self
                 .observed_activity
                 .as_ref()
                 .and_then(|sample| sample.privacy.as_ref())
-            {
-                next.microphone_active = privacy.microphone_active();
-                next.camera_active = privacy.camera_active();
-                if next.microphone_active {
-                    lines.push(format!(
-                        "Microphone · {}",
-                        privacy.microphone_apps.join(", ")
-                    ));
-                }
-                if next.camera_active {
-                    lines.push(format!("Camera · {}", privacy.camera_apps.join(", ")));
-                }
+        {
+            next.microphone_active = privacy.microphone_active();
+            next.camera_active = privacy.camera_active();
+            if next.microphone_active {
+                lines.push(format!(
+                    "Microphone · {}",
+                    privacy.microphone_apps.join(", ")
+                ));
+            }
+            if next.camera_active {
+                lines.push(format!("Camera · {}", privacy.camera_apps.join(", ")));
             }
         }
         next.agent_runs = [("opencode", &self.acp_opencode), ("codex", &self.acp_codex)]
@@ -7228,8 +7644,13 @@ impl EdgeShell {
                             }
                         }
                     }
-                    self.observed_activity = Some(sample);
-                    let _ = self.merge_activity();
+                    // An access error is represented by `privacy: None`. Keep
+                    // the last good Windows sample until a later successful
+                    // read instead of briefly clearing active indicators.
+                    if sample.privacy.is_some() {
+                        self.observed_activity = Some(sample);
+                        let _ = self.merge_activity();
+                    }
                 }
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => self.activity_receiver = None,
                 Err(std::sync::mpsc::TryRecvError::Empty) => {}
@@ -7239,11 +7660,15 @@ impl EdgeShell {
             let (sender, receiver) = sync_channel(1);
             self.activity_receiver = Some(receiver);
             self.activity_poll_at = now + std::time::Duration::from_secs(2);
+            let window = self.window as usize;
             thread::spawn(move || {
                 let sample = ObservedActivity {
                     privacy: crate::platform::windows::privacy::read_current_activity().ok(),
                 };
                 let _ = sender.send(sample);
+                // The island can be idle with its animation timer stopped.
+                // Wake the shell so it consumes the privacy sample promptly.
+                unsafe { PostMessageW(window as HWND, WM_APP_SHELL_TICK, 0, 0) };
             });
         }
     }
@@ -7324,6 +7749,36 @@ impl EdgeShell {
 
     fn run_native_tick(&mut self) -> Result<(), String> {
         let now = std::time::Instant::now();
+        if let Some(loopback) = &self.meeting_loopback {
+            while let Some(event) = loopback.next() {
+                let script = match event {
+                    super::meeting_audio::AudioEvent::Ready => {
+                        "window.dispatchEvent(new Event('plutoMeetingLoopbackReady'));".to_owned()
+                    }
+                    super::meeting_audio::AudioEvent::Failed(error) => format!(
+                        "window.dispatchEvent(new CustomEvent('plutoMeetingLoopbackFailed', {{detail:{}}}));",
+                        serde_json::to_string(&error)
+                            .unwrap_or_else(|_| "\"System audio failed\"".into()),
+                    ),
+                    super::meeting_audio::AudioEvent::Samples(bytes) => {
+                        if !self.meetings.state.active
+                            || self.meetings.state.paused
+                            || self.meetings.state.server_url.is_none()
+                        {
+                            continue;
+                        }
+                        use base64::Engine as _;
+                        format!(
+                            "window.plutoMeetingLoopbackSamples?.('{}');",
+                            base64::engine::general_purpose::STANDARD.encode(bytes)
+                        )
+                    }
+                };
+                if let Some(view) = &self.react_view {
+                    let _ = view.evaluate_script(&script);
+                }
+            }
+        }
         self.drain_wake_word_events();
         let compact_render_ready = std::mem::replace(&mut self.react_compact_render_ready, false);
         let compact_render_timed_out = self.pending_react_compact_render.is_some()
@@ -7338,6 +7793,15 @@ impl EdgeShell {
             self.pending_react_compact_since = None;
         }
         self.poll_startup_state();
+        let previous_update_notice = self.updater.state.notice.clone();
+        if let Some(installer) = self.updater.poll()
+            && !open_shelf_path(self.window, &installer)
+        {
+            self.updater.state.notice = "Windows could not open the verified installer.".into();
+        }
+        if self.updater.state.notice != previous_update_notice {
+            self.push_react_state();
+        }
         let previous_feedback_count = self.compact_feedbacks.len();
         let mut reminder_snoozed = false;
         let mut reminder_reactivated = false;
@@ -7402,9 +7866,9 @@ impl EdgeShell {
             let reconnect_acp = self.opencode.installing
                 && !snapshot.installing
                 && snapshot.notice.contains("Connecting");
-            let changed =
-                serde_json::to_string(&snapshot).ok() != serde_json::to_string(&self.opencode).ok();
+            let changed = snapshot != self.opencode;
             self.opencode = snapshot;
+            self.opencode_state_dirty |= changed;
             if reconnect_acp {
                 let _ = self
                     .acp_opencode_actions
@@ -7422,8 +7886,10 @@ impl EdgeShell {
         if let Some(snapshot) = latest_acp_opencode {
             let previous_activity = self.activity.clone();
             self.acp_opencode = snapshot;
+            let optimization_changed = self.meetings.poll_optimization(&self.acp_opencode);
+            self.agent_state_dirty = true;
             let _ = self.merge_activity();
-            if self.activity == previous_activity {
+            if self.activity == previous_activity || optimization_changed {
                 self.push_react_state();
             }
         }
@@ -7434,12 +7900,17 @@ impl EdgeShell {
         if let Some(snapshot) = latest_acp_codex {
             let previous_activity = self.activity.clone();
             self.acp_codex = snapshot;
+            let optimization_changed = self.meetings.poll_optimization(&self.acp_codex);
+            self.agent_state_dirty = true;
             let _ = self.merge_activity();
-            if self.activity == previous_activity {
+            if self.activity == previous_activity || optimization_changed {
                 self.push_react_state();
             }
         }
         if self.converter.poll() {
+            self.push_react_state();
+        }
+        if self.meetings.poll() {
             self.push_react_state();
         }
         let conversion_paths = {
@@ -7468,18 +7939,18 @@ impl EdgeShell {
         while let Ok(snapshot) = self.media_receiver.try_recv() {
             latest_media = Some(snapshot);
         }
-        if let Some(snapshot) = latest_media {
-            if self.media != snapshot {
-                self.media = snapshot;
-                self.media_playing.store(
-                    self.media.as_ref().is_some_and(|media| media.playing),
-                    Ordering::Relaxed,
-                );
-                if self.update_status_label() {
-                    self.render_frame()?;
-                }
-                self.push_react_media();
+        if let Some(snapshot) = latest_media
+            && self.media != snapshot
+        {
+            self.media = snapshot;
+            self.media_playing.store(
+                self.media.as_ref().is_some_and(|media| media.playing),
+                Ordering::Relaxed,
+            );
+            if self.update_status_label() {
+                self.render_frame()?;
             }
+            self.push_react_media();
         }
         let mut shelf_icons_changed = false;
         while let Ok((generation, index, icon)) = self.shelf_icon_receiver.try_recv() {
@@ -7534,20 +8005,25 @@ impl EdgeShell {
             self.push_react_state();
         }
         let selector_busy = self.selector_busy();
-        if !selector_busy {
-            self.poll_fullscreen(now);
-        }
+        let fullscreen_changed = !selector_busy && self.poll_fullscreen(now);
         let compact_hit_area = matches!(
             self.reducer.snapshot().mode,
             ShellMode::Tucked | ShellMode::Resting | ShellMode::HoverPending
         );
         if !selector_busy && compact_hit_area {
+            // The reducer becomes Resting before the collapse finishes. The
+            // outgoing wide window must not act as a fresh compact hover zone
+            // and reverse the collapse beneath a stationary pointer.
+            let hit_width =
+                centered_pixel_width(self.folded_target_width() * self.scale, self.screen_width)
+                    as i32;
+            let hit_left = centered_pixel_origin(self.screen_width, hit_width);
             let mut cursor = POINT::default();
             if unsafe { GetCursorPos(&mut cursor) } != 0
                 && cursor.y < (f64::from(FOLDED_HEIGHT) * self.scale).ceil() as i32
                 && cursor.y >= 0
-                && cursor.x >= self.position.x
-                && cursor.x < self.position.x + self.width
+                && cursor.x >= hit_left
+                && cursor.x < hit_left + hit_width
             {
                 self.callbacks.pointer_inside.store(true, Ordering::Release);
             } else {
@@ -7580,7 +8056,10 @@ impl EdgeShell {
         let interaction_delay = if self.screen_overlay_active {
             None
         } else {
-            self.process_interaction(now, compact_render_ready || compact_render_timed_out)?
+            self.process_interaction(
+                now,
+                compact_render_ready || compact_render_timed_out || fullscreen_changed,
+            )?
         };
         if let Some((mode, full_screen, quality)) = self.pending_screen_overlay
             && self.reducer.snapshot().mode == ShellMode::Resting
@@ -7617,12 +8096,10 @@ impl EdgeShell {
         if let Some(deadline) = self
             .selected_compact_feedback()
             .and_then(|feedback| feedback.expires_at)
+            && let Some(fade_start) = deadline.checked_sub(SCREEN_FEEDBACK_EXIT)
+            && now < fade_start
         {
-            if let Some(fade_start) = deadline.checked_sub(SCREEN_FEEDBACK_EXIT)
-                && now < fade_start
-            {
-                next = next.min(fade_start.saturating_duration_since(now));
-            }
+            next = next.min(fade_start.saturating_duration_since(now));
         }
         let selector_busy = self.selector_busy();
         if !selector_busy
@@ -7797,6 +8274,25 @@ impl EdgeShell {
 
     fn capture_clipboard_update(&mut self) {
         if !self.clipboard_history_enabled || clipboard_source_is_private() {
+            return;
+        }
+        if let Some(media) = read_clipboard_media() {
+            let duplicate = self.clipboard_media.first().is_some_and(|first| {
+                match (&first.source, &media.source) {
+                    (ClipboardMediaSource::File(a), ClipboardMediaSource::File(b)) => a == b,
+                    (ClipboardMediaSource::Data(af, a), ClipboardMediaSource::Data(bf, b)) => {
+                        af == bf && a == b
+                    }
+                    _ => false,
+                }
+            });
+            if !duplicate {
+                self.clipboard_media.insert(0, media);
+                self.clipboard_media.truncate(8);
+                if self.page == ShellPage::Clipboard {
+                    self.redraw_page();
+                }
+            }
             return;
         }
         let Some(text) = read_clipboard_text() else {
@@ -7981,11 +8477,7 @@ impl EdgeShell {
             .shelf_items
             .iter()
             .enumerate()
-            .filter(|(index, _)| {
-                self.shelf_icon_data
-                    .get(*index)
-                    .map_or(true, Option::is_none)
-            })
+            .filter(|(index, _)| self.shelf_icon_data.get(*index).is_none_or(Option::is_none))
             .map(|(index, path)| (index, path.clone()))
             .collect();
         if missing.is_empty() {
@@ -8135,6 +8627,10 @@ impl EdgeShell {
             .foreground_app
             .as_ref()
             .is_some_and(|app| app.kind == "browser");
+        // Browser foreground and active media independently keep the island
+        // tucked. Fullscreen is only a separate suppression path; requiring it
+        // here disables the long-standing auto-hide behavior for ordinary
+        // browser windows and media playback.
         let auto_tucked = (browser_foreground || media_playing)
             && !hover_suppressed
             && self.screen_recording_stop.is_none()
@@ -8272,10 +8768,11 @@ impl EdgeShell {
             self.push_react_state();
         }
         if self.wants_expanded_without_exit() {
-            if self.content_exit_deadline.take().is_some() && self.react_visible {
-                if let Some(view) = &self.react_view {
-                    let _ = view.evaluate_script("window.islandShellPhase?.('enter');");
-                }
+            if self.content_exit_deadline.take().is_some()
+                && self.react_visible
+                && let Some(view) = &self.react_view
+            {
+                let _ = view.evaluate_script("window.islandShellPhase?.('enter');");
             }
         } else if self.react_visible
             && self.content_exit_deadline.is_none()
@@ -8360,7 +8857,9 @@ impl EdgeShell {
         let width_animating = self.width_motion.advance(elapsed);
         let height_animating = self.height_motion.advance(elapsed);
         let previous_tuck = self.tuck_motion.value();
-        let tuck_target = if self.reducer.snapshot().mode == ShellMode::Tucked {
+        let tuck_target = if self.reducer.snapshot().mode == ShellMode::Tucked
+            || (self.fullscreen_hidden && self.reducer.snapshot().fullscreen)
+        {
             1.0
         } else {
             0.0
@@ -8479,22 +8978,24 @@ impl EdgeShell {
     }
 
     fn folded_target_width(&self) -> f64 {
-        let privacy_width = 20.0
-            * f64::from(
-                u8::from(self.activity.microphone_active) + u8::from(self.activity.camera_active),
-            );
+        let privacy_count =
+            u8::from(self.activity.microphone_active) + u8::from(self.activity.camera_active);
+        // Keep native sizing aligned with the actual 21px React buttons,
+        // their 3px gap, and the 8px separation from compact content.
+        let privacy_width = if privacy_count == 0 {
+            0.0
+        } else {
+            f64::from(privacy_count) * 21.0 + f64::from(privacy_count - 1) * 3.0 + 8.0
+        };
         if self.click_to_open
             && self.compact_context_tools > 0
             && matches!(self.compact_status_visible.as_str(), "idle" | "media")
         {
             // Five fixed icon targets, an app label, and an independent privacy lane.
-            let context_width = 110.0
-                + self.compact_context_tools as f64 * 27.0
-                + if privacy_width > 0.0 {
-                    privacy_width + 20.0
-                } else {
-                    0.0
-                };
+            // Match the web row: 16 host inset, two 12pt safe edges,
+            // 16 rail padding, 68 label, 27 per tool (24 + 3 gap),
+            // and the exact independent privacy reservation.
+            let context_width = 124.0 + self.compact_context_tools as f64 * 27.0 + privacy_width;
             let idle_width = self
                 .measure_text(&self.status_label)
                 .map(|size| f64::from(size.cx) / self.scale)
@@ -8589,17 +9090,10 @@ impl EdgeShell {
 
     fn prepare_page_content(&mut self) {
         match self.page {
-            ShellPage::Home => {
-                let app_query = self.command_app_query.clone();
-                let file_query = self.command_file_query.clone();
-                // Keep the command palette's app index warm even when its
-                // React state survived compaction and won't remount its effect.
-                self.start_command_app_scan();
-                self.update_command_app_results(&app_query);
-                if !file_query.trim().is_empty() {
-                    self.start_command_file_search(&file_query);
-                }
-            }
+            // Home is already mounted. The command palette starts its app
+            // scan when opened; scanning on every notch expansion delayed
+            // the ordinary Home reveal and needlessly spawned a worker.
+            ShellPage::Home => return,
             ShellPage::Weather => self.refresh_weather_if_stale(),
             ShellPage::Controls => self.refresh_radios(None),
             ShellPage::Agents | ShellPage::Ask => {
@@ -8613,7 +9107,9 @@ impl EdgeShell {
             | ShellPage::Shelf
             | ShellPage::Convert
             | ShellPage::Text
-            | ShellPage::Note => {}
+            | ShellPage::Note
+            | ShellPage::Meetings => {}
+            ShellPage::Expand => {}
         }
         self.push_react_state();
     }
@@ -8711,6 +9207,25 @@ impl EdgeShell {
                 Some(std::time::Duration::from_secs(7)),
             );
         }
+        if let Some(reminder) = self
+            .notebook
+            .quick_reminders
+            .iter_mut()
+            .find(|item| !item.notified && item.at <= unix_seconds())
+        {
+            reminder.notified = true;
+            let label: String = reminder.text.chars().take(48).collect();
+            self.note_dirty = true;
+            self.save_note();
+            self.set_compact_screen_feedback(
+                "reminder",
+                label,
+                None,
+                None,
+                Some(std::time::Duration::from_secs(7)),
+            );
+            self.push_react_state();
+        }
         let needs_refresh = self.clock_indicator_enabled || self.battery_indicator_enabled;
         let mut now = SYSTEMTIME::default();
         let mut next_update = if needs_refresh {
@@ -8723,10 +9238,28 @@ impl EdgeShell {
         if self.battery_indicator_enabled {
             next_update = next_update.min(std::time::Duration::from_secs(15));
         }
-        if let Some(at) = self.notebook.reminder_at {
-            if at > unix_seconds() {
-                next_update = next_update.min(std::time::Duration::from_secs(at - unix_seconds()));
-            }
+        if let Some(at) = self.notebook.reminder_at
+            && at > unix_seconds()
+        {
+            next_update = next_update.min(std::time::Duration::from_secs(at - unix_seconds()));
+        }
+        if let Some(next_at) = self
+            .notebook
+            .quick_reminders
+            .iter()
+            .filter(|item| !item.notified && item.at > unix_seconds())
+            .map(|item| item.at)
+            .min()
+        {
+            next_update = next_update.min(std::time::Duration::from_secs(next_at - unix_seconds()));
+        }
+        if self
+            .notebook
+            .quick_reminders
+            .iter()
+            .any(|item| !item.notified && item.at <= unix_seconds())
+        {
+            next_update = next_update.min(std::time::Duration::from_millis(250));
         }
         let clock = self.clock_indicator_enabled.then(|| {
             let hour = match now.wHour % 12 {
@@ -8778,7 +9311,7 @@ impl EdgeShell {
         let body_width = self
             .width_motion
             .value()
-            .clamp(self.folded_target_width(), self.expanded_body_width);
+            .clamp(self.shape.folded_body_width(), self.expanded_body_width);
         // Both edges move together. Alternating odd/even HWND widths shifts
         // the integer-positioned window's center by half a pixel each frame.
         let body_width = f64::from(centered_pixel_width(
@@ -8789,6 +9322,9 @@ impl EdgeShell {
             .height_motion
             .value()
             .clamp(f64::from(FOLDED_HEIGHT), MAX_EXPANDED_BODY_HEIGHT);
+        // Quantize the contour with the HWND: fractional tail motion otherwise
+        // changes edge coverage after the physical bounds have stopped moving.
+        let body_height = (body_height * self.scale).round() / self.scale;
         let Some(layout) =
             ShellLayout::with_body_height(self.shape, body_width, body_height, self.scale)
         else {
@@ -8815,11 +9351,16 @@ impl EdgeShell {
         // Keep the contour in sync with the active theme in both compact and
         // expanded states; React's compact palette uses the same cream tokens.
         let light_mix = if self.dark_theme { 0.0 } else { 1.0 };
-        let (red, green, blue) = (
-            (f64::from(LIGHT_SHELL_BACKGROUND.0) * light_mix).round() as u8,
-            (f64::from(LIGHT_SHELL_BACKGROUND.1) * light_mix).round() as u8,
-            (f64::from(LIGHT_SHELL_BACKGROUND.2) * light_mix).round() as u8,
-        );
+        let glass_backing = glass_shell_backing(self.dark_theme);
+        let (red, green, blue) = if self.glass_material {
+            glass_backing.0
+        } else {
+            (
+                (f64::from(LIGHT_SHELL_BACKGROUND.0) * light_mix).round() as u8,
+                (f64::from(LIGHT_SHELL_BACKGROUND.1) * light_mix).round() as u8,
+                (f64::from(LIGHT_SHELL_BACKGROUND.2) * light_mix).round() as u8,
+            )
+        };
 
         let max_stride = self.max_width as usize * 4;
         let pixels = unsafe {
@@ -8925,7 +9466,14 @@ impl EdgeShell {
         .clamp(0.0, 1.0);
         let transparency = f64::from(self.folded_transparency_percent) * (1.0 - progress)
             + f64::from(self.open_transparency_percent) * progress;
-        let opacity = ((100.0 - transparency) * 255.0 / 100.0).round() as u16;
+        // Keep glass on the shell's native alpha mask. A separate DWM system-
+        // backdrop HWND paints a square gray plate on the target system, so
+        // desktop material must not be drawn by a companion window here.
+        let opacity = if self.glass_material {
+            glass_backing.1
+        } else {
+            ((100.0 - transparency) * 255.0 / 100.0).round() as u16
+        };
         // GDI can touch the reserved alpha byte only where shell text and the
         // open card were drawn. Restore those interior regions, then make the
         // entire layered DIB premultiplied, including fully transparent pixels.
@@ -9072,11 +9620,19 @@ impl EdgeShell {
         match self.accent_gradient {
             crate::storage::StoredAccentGradient::Lime => ((190, 239, 133), (27, 39, 15)),
             crate::storage::StoredAccentGradient::Ice => ((154, 226, 250), (12, 39, 52)),
-            crate::storage::StoredAccentGradient::Rose => ((255, 193, 207), (52, 25, 34)),
+            crate::storage::StoredAccentGradient::Mint => ((153, 234, 201), (14, 52, 42)),
             crate::storage::StoredAccentGradient::Violet => ((207, 183, 255), (40, 27, 63)),
+            crate::storage::StoredAccentGradient::Honey => ((239, 190, 132), (48, 32, 14)),
+            crate::storage::StoredAccentGradient::Ruby => ((241, 139, 148), (59, 16, 27)),
+            crate::storage::StoredAccentGradient::Cobalt => ((134, 165, 245), (16, 29, 74)),
+            crate::storage::StoredAccentGradient::Slate => ((180, 194, 202), (27, 41, 48)),
         }
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Native drawing primitive keeps geometry and paint inputs explicit"
+    )]
     fn fill_native_round_rect(
         &self,
         x: i32,
@@ -9115,6 +9671,10 @@ impl EdgeShell {
         }
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Native fallback drawing mirrors existing layout and state inputs"
+    )]
     fn draw_native_drop_target(
         &self,
         x: i32,
@@ -9209,6 +9769,8 @@ impl EdgeShell {
 
 impl Drop for EdgeShell {
     fn drop(&mut self) {
+        crate::platform::windows::text_expander::stop();
+        self.meeting_loopback = None;
         if let Some(stop) = self.screen_recording_stop.take() {
             let _ = stop.send(());
         }
@@ -9412,6 +9974,10 @@ unsafe extern "system" fn shell_window_proc(
         }
         return 0;
     }
+    if message == crate::platform::windows::text_expander::EXPAND_MESSAGE {
+        crate::platform::windows::text_expander::expand_pending();
+        return 0;
+    }
     if message == WM_APP_REACT {
         let owner = unsafe { &*callbacks }.owner.load(Ordering::Acquire);
         if !owner.is_null() {
@@ -9599,10 +10165,10 @@ unsafe extern "system" fn shell_window_proc(
                 KillTimer(window, HOLD_SPACE_TIMER_ID);
             }
             let owner = unsafe { &*callbacks }.owner.load(Ordering::Acquire);
-            if !owner.is_null() {
-                if let Some(view) = unsafe { &(*owner).react_view } {
-                    let _ = view.evaluate_script("window.islandHoldReleased = true; window.dispatchEvent(new Event('island:hold-release'));");
-                }
+            if !owner.is_null()
+                && let Some(view) = unsafe { &(*owner).react_view }
+            {
+                let _ = view.evaluate_script("window.islandHoldReleased = true; window.dispatchEvent(new Event('island:hold-release'));");
             }
         }
         return 0;
@@ -9611,7 +10177,11 @@ unsafe extern "system" fn shell_window_proc(
         unsafe { KillTimer(window, NOTE_SAVE_TIMER_ID) };
         let owner = unsafe { &*callbacks }.owner.load(Ordering::Acquire);
         if !owner.is_null() {
-            unsafe { (&mut *owner).save_note() };
+            let owner = unsafe { &mut *owner };
+            owner.save_note();
+            // A debounced state echo acknowledges the latest textarea value
+            // without rerendering the full native shell on every keystroke.
+            owner.push_react_state();
         }
         return 0;
     }
@@ -9808,6 +10378,19 @@ fn smoothed_render_cost(
 }
 
 #[inline]
+fn glass_shell_backing(dark: bool) -> ((u8, u8, u8), u16) {
+    // Both glass themes use a solid shell with the normal curved coverage mask.
+    (
+        if dark {
+            (0, 0, 0)
+        } else {
+            LIGHT_SHELL_BACKGROUND
+        },
+        255,
+    )
+}
+
+#[inline]
 fn composite_shell_pixel(pixel: &mut [u8], coverage: &mut u8, opacity: u16) {
     let source_alpha = *coverage;
     if opacity == 255 && source_alpha == 255 {
@@ -9918,8 +10501,9 @@ fn foreground_covers_primary(shell_window: HWND) -> bool {
     }
     // Clicking empty desktop makes Explorer's desktop HWND the foreground
     // window. Its rectangle covers the screen, but it is not a fullscreen app.
-    // Maximized app frames can also extend beyond the monitor via invisible
-    // resize borders; do not hide the pill for those ordinary windows.
+    // Use the visible DWM frame rather than GetWindowRect, which includes
+    // invisible resize borders and is DPI-virtualized. Those margins can make
+    // taskbar-accessible windows look like they cover the whole monitor.
     let mut class_name = [0u16; 128];
     let length =
         unsafe { GetClassNameW(foreground, class_name.as_mut_ptr(), class_name.len() as i32) };
@@ -9937,7 +10521,15 @@ fn foreground_covers_primary(shell_window: HWND) -> bool {
         return false;
     }
     let mut bounds = RECT::default();
-    if unsafe { GetWindowRect(foreground, &mut bounds) } == 0 {
+    if unsafe {
+        DwmGetWindowAttribute(
+            foreground,
+            DWMWA_EXTENDED_FRAME_BOUNDS as u32,
+            (&mut bounds as *mut RECT).cast(),
+            size_of::<RECT>() as u32,
+        )
+    } < 0
+    {
         return false;
     }
     is_fullscreen_bounds(bounds, width, height) && !is_windows_capture_surface(foreground)
@@ -10167,6 +10759,11 @@ fn load_notebook() -> NoteBook {
             !book.folders.is_empty()
                 && book.folders.len() <= 16
                 && book.selected < book.folders.len()
+                && book.quick_reminders.len() <= 50
+                && book
+                    .quick_reminders
+                    .iter()
+                    .all(|item| !item.text.is_empty() && item.text.len() <= 200)
                 && book
                     .folders
                     .iter()
@@ -10179,6 +10776,7 @@ fn load_notebook() -> NoteBook {
         }],
         selected: 0,
         reminder_at: None,
+        quick_reminders: Vec::new(),
     })
 }
 
@@ -10516,14 +11114,16 @@ fn shell_file_thumbnail_data_url(path: &std::path::Path) -> Option<String> {
             if width == 0 || height == 0 || width > 256 || height > 256 {
                 return None;
             }
-            let mut bitmap_info = BITMAPINFO::default();
-            bitmap_info.bmiHeader = BITMAPINFOHEADER {
-                biSize: size_of::<BITMAPINFOHEADER>() as u32,
-                biWidth: width as i32,
-                biHeight: -(height as i32),
-                biPlanes: 1,
-                biBitCount: 32,
-                biCompression: BI_RGB,
+            let mut bitmap_info = BITMAPINFO {
+                bmiHeader: BITMAPINFOHEADER {
+                    biSize: size_of::<BITMAPINFOHEADER>() as u32,
+                    biWidth: width as i32,
+                    biHeight: -(height as i32),
+                    biPlanes: 1,
+                    biBitCount: 32,
+                    biCompression: BI_RGB,
+                    ..Default::default()
+                },
                 ..Default::default()
             };
             let mut bgra = vec![0u8; (width * height * 4) as usize];
@@ -10602,14 +11202,16 @@ fn shell_file_icon_data_url(path: &std::path::Path) -> Option<String> {
         unsafe { DestroyIcon(icon) };
         return None;
     }
-    let mut bitmap_info = BITMAPINFO::default();
-    bitmap_info.bmiHeader = BITMAPINFOHEADER {
-        biSize: size_of::<BITMAPINFOHEADER>() as u32,
-        biWidth: 32,
-        biHeight: -32,
-        biPlanes: 1,
-        biBitCount: 32,
-        biCompression: BI_RGB,
+    let bitmap_info = BITMAPINFO {
+        bmiHeader: BITMAPINFOHEADER {
+            biSize: size_of::<BITMAPINFOHEADER>() as u32,
+            biWidth: 32,
+            biHeight: -32,
+            biPlanes: 1,
+            biBitCount: 32,
+            biCompression: BI_RGB,
+            ..Default::default()
+        },
         ..Default::default()
     };
     let mut pixels = null_mut();
@@ -10719,7 +11321,7 @@ pub fn load_clipboard_settings() -> ClipboardSettings {
         .and_then(|bytes| serde_json::from_slice::<ClipboardSettings>(&bytes).ok())
         .unwrap_or_default();
     if !matches!(settings.history_limit, 50 | 200 | 500 | 1000) {
-        settings.history_limit = 200;
+        settings.history_limit = 50;
     }
     settings.capture_enabled = load_clipboard_history_enabled();
     settings
@@ -10944,6 +11546,229 @@ fn read_clipboard_text() -> Option<String> {
     text
 }
 
+fn read_clipboard_media() -> Option<ClipboardMedia> {
+    use base64::Engine as _;
+    use windows_sys::Win32::System::DataExchange::{
+        CloseClipboard, GetClipboardData, IsClipboardFormatAvailable, OpenClipboard,
+        RegisterClipboardFormatW,
+    };
+    use windows_sys::Win32::System::Memory::{GlobalLock, GlobalSize, GlobalUnlock};
+    if unsafe { OpenClipboard(null_mut()) } == 0 {
+        return None;
+    }
+    let result = (|| {
+        let excluded = unsafe {
+            RegisterClipboardFormatW(wide("ExcludeClipboardContentFromMonitorProcessing").as_ptr())
+        };
+        if excluded != 0 && unsafe { IsClipboardFormatAvailable(excluded) } != 0 {
+            return None;
+        }
+        let permitted =
+            unsafe { RegisterClipboardFormatW(wide("CanIncludeInClipboardHistory").as_ptr()) };
+        if permitted != 0 && unsafe { IsClipboardFormatAvailable(permitted) } != 0 {
+            let marker = unsafe { GetClipboardData(permitted) };
+            if marker.is_null() || unsafe { GlobalSize(marker) } < 4 {
+                return None;
+            }
+            let pointer = unsafe { GlobalLock(marker) } as *const u32;
+            if pointer.is_null() {
+                return None;
+            }
+            let include = unsafe { std::ptr::read_unaligned(pointer) };
+            unsafe { GlobalUnlock(marker) };
+            if include == 0 {
+                return None;
+            }
+        }
+        // CF_HDROP covers copied image and audio files without duplicating their bytes.
+        let drop = unsafe { GetClipboardData(15) };
+        if !drop.is_null() {
+            let length = unsafe { DragQueryFileW(drop, 0, null_mut(), 0) } as usize;
+            if length > 0 && length < 32_768 {
+                let mut buffer = vec![0u16; length + 1];
+                let copied =
+                    unsafe { DragQueryFileW(drop, 0, buffer.as_mut_ptr(), buffer.len() as u32) }
+                        as usize;
+                let path = std::path::PathBuf::from(String::from_utf16_lossy(&buffer[..copied]));
+                let extension = path.extension()?.to_string_lossy().to_ascii_lowercase();
+                let kind = if ["png", "jpg", "jpeg", "webp", "gif", "bmp", "tiff"]
+                    .contains(&extension.as_str())
+                {
+                    "image"
+                } else if ["mp3", "wav", "flac", "ogg", "m4a", "aac", "wma", "opus"]
+                    .contains(&extension.as_str())
+                {
+                    "audio"
+                } else {
+                    return None;
+                };
+                if path.is_file() {
+                    return Some(ClipboardMedia {
+                        kind,
+                        label: path.file_name()?.to_string_lossy().into_owned(),
+                        preview: None,
+                        source: ClipboardMediaSource::File(path),
+                    });
+                }
+            }
+        }
+        let png_format = unsafe { RegisterClipboardFormatW(wide("PNG").as_ptr()) };
+        if png_format != 0 && unsafe { IsClipboardFormatAvailable(8) } == 0 {
+            let handle = unsafe { GetClipboardData(png_format) };
+            if !handle.is_null() {
+                let size = unsafe { GlobalSize(handle) };
+                if (8..=4 * 1024 * 1024).contains(&size) {
+                    let pointer = unsafe { GlobalLock(handle) } as *const u8;
+                    if !pointer.is_null() {
+                        let bytes = unsafe { std::slice::from_raw_parts(pointer, size) }.to_vec();
+                        unsafe { GlobalUnlock(handle) };
+                        if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+                            let preview = image::load_from_memory_with_format(
+                                &bytes,
+                                image::ImageFormat::Png,
+                            )
+                            .ok()
+                            .and_then(|image| {
+                                let mut png = std::io::Cursor::new(Vec::new());
+                                image
+                                    .thumbnail(96, 96)
+                                    .write_to(&mut png, image::ImageFormat::Png)
+                                    .ok()?;
+                                Some(format!(
+                                    "data:image/png;base64,{}",
+                                    base64::engine::general_purpose::STANDARD
+                                        .encode(png.into_inner())
+                                ))
+                            });
+                            return Some(ClipboardMedia {
+                                kind: "image",
+                                label: "Copied image".into(),
+                                preview,
+                                source: ClipboardMediaSource::Data(png_format, bytes),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        let wave = unsafe { GetClipboardData(12) };
+        if !wave.is_null() {
+            let size = unsafe { GlobalSize(wave) };
+            if (44..=4 * 1024 * 1024).contains(&size) {
+                let pointer = unsafe { GlobalLock(wave) } as *const u8;
+                if !pointer.is_null() {
+                    let bytes = unsafe { std::slice::from_raw_parts(pointer, size) }.to_vec();
+                    unsafe { GlobalUnlock(wave) };
+                    return Some(ClipboardMedia {
+                        kind: "audio",
+                        label: "Copied audio".into(),
+                        preview: None,
+                        source: ClipboardMediaSource::Data(12, bytes),
+                    });
+                }
+            }
+        }
+        // CF_DIB is used by Copy image in browsers and by many drawing apps.
+        let (format, handle) = match unsafe { GetClipboardData(8) } {
+            handle if !handle.is_null() => (8, handle),
+            _ => (17, unsafe { GetClipboardData(17) }), // CF_DIBV5
+        };
+        if handle.is_null() {
+            return None;
+        }
+        let size = unsafe { GlobalSize(handle) };
+        if !(40..=4 * 1024 * 1024).contains(&size) {
+            return None;
+        }
+        let pointer = unsafe { GlobalLock(handle) } as *const u8;
+        if pointer.is_null() {
+            return None;
+        }
+        let bytes = unsafe { std::slice::from_raw_parts(pointer, size) }.to_vec();
+        unsafe { GlobalUnlock(handle) };
+        let header = u32::from_le_bytes(bytes[0..4].try_into().ok()?) as usize;
+        if header < 40 || header > bytes.len() {
+            return None;
+        }
+        let width = i32::from_le_bytes(bytes[4..8].try_into().ok()?);
+        let height = i32::from_le_bytes(bytes[8..12].try_into().ok()?);
+        let bits = u16::from_le_bytes(bytes[14..16].try_into().ok()?);
+        let compression = u32::from_le_bytes(bytes[16..20].try_into().ok()?);
+        if width <= 0
+            || height == i32::MIN
+            || width > 4096
+            || height.abs() > 4096
+            || ![24, 32].contains(&bits)
+            || compression != 0
+        {
+            return None;
+        }
+        let pixel_offset = 14usize.checked_add(header)?;
+        let total = 14usize.checked_add(bytes.len())?;
+        let mut bmp = Vec::with_capacity(total);
+        bmp.extend_from_slice(b"BM");
+        bmp.extend_from_slice(&(total as u32).to_le_bytes());
+        bmp.extend_from_slice(&[0; 4]);
+        bmp.extend_from_slice(&(pixel_offset as u32).to_le_bytes());
+        bmp.extend_from_slice(&bytes);
+        let preview = image::load_from_memory_with_format(&bmp, image::ImageFormat::Bmp)
+            .ok()
+            .and_then(|image| {
+                let mut png = std::io::Cursor::new(Vec::new());
+                image
+                    .thumbnail(96, 96)
+                    .write_to(&mut png, image::ImageFormat::Png)
+                    .ok()?;
+                Some(format!(
+                    "data:image/png;base64,{}",
+                    base64::engine::general_purpose::STANDARD.encode(png.into_inner())
+                ))
+            });
+        Some(ClipboardMedia {
+            kind: "image",
+            label: format!("Image · {width} × {}", height.abs()),
+            preview,
+            source: ClipboardMediaSource::Data(format, bytes),
+        })
+    })();
+    unsafe { CloseClipboard() };
+    result
+}
+
+fn write_clipboard_media(format: u32, bytes: &[u8]) -> bool {
+    use windows_sys::Win32::Foundation::GlobalFree;
+    use windows_sys::Win32::System::DataExchange::{
+        CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData,
+    };
+    use windows_sys::Win32::System::Memory::{
+        GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalUnlock,
+    };
+    if bytes.is_empty()
+        || bytes.len() > 4 * 1024 * 1024
+        || unsafe { OpenClipboard(null_mut()) } == 0
+    {
+        return false;
+    }
+    let handle = unsafe { GlobalAlloc(GMEM_MOVEABLE, bytes.len()) };
+    let mut success = false;
+    if !handle.is_null() {
+        let pointer = unsafe { GlobalLock(handle) } as *mut u8;
+        if !pointer.is_null() {
+            unsafe {
+                std::ptr::copy_nonoverlapping(bytes.as_ptr(), pointer, bytes.len());
+                GlobalUnlock(handle);
+            }
+            success = unsafe { EmptyClipboard() } != 0
+                && !unsafe { SetClipboardData(format, handle) }.is_null();
+        }
+        if !success {
+            unsafe { GlobalFree(handle) };
+        }
+    }
+    unsafe { CloseClipboard() };
+    success
+}
+
 fn write_clipboard_text(value: &str) -> bool {
     use windows_sys::Win32::Foundation::GlobalFree;
     use windows_sys::Win32::System::DataExchange::{
@@ -11038,14 +11863,16 @@ fn copy_png_image(bytes: &[u8]) -> bool {
     if !handle.is_null() {
         let pointer = unsafe { GlobalLock(handle) } as *mut u8;
         if !pointer.is_null() {
-            let mut header = BITMAPINFOHEADER::default();
-            header.biSize = size_of::<BITMAPINFOHEADER>() as u32;
-            header.biWidth = frame.width as i32;
-            header.biHeight = -(frame.height as i32);
-            header.biPlanes = 1;
-            header.biBitCount = 32;
-            header.biCompression = BI_RGB;
-            header.biSizeImage = pixel_bytes as u32;
+            let header = BITMAPINFOHEADER {
+                biSize: size_of::<BITMAPINFOHEADER>() as u32,
+                biWidth: frame.width as i32,
+                biHeight: -(frame.height as i32),
+                biPlanes: 1,
+                biBitCount: 32,
+                biCompression: BI_RGB,
+                biSizeImage: pixel_bytes as u32,
+                ..Default::default()
+            };
             unsafe {
                 std::ptr::copy_nonoverlapping(
                     (&header as *const BITMAPINFOHEADER).cast::<u8>(),
@@ -11245,10 +12072,10 @@ fn fetch_weather(
         (latitude, longitude, name, country)
     } else {
         let mut candidates = vec![city.trim().to_owned()];
-        if let Some(before_comma) = city.split(',').next() {
-            if !before_comma.eq_ignore_ascii_case(city) {
-                candidates.push(before_comma.trim().to_owned());
-            }
+        if let Some(before_comma) = city.split(',').next()
+            && !before_comma.eq_ignore_ascii_case(city)
+        {
+            candidates.push(before_comma.trim().to_owned());
         }
         let words: Vec<_> = city.split_whitespace().collect();
         for count in (1..words.len()).rev() {
@@ -11460,8 +12287,24 @@ mod tests {
     use std::time::Duration;
 
     #[test]
+    fn legacy_notebook_loads_with_an_independent_quick_reminder_list() {
+        let legacy = r#"{"folders":[{"name":"Notes","text":"Keep this text"}],"selected":0,"reminder_at":null}"#;
+        let mut book: super::NoteBook = serde_json::from_str(legacy).unwrap();
+        assert!(book.quick_reminders.is_empty());
+        book.quick_reminders.push(super::QuickReminder {
+            text: "Call Sam".to_owned(),
+            at: 2_000_000_000,
+            notified: false,
+        });
+        let restored: super::NoteBook =
+            serde_json::from_str(&serde_json::to_string(&book).unwrap()).unwrap();
+        assert_eq!(restored.selected_text(), "Keep this text");
+        assert_eq!(restored.quick_reminders[0].text, "Call Sam");
+    }
+
+    #[test]
     fn shell_surface_metrics_support_common_dpi_scales_with_a_memory_ceiling() {
-        for dpi in [96, 120, 144, 168, 192, 384, 600] {
+        for dpi in [96, 120, 144, 168, 192, 384] {
             let (scale, width, height) = shell_surface_metrics(dpi)
                 .unwrap_or_else(|| panic!("common display DPI {dpi} should fit the shell budget"));
             assert!((scale - f64::from(dpi) / 96.0).abs() < f64::EPSILON);
@@ -11469,7 +12312,26 @@ mod tests {
             assert!((width as usize) * (height as usize) * 5 <= MAX_SHELL_SURFACE_BYTES);
         }
         assert!(shell_surface_metrics(0).is_none());
+        // The larger profile surface no longer fits at 625% scaling. Keep the
+        // allocation ceiling rather than raising it to satisfy an obsolete fixture.
+        assert!(shell_surface_metrics(600).is_none());
         assert!(shell_surface_metrics(960).is_none());
+        for dpi in 48..=960 {
+            let layout = super::ShellLayout::with_body_height(
+                super::ShapeMode::Capsule,
+                super::ShapeMode::Capsule.expanded_body_width() + super::PROFILE_PANEL_EXTRA_WIDTH,
+                super::MAX_EXPANDED_BODY_HEIGHT,
+                f64::from(dpi) / 96.0,
+            )
+            .unwrap();
+            let (width, height) = layout.physical_size();
+            let required = (width as usize) * (height as usize) * 5;
+            assert_eq!(
+                shell_surface_metrics(dpi).is_some(),
+                required <= MAX_SHELL_SURFACE_BYTES,
+                "DPI {dpi}"
+            );
+        }
     }
 
     #[test]
@@ -11584,6 +12446,30 @@ mod tests {
     }
 
     #[test]
+    fn glass_backing_preserves_theme_and_transparent_corners() {
+        for dark in [true, false] {
+            let (rgb, opacity) = super::glass_shell_backing(dark);
+            assert_eq!(
+                rgb,
+                if dark {
+                    (0, 0, 0)
+                } else {
+                    super::LIGHT_SHELL_BACKGROUND
+                }
+            );
+            assert_eq!(opacity, 255);
+            for coverage in [0, 32, 128, 255] {
+                let mut alpha = coverage;
+                let mut pixel = [rgb.2, rgb.1, rgb.0, coverage];
+                composite_shell_pixel(&mut pixel, &mut alpha, opacity);
+                assert_eq!(alpha, coverage);
+                assert_eq!(pixel[3], coverage);
+                assert!(pixel[..3].iter().all(|channel| *channel <= coverage));
+            }
+        }
+    }
+
+    #[test]
     fn shell_pixel_compositing_keeps_opaque_and_antialiased_bgra_valid() {
         let mut opaque = [0, 0, 0, 91];
         let mut alpha = 255;
@@ -11607,6 +12493,17 @@ mod tests {
         let mut alpha = 0;
         composite_shell_pixel(&mut transparent_light, &mut alpha, 255);
         assert_eq!(transparent_light, [0, 0, 0, 0]);
+
+        // Clear glass keeps a nonzero native hit surface, with valid
+        // premultiplied channels in both light and dark modes.
+        for rgb in [[0, 0, 0], [246, 247, 250]] {
+            let mut pixel = [rgb[0], rgb[1], rgb[2], 255];
+            let mut coverage = 255;
+            composite_shell_pixel(&mut pixel, &mut coverage, 1);
+            assert_eq!(coverage, 1);
+            assert_eq!(pixel[3], 1);
+            assert!(pixel[..3].iter().all(|channel| *channel <= 1));
+        }
     }
 
     #[test]

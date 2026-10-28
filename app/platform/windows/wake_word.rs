@@ -97,10 +97,10 @@ impl Drop for WakeWordService {
     fn drop(&mut self) {
         self.revision.fetch_add(1, Ordering::AcqRel);
         let _ = self.commands.send(Command::Shutdown);
-        if let Some(worker) = self.worker.take() {
-            if worker.is_finished() {
-                let _ = worker.join();
-            }
+        if let Some(worker) = self.worker.take()
+            && worker.is_finished()
+        {
+            let _ = worker.join();
         }
     }
 }
@@ -314,27 +314,25 @@ fn start_continuous(
             SpeechContinuousRecognitionSession,
             SpeechContinuousRecognitionResultGeneratedEventArgs,
         >::new(move |_, args| {
-            if let Some(args) = args.as_ref() {
-                if let Ok(result) = args.Result() {
-                    if result
-                        .Status()
-                        .is_ok_and(|status| status == SpeechRecognitionResultStatus::Success)
-                        && result.Confidence().is_ok_and(|confidence| {
-                            confidence == SpeechRecognitionConfidence::High
-                                || (sensitivity == Sensitivity::High
-                                    && confidence == SpeechRecognitionConfidence::Medium)
-                        })
-                        && (sensitivity != Sensitivity::Low
-                            || result
-                                .RawConfidence()
-                                .is_ok_and(|confidence| confidence >= 0.85))
-                        && result
-                            .Text()
-                            .is_ok_and(|text| same_phrase(&text.to_string_lossy(), &expected))
-                    {
-                        let _ = matched.send(Command::Matched(id));
-                    }
-                }
+            if let Some(args) = args.as_ref()
+                && let Ok(result) = args.Result()
+                && result
+                    .Status()
+                    .is_ok_and(|status| status == SpeechRecognitionResultStatus::Success)
+                && result.Confidence().is_ok_and(|confidence| {
+                    confidence == SpeechRecognitionConfidence::High
+                        || (sensitivity != Sensitivity::Low
+                            && confidence == SpeechRecognitionConfidence::Medium)
+                })
+                && (sensitivity != Sensitivity::Low
+                    || result
+                        .RawConfidence()
+                        .is_ok_and(|confidence| confidence >= 0.85))
+                && result
+                    .Text()
+                    .is_ok_and(|text| same_phrase(&text.to_string_lossy(), &expected))
+            {
+                let _ = matched.send(Command::Matched(id));
             }
             Ok(())
         }))
@@ -362,10 +360,10 @@ fn start_continuous(
 }
 fn close_recognizer(recognizer: &mut Option<SpeechRecognizer>) {
     if let Some(recognizer) = recognizer.take() {
-        if let Ok(session) = recognizer.ContinuousRecognitionSession() {
-            if let Ok(operation) = session.CancelAsync() {
-                let _ = operation.join();
-            }
+        if let Ok(session) = recognizer.ContinuousRecognitionSession()
+            && let Ok(operation) = session.CancelAsync()
+        {
+            let _ = operation.join();
         }
         let _ = recognizer.Close();
     }
@@ -427,7 +425,7 @@ fn speech_error(error: impl std::fmt::Display) -> String {
     } else if detail.contains("0x80070005") {
         "Allow microphone access for Pluto in Windows Privacy settings, then try again.".into()
     } else if detail.contains("0x80040154") || detail.contains("0x80073D54") {
-        "Local wake detection requires the installed Pluto release package. Run the MSIX build, then try again.".into()
+        "Local wake detection requires the installed Pluto release. Run the EXE installer, then try again.".into()
     } else {
         format!(
             "Windows could not start local wake detection: {}",
@@ -528,15 +526,17 @@ impl DesktopListener {
                     if matches {
                         let phrase = result.GetPhrase()?;
                         let rule = &(*phrase).Base.Rule;
-                        let minimum = if sensitivity == Sensitivity::High {
-                            0
-                        } else {
+                        // Balanced accepts SAPI's normal confidence, matching the
+                        // WinRT medium-confidence policy for an exact phrase.
+                        let minimum = if sensitivity == Sensitivity::Low {
                             1
+                        } else {
+                            0
                         };
                         let mut confident = rule.Confidence >= minimum;
                         // SAPI confidence is categorical (-1, 0, 1), not a probability.
                         // Strict mode also requires confident individual words.
-                        if sensitivity == Sensitivity::Low {
+                        if sensitivity != Sensitivity::High {
                             confident &= rule.ulCountOfElements > 0
                                 && rule.ulCountOfElements <= 32
                                 && !(*phrase).Base.pElements.is_null();
@@ -545,7 +545,11 @@ impl DesktopListener {
                                     (*phrase).Base.pElements.add(rule.ulFirstElement as usize),
                                     rule.ulCountOfElements as usize,
                                 );
-                                confident &= words.iter().all(|word| word.ActualConfidence > 0);
+                                confident &= words.iter().all(|word| {
+                                    word.ActualConfidence >= 0
+                                        && (sensitivity != Sensitivity::Low
+                                            || word.ActualConfidence > 0)
+                                });
                             }
                         }
                         CoTaskMemFree(Some(phrase.cast()));

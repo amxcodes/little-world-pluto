@@ -11,8 +11,10 @@
 ## Optional external programs
 
 - OpenCode and Codex are connected through their ACP provider programs. They remain separate tools and may make their own network requests under their own account and configuration.
-- FFmpeg is optional. Pluto can use an existing installation or manage a separate app-local copy. That copy is fetched from [gyan.dev](https://www.gyan.dev/ffmpeg/builds/) and is not bundled in the Pluto MSIX. FFmpeg builds can have different license terms depending on enabled codecs; review the selected distributor's terms before redistributing a copy.
+- FFmpeg is optional. Pluto can use an existing installation or manage a separate app-local copy. That copy is fetched from [gyan.dev](https://www.gyan.dev/ffmpeg/builds/) and is not bundled in the Pluto installer. FFmpeg builds can have different license terms depending on enabled codecs; review the selected distributor's terms before redistributing a copy.
 
 ## Notices and release audit
 
-Frontend runtime notices are in [`island-ui/THIRD_PARTY_NOTICES.md`](island-ui/THIRD_PARTY_NOTICES.md). Rust crates declare SPDX-compatible license expressions in their package metadata; inspect the complete resolved graph before redistributing a release. This file is a dependency overview, not a generated SBOM or legal opinion.
+Frontend runtime notices are in [`island-ui/THIRD_PARTY_NOTICES.md`](island-ui/THIRD_PARTY_NOTICES.md). Rust crates declare SPDX-compatible license expressions in their package metadata; inspect the complete resolved graph before redistributing a release. Tagged Windows releases publish separate CycloneDX SBOMs for Rust and npm dependencies. This file remains a dependency overview, not a legal opinion.
+
+See [`docs/RELEASING.md`](docs/RELEASING.md) for the signing, provenance, checksum, SBOM, dependency-audit, and Defender-response procedures.

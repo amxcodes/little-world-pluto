@@ -3,11 +3,37 @@ import vm from 'node:vm';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-const source = readFileSync(new URL('../src/main.jsx', import.meta.url), 'utf8');
+const source = readFileSync(new URL('../src/main.jsx', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+
+test('Settings reports its fixed size on commit and ignores stale handoffs', () => {
+  const start = source.indexOf('  // Settings has a fixed layout contract');
+  const code = source.slice(start, source.indexOf('  useLayoutEffect(() => {\n    // The profile editor', start));
+  const messages = [];
+  let effect;
+  const context = {
+    settingsOpen: true, state: { expanded: true, compactRenderGeneration: 3 },
+    layoutWideRef: { current: false }, displayPage: 'Home', window: {},
+    useLayoutEffect: fn => { effect = fn; },
+    send: (kind, data) => messages.push({ kind, data }),
+  };
+  vm.runInNewContext(code, context);
+  const cleanup = effect();
+  assert.equal(messages.length, 1);
+  assert.equal(messages[0].data.settingsOpen, true);
+  assert.equal(messages[0].data.generation, 3);
+  // A reveal after a hidden first render must still be able to request layout.
+  context.window.islandRequestLayout();
+  assert.equal(messages.length, 2);
+  cleanup();
+  assert.equal(context.window.islandRequestLayout, undefined);
+  context.state.expanded = false;
+  assert.equal(effect(), undefined);
+  assert.equal(messages.length, 2, 'leaving Settings must not request another expansion');
+});
 
 test('playback clock stops while hidden and releases its timer on unmount', () => {
   const start = source.indexOf('function MediaTransport(');
-  const code = source.slice(start, source.indexOf('  return <>', start)) + '\n}';
+  const code = source.slice(start, source.indexOf('  const playControl =', start)) + '\n}';
   const effects = [], intervals = new Map(), listeners = new Map();
   let nextTimer = 0;
   const document = { hidden: false, addEventListener: (name, fn) => listeners.set(name, fn), removeEventListener: name => listeners.delete(name) };
@@ -84,7 +110,7 @@ test('layout observer ignores streamed descendants but reports preferred-height 
   for (const name of ['noteView', 'showReminderCalendar', 'signOpen', 'showFolderInput', 'folderEditing', 'dictateOpen', 'dictateMode', 'dictateTranscriptExpanded', 'screenSelection', 'screenResult', 'commandOpen']) context[name] = false;
   vm.runInNewContext(code, context); const cleanup = effect();
   const paint = () => { const callbacks = [...frames.values()]; frames.clear(); callbacks.forEach(fn => fn()); };
-  paint(); assert.equal(sends.length, 1);
+  assert.equal(sends.length, 1, 'the first target arrives before the next animation frame');
   for (let i = 0; i < 100; i++) mutate([{ type: 'childList', target: root }]);
   assert.equal(frames.size, 0);
   root.dataset.layoutHeight = '90'; mutate([{ type: 'attributes', target: root }]); paint();
@@ -93,7 +119,7 @@ test('layout observer ignores streamed descendants but reports preferred-height 
   context.state.wakeWord = { surface: true, revision: 8 };
   context.document.querySelector = () => ({ offsetHeight: 0 });
   root.dataset.layoutHeight = '34';
-  vm.runInNewContext(code, context); const cleanupWake = effect(); paint();
+  vm.runInNewContext(code, context); const cleanupWake = effect();
   assert.equal(sends.at(-1).height + 32, 90); // Native inset is added exactly once.
   assert.equal(sends.at(-1).wakeSurface, true);
   assert.equal(sends.at(-1).wakeRevision, 8);

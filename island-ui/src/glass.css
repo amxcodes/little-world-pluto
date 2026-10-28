@@ -1,0 +1,308 @@
+/* The native alpha mask owns the opaque themed shell and its curved contour.
+   Glass optics belong only to the inner cards and controls. */
+.glass-preferences { display:grid; gap:12px; padding-block:14px 4px; }
+.glass-adjustments { display:grid; gap:14px; margin:0; padding:14px; border:1px solid var(--line); border-radius:14px; }
+.glass-adjustments legend { padding:0 6px; color:var(--muted); }
+.glass-adjustments label { display:grid; gap:7px; }
+.glass-adjustments label > span { display:flex; justify-content:space-between; gap:12px; }
+.glass-adjustments output { color:var(--muted); font-variant-numeric:tabular-nums; }
+.glass-adjustments input { width:100%; accent-color:var(--accent); }
+.glass-adjustments button { justify-self:start; padding:8px 12px; border-radius:999px; background:var(--card-hover); color:var(--text); border:1px solid var(--line); }
+.island[data-material="glass"] .expand-shortcut input { color:var(--text); background:transparent; border:0; box-shadow:none; -webkit-backdrop-filter:none; backdrop-filter:none; }
+.island[data-material="glass"] .expand-replacement { background:var(--card); border-color:var(--line); box-shadow:none; }
+.island[data-material="glass"] .expand-save:hover:not(:disabled) { color:var(--accent-ink); background:var(--accent-gradient); }
+.island[data-material="glass"] {
+  position:relative; isolation:isolate;
+  --bg:#000; --card:#ffffff08; --card-hover:#ffffff30;
+  --text:#f8f9fc; --muted:#c9ccd2; --line:#ffffff30;
+  --glass-control:color-mix(in srgb,var(--accent) calc(var(--glass-control-tint,.26) * 28%),#b8c2d23a); --glass-overlay:#ffffff06;
+  --glass-edge:#ffffff32; --glass-shade:#00000024; --glass-light:#ffffff0a;
+  --glass-surface:radial-gradient(ellipse at 0% 0%,var(--glass-light),transparent 65%),linear-gradient(165deg,var(--card),#ffffff03 65%,#ffffff07);
+  --glass-rim:inset 0 1px 0 var(--glass-edge),inset 0 -1px 0 #ffffff0b,0 4px 12px #00000040;
+  --glass-lens:radial-gradient(ellipse at 18% 0%,#ffffff35,transparent 58%),linear-gradient(170deg,#ffffff08,transparent 45%,#ffffff08);
+  --glass-lens-shadow:inset 0 1px 1px #ffffff55,inset 1px 0 0 #ffffff14,inset 0 -1px 1px #ffffff22,0 2px 5px #00000018;
+}
+/* Material controls affect surfaces only. Text/icons keep their contrast and
+   no filter is applied to the shell, content, or the normal-mode geometry. */
+.island[data-material="glass"] {
+  color-scheme:dark;
+  --card:rgb(255 255 255 / calc(var(--glass-panel-opacity, .14) * .6));
+  --glass-edge:rgb(255 255 255 / calc(.18 + var(--glass-highlight-opacity, .34) * .45));
+  --glass-lens:radial-gradient(ellipse 75% 110% at 12% 0%,rgb(255 255 255 / calc(.10 + var(--glass-highlight-opacity,.34) * .45)),transparent 72%),radial-gradient(ellipse 52% 90% at 100% 100%,rgb(211 228 255 / calc(var(--glass-highlight-opacity,.34) * .3)),transparent 74%),linear-gradient(180deg,#ffffff0e,transparent 43%,#00000014 76%,#ffffff0b);
+  --glass-lens-shadow:inset 0 1px 0 var(--glass-edge),inset 1px 0 0 #ffffff24,inset -1px 0 0 #ffffff18,inset 0 -1px 0 #ffffff26,0 0 0 1px #ffffff0c,0 4px 10px #00000048;
+}
+/* Solid porcelain backing; milky lenses use dark ink and a soft lower rim. */
+.island.light[data-material="glass"] {
+  color-scheme:light; --bg:#f6f6f7; --text:#20232a; --muted:#555c66;
+  --line:#303b4a28; --card-hover:#dde3ea;
+  --card:rgb(255 255 255 / calc(.45 + var(--glass-panel-opacity,.14) * .6));
+  --glass-control:color-mix(in srgb,var(--accent) calc(var(--glass-control-tint,.26) * 12%),#ffffffa6);
+  --glass-overlay:#25344b08; --glass-light:#ffffffa0;
+  --glass-edge:rgb(255 255 255 / calc(.5 + var(--glass-highlight-opacity,.34) * .5));
+  --glass-surface:linear-gradient(150deg,var(--card),#e5e9ef50 65%,#ffffffb0);
+  --glass-rim:inset 0 1px 0 #fff,inset 0 -1px 0 #35415514,0 3px 10px #26344808;
+  --glass-lens:radial-gradient(ellipse 65% 100% at 0% 10%,var(--glass-edge),transparent 72%),radial-gradient(ellipse 50% 100% at 100% 90%,#ffffffc0,transparent 72%),linear-gradient(180deg,#ffffff70,transparent 45%,#3346660c 80%,#ffffff50);
+  --glass-lens-shadow:inset 0 1px 1px #fff,inset 1px 0 1px #ffffffc0,inset -1px 0 1px #ffffff80,inset 0 -1px 1px #3b4c6428,0 2px 5px #26344814;
+}
+.island[data-material="glass"] :is(.tab-indicator,.bar .icon-button,.settings-nav-item,.settings-topbar > button,.settings-card,.home-primary,.home-actions,.home-strip,.control-tile,.battery-tile,.agent-composer,.opencode-composer,.wx-current,.wx-daily,.clip-card,.media-session-panel,.convert-options,.settings-disclosure,.output-row,.agent-session-card,.agent-question-card,.calendar-popover,.device-menu,.voice-answer-text,.clipboard-search,.wx-search,.agent-search,.command-form,.home-launcher,.agent-config-chip,.agent-project button,.agent-browser-back,.voice-answer-surface header button,.power-section button,.wx-heading button) {
+  -webkit-backdrop-filter:blur(var(--glass-softness, 10px)) saturate(var(--glass-saturation, 1.15));
+  backdrop-filter:blur(var(--glass-softness, 10px)) saturate(var(--glass-saturation, 1.15));
+}
+.island[data-material="glass"] { background:transparent; text-shadow:none; }
+.island[data-material="glass"] :is(.body,.page-content,.home-layout,.settings-page,.settings-workspace,.settings-content,.agent-workspace,.conversion-workspace) { background:transparent; }
+/* Reading surfaces use stronger separation. Opacity on the whole component
+   would reduce text contrast along with the background. */
+.island[data-material="glass"] :is(.home-primary,.home-actions,.home-strip,.shelf-panel,.output-row,.settings-card,.settings-disclosure,.control-tile,.battery-tile,.convert-queue-row,.convert-options,.agent-session-card,.agent-approval-detail,.agent-question-card,.calendar-popover,.device-menu,.media-session-panel,.wx-current,.wx-daily,.clip-card,.clipboard-empty,.empty-state,.power-section,.voice-answer-text,.agent-composer,.opencode-composer) {
+  background:var(--glass-surface); border-color:var(--line); box-shadow:var(--glass-rim);
+}
+.island[data-material="glass"] :is(.bar,.settings-sidebar,.agent-toolbar,.signature-toolbar) { background:transparent; box-shadow:none; border-color:transparent; }
+/* The solid shell supports free-standing labels without extra backing pills. */
+.island[data-material="glass"] .bar > nav { min-height:33px; padding-inline:3px; border-radius:999px; background:transparent; }
+.island[data-material="glass"] .agent-tabs { min-height:40px; max-height:none; padding:4px; border:0; border-radius:999px; background:var(--glass-surface); }
+.island[data-material="glass"] :is(.agent-start-copy,.wx-heading-place,.controls-heading,.nested-page-copy) { max-width:100%; background:transparent; }
+.island[data-material="glass"] .voice-answer-surface > header { padding:6px 10px; background:transparent; }
+/* Material belongs to the field wrapper; nested editable content is clear. */
+.island[data-material="glass"] :is(.clipboard-search,.wx-search,.agent-search,.command-form,.home-launcher) {
+  background:var(--glass-surface); border-color:var(--line); box-shadow:var(--glass-rim);
+}
+.island[data-material="glass"] :is(.clipboard-search,.wx-search,.agent-search,.agent-composer,.opencode-composer,.opencode-voice-input,.command-form,.home-launcher) :is(input,textarea) {
+  background:transparent; box-shadow:none; color:var(--text);
+}
+.island[data-material="glass"] :is(input,textarea)::placeholder { color:var(--muted); opacity:1; }
+.island[data-material="glass"] :is(.agent-search,.agent-composer,.command-form):focus-within {
+  border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent);
+}
+.island[data-material="glass"] .voice-answer-text { padding:16px 18px; border:1px solid var(--line); border-radius:18px; }
+.island[data-material="glass"] .voice-answer-text > :first-child { margin-top:0; }
+.island[data-material="glass"] .voice-answer-surface[data-wake-phase="compact"] .voice-answer-text { background:transparent; border:0; padding:0; box-shadow:none; }
+/* Wake answers share the shell's glass backing; the text does not need a second pane. */
+.island[data-material="glass"] .voice-answer-surface.is-wake .voice-answer-text {
+  padding:8px 18px 12px 0; border:0; border-radius:0; background:transparent; box-shadow:none;
+  -webkit-backdrop-filter:none; backdrop-filter:none;
+}
+/* Thin controls on one material. Preserve each component's paired foreground
+   and fill. A blanket button background used to erase fills but leave dark ink. */
+.island[data-material="glass"] :is(.settings-segments,.settings-lane-tabs) { background:var(--glass-overlay); border-color:var(--line); box-shadow:none; -webkit-backdrop-filter:none; backdrop-filter:none; }
+.island[data-material="glass"] :is(.settings-segments,.settings-lane-tabs) > button:not(.selected) { color:var(--muted); background:transparent; box-shadow:none; }
+.island[data-material="glass"] :is(.settings-segments,.settings-lane-tabs) > button.selected { background:var(--glass-lens),var(--accent-gradient); color:var(--accent-ink); border-color:transparent; box-shadow:none; }
+.island[data-material="glass"] .settings-nav-item { background:var(--glass-lens),var(--glass-control); color:var(--text); box-shadow:var(--glass-lens-shadow); }
+.island[data-material="glass"] .settings-nav-item.selected { background:var(--glass-lens),var(--accent-gradient); color:var(--accent-ink); box-shadow:none; }
+.island[data-material="glass"] .settings-nav-item.selected svg { color:inherit; }
+.island[data-material="glass"] .controls-page .control-tile { color:var(--text); }
+.island[data-material="glass"] .controls-page .control-tile strong { color:var(--text); }
+.island[data-material="glass"] .settings-topbar { height:32px; min-height:32px; padding:0 10px 0 0; border-radius:16px; background:transparent; box-shadow:none; }
+.island[data-material="glass"] .settings-topbar > button { background:var(--glass-lens),var(--glass-control); box-shadow:var(--glass-lens-shadow); }
+.island[data-material="glass"] .settings-speech-footer { background:var(--bg); border-radius:12px; box-shadow:0 12px 0 var(--bg); padding-inline:12px; }
+/* One navigation lens; no white pressed halo or extra tab layer. */
+.island[data-material="glass"] .bar .tab,
+.island[data-material="glass"] .bar .tab:is(.active,:hover,:focus-visible,:active) { background:transparent; box-shadow:none; color:var(--text); scale:1; filter:none; }
+.island[data-material="glass"] .tab-indicator { background:var(--glass-lens),var(--glass-control); box-shadow:var(--glass-lens-shadow); }
+.island[data-material="glass"] .bar .icon-button { background:var(--glass-lens),var(--glass-control); color:var(--text); box-shadow:var(--glass-lens-shadow); }
+.island[data-material="glass"] .bar .icon-button.pinned { background:var(--glass-lens),var(--accent-gradient); color:var(--accent-ink); }
+.island[data-material="glass"] .settings-switch { background:var(--glass-control); border:1px solid var(--line); box-shadow:none; }
+.island[data-material="glass"] .settings-switch.on { background:var(--glass-lens),var(--accent-gradient); border-color:transparent; }
+.island[data-material="glass"] .settings-switch.on i { background:var(--accent-ink); }
+.island[data-material="glass"] .settings-switch:disabled { opacity:.45; }
+/* Keep the selected settings glyph on a neutral optical lens. Accent ink on a
+   bright accent fill loses definition on the narrow icon-only rail. */
+.island[data-material="glass"].settings-open .settings-nav-item.selected {
+  background:var(--glass-lens),color-mix(in srgb,var(--accent) 12%,var(--glass-control));
+  border:1px solid color-mix(in srgb,var(--accent) 48%,transparent);
+  color:var(--accent);
+  box-shadow:var(--glass-lens-shadow),0 0 0 1px color-mix(in srgb,var(--accent) 12%,transparent);
+}
+.island[data-material="glass"].settings-open .settings-nav-item.selected svg { color:var(--accent); }
+.island[data-material="glass"] :is(button,input,textarea,select):focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+.island[data-material="glass"] .bar button:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+.island[data-material="glass"] button:active:not(:disabled) { filter:none; }
+/* Small lenses sit above the quieter panels. Preserve all semantic accent
+   fills; only neutral controls receive this treatment. */
+.island[data-material="glass"] :is(.agent-config-chip,.agent-project button,.agent-browser-back,.voice-answer-surface header button,.power-section button,.wx-heading button) {
+  background:var(--glass-lens),var(--glass-control); color:var(--text);
+  border:1px solid var(--line); border-radius:999px; box-shadow:var(--glass-lens-shadow);
+}
+.island[data-material="glass"] :is(.settings-nav-item,.bar .icon-button,.settings-topbar > button):hover:not(.selected):not(.pinned) { background-color:var(--card-hover); }
+.island[data-material="glass"] :is(.settings-switch.on,.settings-nav-item.selected,.settings-segments > button.selected,.settings-lane-tabs > button.selected) { box-shadow:inset 0 1px 1px #ffffff70,inset 0 -1px 1px #00000016; }
+/* Fixed edge-light cues stay anchored to the surface; lighting does not track the pointer. */
+.island[data-material="glass"] :is(.tab-indicator,.bar .icon-button,.settings-nav-item,.settings-topbar > button,.agent-config-chip,.agent-browser-back) {
+  background-image:radial-gradient(ellipse 74% 68% at 12% 0%,rgb(255 255 255 / calc(var(--glass-caustics,.24) * .36)),transparent 80%),radial-gradient(ellipse 70% 68% at 94% 100%,rgb(197 228 255 / calc(var(--glass-caustics,.24) * .18)),transparent 78%),var(--glass-lens);
+  transition:transform 200ms cubic-bezier(.2,.8,.2,1),translate 200ms cubic-bezier(.2,.8,.2,1),background-color 160ms ease,border-color 160ms ease,color 160ms ease;
+}
+/* Shared lenses cover the older action families without changing their layout. */
+.island[data-material="glass"].expanded :is(.settings-inline-action,.settings-engine-actions button,.settings-model-options button,.settings-provider-list button,.settings-slot-grid > button,.settings-action-catalog > button,.compact-priority-actions button,.settings-editor-caption button,.clip-card-actions button,.signature-toolbar > button,.signature-format > button,.media-controls button,.opencode-profile-select-trigger,.device-picker-trigger,.media-session-trigger,.note-mode-switch button,.screen-result-actions button,.dictate-result-actions button,.dictate-transcript-full-head button,.actions button,.agent-empty-actions button,.agent-session-actions button,.agent-feedback-actions button,.agent-library-actions button,.agent-settings-provider-actions button,.agent-onboarding-actions button,.opencode-profile-actions button,.calendar-save,.calendar-time-wheel button,.primary-action,.subtle-action) {
+  background:var(--glass-lens),var(--glass-control); color:var(--text);
+  border-color:var(--line); border-radius:12px; box-shadow:var(--glass-lens-shadow);
+}
+.island[data-material="glass"].expanded :is(.settings-inline-action,.settings-engine-actions button,.settings-model-options button,.settings-provider-list button,.settings-slot-grid > button,.settings-action-catalog > button,.compact-priority-actions button,.settings-editor-caption button,.clip-card-actions button,.signature-toolbar > button,.signature-format > button,.media-controls button,.opencode-profile-select-trigger,.device-picker-trigger,.media-session-trigger,.note-mode-switch button,.screen-result-actions button,.dictate-result-actions button,.dictate-transcript-full-head button,.actions button,.agent-empty-actions button,.agent-session-actions button,.agent-feedback-actions button,.agent-library-actions button,.agent-settings-provider-actions button,.agent-onboarding-actions button,.opencode-profile-actions button,.calendar-save,.calendar-time-wheel button,.primary-action,.subtle-action):is(.selected,.active,[aria-pressed="true"],.primary,.primary-action,.calendar-save,.settings-conversion-primary) {
+  background:var(--glass-lens),var(--accent-gradient); color:var(--accent-ink); border-color:transparent;
+}
+.island[data-material="glass"].expanded :is(.settings-inline-action,.settings-engine-actions button,.settings-model-options button,.settings-provider-list button,.settings-slot-grid > button,.settings-action-catalog > button,.compact-priority-actions button,.settings-editor-caption button,.clip-card-actions button,.signature-toolbar > button,.signature-format > button,.media-controls button,.opencode-profile-select-trigger,.device-picker-trigger,.media-session-trigger,.note-mode-switch button,.screen-result-actions button,.dictate-result-actions button,.dictate-transcript-full-head button,.actions button,.agent-empty-actions button,.agent-session-actions button,.agent-feedback-actions button,.agent-library-actions button,.agent-settings-provider-actions button,.agent-onboarding-actions button,.opencode-profile-actions button,.calendar-save,.calendar-time-wheel button,.primary-action,.subtle-action):is(.danger,.destructive) { color:var(--recording); }
+.island[data-material="glass"].expanded :is(.settings-inline-action,.settings-engine-actions button,.settings-model-options button,.settings-provider-list button,.settings-slot-grid > button,.settings-action-catalog > button,.compact-priority-actions button,.settings-editor-caption button,.clip-card-actions button,.signature-toolbar > button,.signature-format > button,.media-controls button,.opencode-profile-select-trigger,.device-picker-trigger,.media-session-trigger,.note-mode-switch button,.screen-result-actions button,.dictate-result-actions button,.dictate-transcript-full-head button,.actions button,.agent-empty-actions button,.agent-session-actions button,.agent-feedback-actions button,.agent-library-actions button,.agent-settings-provider-actions button,.agent-onboarding-actions button,.opencode-profile-actions button,.calendar-save,.calendar-time-wheel button,.primary-action,.subtle-action).is-armed { color:var(--warning); border-color:var(--warning); }
+.island[data-material="glass"].expanded :is(.settings-inline-action,.settings-engine-actions button,.settings-editor-caption button,.clip-card-actions button,.signature-toolbar > button,.dictate-result-actions button,.subtle-action,.primary-action,.calendar-save) { border-radius:999px; }
+.island[data-material="glass"].expanded .media-controls button { border-radius:50%; }
+@media(hover:hover) and (pointer:fine) {
+  .island[data-material="glass"].expanded :is(.settings-inline-action,.settings-engine-actions button,.settings-model-options button,.settings-provider-list button,.settings-slot-grid > button,.settings-action-catalog > button,.compact-priority-actions button,.settings-editor-caption button,.clip-card-actions button,.signature-toolbar > button,.signature-format > button,.media-controls button,.opencode-profile-select-trigger,.device-picker-trigger,.media-session-trigger,.note-mode-switch button,.screen-result-actions button,.dictate-result-actions button,.dictate-transcript-full-head button,.actions button,.agent-empty-actions button,.agent-session-actions button,.agent-feedback-actions button,.agent-library-actions button,.agent-settings-provider-actions button,.agent-onboarding-actions button,.opencode-profile-actions button,.calendar-save,.calendar-time-wheel button,.primary-action,.subtle-action):hover:not(:disabled) { border-color:var(--glass-edge); }
+  .island[data-material="glass"][data-glass-motion="true"] :is(.settings-inline-action,.settings-engine-actions button,.clip-card-actions button,.signature-toolbar > button,.bar .icon-button,.settings-nav-item,.agent-config-chip,.primary-action,.subtle-action):hover:not(:disabled) { translate:0 -1px; }
+}
+/* Interaction-driven motion settles; no idle shimmer, blur animation, per-card
+   frame loops or layered page fades. Navigation retains its shared spring. */
+.island[data-material="glass"][data-glass-motion="true"] button { transition:transform 200ms cubic-bezier(.2,.8,.2,1),translate 200ms cubic-bezier(.2,.8,.2,1),background-color 160ms ease,border-color 160ms ease,color 160ms ease; }
+.island[data-material="glass"][data-glass-motion="true"] button:active:not(:disabled):not(.tab):not(.settings-switch) { transform:scale(.97); translate:0 0; transition-duration:90ms; }
+.island[data-material="glass"].enter :is(.bar,.body),
+.island[data-material="glass"].settings-open :is(.settings-page,.settings-content) { animation:none; }
+.island[data-material="glass"][data-glass-motion="true"]:not(.settings-open) .page-content.entering { animation:glass-arrive 180ms cubic-bezier(.2,.8,.2,1) both; }
+@keyframes glass-arrive { from { translate:0 3px; } to { translate:0 0; } }
+/* The native material stays behind these content layers throughout swaps. */
+.island[data-material="glass"] .compact-content { background:transparent; box-shadow:none; }
+.island[data-material="glass"] .compact-context-rail { background:transparent; box-shadow:none; backdrop-filter:none; }
+.island[data-material="glass"] .compact-swap-current.is-arriving { animation-name:glass-status-arrive; }
+.island[data-material="glass"] .compact-swap-old { animation-name:glass-status-leave; }
+@keyframes glass-status-arrive { from { opacity:0; translate:0 3px; } to { opacity:1; translate:0 0; } }
+@keyframes glass-status-leave { from { opacity:1; translate:0 0; } to { opacity:0; translate:0 -3px; } }
+.island[data-material="glass"][data-glass-motion="false"] *,
+.island[data-material="glass"][data-glass-motion="false"] *::before,
+.island[data-material="glass"][data-glass-motion="false"] *::after { animation:none !important; transition:none !important; }
+.island[data-material="glass"][data-glass-motion="false"] .compact-swap-old { display:none; }
+.island[data-material="glass"][data-glass-motion="false"] button { transform:none; translate:none; }
+.island[data-material="glass"][data-reduced-motion="true"] button { transform:none !important; translate:none !important; transition:none !important; }
+@media(prefers-reduced-motion:reduce) {
+  .island[data-material="glass"] button { transition:none; }
+  .island[data-material="glass"] button { transform:none !important; translate:none !important; transition:none !important; }
+  .island[data-material="glass"] .page-content.entering { animation:none; }
+}
+@media(prefers-reduced-transparency:reduce), (prefers-contrast:more) {
+  .island[data-material="glass"] { --bg:#000; --card:#26303b; --card-hover:#414c57; --glass-control:#414c57; --glass-light:transparent; --line:var(--muted); }
+  .island.light[data-material="glass"] { --bg:#f6f6f7; --card:#fff; --card-hover:#e1e7ef; --glass-control:#e1e7ef; }
+  .island[data-material="glass"].expanded { background:var(--bg); }
+}
+@media(forced-colors:active) {
+  .island[data-material="glass"] { --bg:Canvas; --card:Canvas; --card-hover:Canvas; --glass-control:Canvas; --text:CanvasText; --muted:CanvasText; --line:CanvasText; --glass-light:transparent; --glass-edge:transparent; --glass-shade:transparent; }
+  .island[data-material="glass"] button { background-image:none; box-shadow:none; }
+}
+
+/* Accent actions retain their paired ink while sharing the rounded lens. */
+.island[data-material="glass"] .settings-speech-footer .settings-save:not(:disabled) {
+  background:var(--glass-lens),var(--accent-gradient); color:var(--accent-ink);
+  border-color:transparent; border-radius:999px; box-shadow:var(--glass-lens-shadow);
+}
+.island[data-material="glass"] .glass-adjustments button {
+  background:var(--glass-lens),var(--glass-control); box-shadow:var(--glass-lens-shadow);
+}
+
+/* Leave paint room above toolbar lenses and around the scrolling icon rail. */
+.island[data-material="glass"].expanded .bar { padding-top:6px; padding-bottom:3px; }
+.island[data-material="glass"].settings-open .settings-sidebar {
+  padding:6px 6px 6px 5px; scroll-padding-block:6px;
+}
+
+/* Quick actions need individual breathing room within the fixed home height. */
+.island[data-material="glass"].expanded .actions[aria-label="Quick actions"] {
+  gap:6px; padding:4px; border:0; background:transparent; overflow:visible;
+}
+.island[data-material="glass"].expanded .actions[aria-label="Quick actions"] > * {
+  border:0;
+}
+.island[data-material="glass"].expanded .actions[aria-label="Quick actions"] > button {
+  gap:6px; padding:5px 7px; border-radius:11px; font-size:12px;
+  background:var(--glass-lens),var(--glass-control); color:var(--text);
+}
+.island[data-material="glass"].expanded .actions[aria-label="Quick actions"] > button > svg,
+.island[data-material="glass"].expanded .actions[aria-label="Quick actions"] > button:is(:hover,:focus-visible,:active) > svg {
+  width:24px; height:24px; padding:3px; background:transparent;
+  color:var(--text); transform:none;
+}
+.island[data-material="glass"].expanded .actions[aria-label="Quick actions"] > button:is(:hover,:focus-visible):not(:disabled) {
+  background:var(--glass-lens),color-mix(in srgb,var(--accent) 10%,var(--glass-control));
+  box-shadow:var(--glass-lens-shadow),inset 0 0 0 1px color-mix(in srgb,var(--accent) 32%,transparent);
+}
+.island[data-material="glass"].expanded .actions[aria-label="Quick actions"] > button:active:not(:disabled) {
+  background:var(--glass-lens),color-mix(in srgb,var(--accent) 16%,var(--glass-control));
+}
+@media(min-width:581px) {
+  .island[data-material="glass"] .home-grid:has(> .actions[aria-label="Quick actions"]) {
+    grid-template-columns:minmax(0,1fr) clamp(224px,38%,270px); column-gap:12px;
+  }
+}
+@media(hover:hover) and (pointer:fine) {
+  .island[data-material="glass"][data-glass-motion="true"] .actions[aria-label="Quick actions"] > button:hover:not(:disabled) { translate:0 -1px; }
+  .island[data-material="glass"][data-glass-motion="true"] .actions[aria-label="Quick actions"] > button:active:not(:disabled) { translate:0 0; }
+}
+.island[data-material="glass"][data-glass-motion="false"] .actions[aria-label="Quick actions"] > button { translate:none; }
+
+/* Popovers own an opaque reading plane above the home controls. */
+.island[data-material="glass"] .output-row:has(.device-menu) { position:relative; z-index:50; }
+.island[data-material="glass"] .device-menu {
+  background:var(--glass-surface),var(--bg); color:var(--text);
+  backdrop-filter:none; -webkit-backdrop-filter:none;
+  box-shadow:var(--glass-rim),0 10px 28px #0005; padding:7px; gap:5px;
+}
+.island[data-material="glass"] .device-menu button { color:var(--text); border-radius:10px; }
+.island[data-material="glass"] .device-menu button:is(:hover,[aria-selected="true"]) {
+  background:var(--glass-lens),var(--glass-control); box-shadow:var(--glass-lens-shadow);
+}
+.island[data-material="glass"].expanded .tool-scope-actions { gap:8px; padding:6px; background:transparent; border:0; }
+.island[data-material="glass"].expanded .tool-scope-actions > button:is(:hover,:focus-visible,:active):not(:disabled) {
+  background:var(--glass-lens),color-mix(in srgb,var(--accent) 10%,var(--glass-control));
+  box-shadow:var(--glass-lens-shadow); color:var(--text);
+}
+.island[data-material="glass"].expanded .tool-scope-actions > button > svg,
+.island[data-material="glass"].expanded .tool-scope-actions > button:is(:hover,:focus-visible,:active) > svg {
+  background:transparent; color:var(--text); transform:none;
+}
+.island[data-material="glass"] :is(.convert-source,.convert-inspector) { background:var(--glass-surface); box-shadow:var(--glass-rim); }
+.island[data-material="glass"] .convert-queue { display:flex; flex-direction:column; gap:7px; padding:4px 10px 10px; }
+.island[data-material="glass"] .convert-queue-row {
+  flex:none; padding:9px; gap:8px; border:1px solid var(--line); border-radius:13px;
+  background:var(--glass-surface); box-shadow:var(--glass-rim);
+}
+.island[data-material="glass"] .conversion-workspace button:not(.convert-switch-row),
+.island[data-material="glass"] .conversion-workspace button:not(.convert-switch-row):hover:not(:disabled) {
+  background:var(--glass-lens),var(--glass-control); color:var(--text); box-shadow:var(--glass-lens-shadow);
+}
+.island[data-material="glass"] .conversion-workspace button:not(.convert-switch-row):hover:not(:disabled) { border-color:var(--glass-edge); }
+.island[data-material="glass"] .conversion-workspace button:is([aria-pressed="true"],.convert-primary),
+.island[data-material="glass"] .conversion-workspace button:is([aria-pressed="true"],.convert-primary):hover:not(:disabled) {
+  background:var(--glass-lens),var(--accent-gradient); color:var(--accent-ink); filter:none;
+}
+.island[data-material="glass"] .conversion-workspace input:not([type="checkbox"]):not([type="range"]) { background:var(--glass-overlay); box-shadow:inset 0 1px 2px #00000008; }
+/* Search and location fields keep their resting border when focused. */
+.island :is(.clipboard-search,.wx-search):focus-within { border-color:var(--line); box-shadow:none; }
+.island[data-material="glass"] :is(.clipboard-search,.wx-search):focus-within { border-color:var(--line); box-shadow:var(--glass-rim); }
+.island :is(.clipboard-search,.wx-search) input:is(:focus,:focus-visible) { outline:none; box-shadow:none; }
+
+/* Agent navigation and the Ask hold action use the same individual lenses as
+   the settings provider buttons. The selected tab keeps its paired accent ink. */
+.island[data-material="glass"] :is(.agent-tabs > button,.agent-new-task,.voice-answer-surface .ask-hold) {
+  color:var(--text); background:var(--glass-lens),var(--glass-control);
+  border:1px solid var(--line); border-radius:999px; box-shadow:var(--glass-lens-shadow);
+}
+.island[data-material="glass"] .agent-tabs > button:is(.selected,[aria-selected="true"]) {
+  color:var(--accent-ink); background:var(--glass-lens),var(--accent-gradient);
+  border-color:transparent;
+}
+.island[data-material="glass"] :is(.agent-tabs > button,.agent-new-task,.voice-answer-surface .ask-hold):hover:not(:disabled) {
+  color:var(--text); background:var(--glass-lens),color-mix(in srgb,var(--accent) 9%,var(--glass-control));
+  border-color:var(--glass-edge); box-shadow:var(--glass-lens-shadow);
+}
+.island[data-material="glass"] .agent-tabs > button:is(.selected,[aria-selected="true"]):hover:not(:disabled) {
+  color:var(--accent-ink); background:var(--glass-lens),var(--accent-gradient); border-color:transparent;
+}
+.island[data-material="glass"] .voice-answer-surface .ask-hold:disabled,
+.island[data-material="glass"] .voice-answer-surface .ask-hold:disabled:hover {
+  color:var(--muted); background:var(--glass-control); border-color:var(--line); opacity:.55;
+}
+@media(hover:hover) and (pointer:fine) {
+  .island[data-material="glass"][data-glass-motion="true"] :is(.agent-tabs > button,.agent-new-task,.voice-answer-surface .ask-hold):hover:not(:disabled) { translate:0 -1px; }
+}
+.island[data-material="glass"][data-glass-motion="false"] :is(.agent-tabs > button,.agent-new-task,.voice-answer-surface .ask-hold) { translate:none; }
+
+/* The command palette search deliberately has no accent focus ring. */
+.island[data-material="glass"] .command-page .command-form:focus-within { border-color:var(--line); box-shadow:var(--glass-rim); }
+.island[data-material="glass"] .command-page .command-form input:is(:focus,:focus-visible) { outline:none; box-shadow:none; }
+.island[data-material="glass"].compact .compact-privacy button {
+  background:var(--glass-lens),var(--glass-control); border:1px solid var(--glass-edge);
+  box-shadow:var(--glass-lens-shadow);
+}
+.island[data-material="glass"].compact .compact-privacy .compact-mic { color:var(--success); }
+.island[data-material="glass"].compact .compact-privacy .compact-camera { color:#4b91d5; }
+.island.light[data-material="glass"].compact .compact-privacy .compact-camera { color:#286eb6; }

@@ -1,4 +1,5 @@
 pub mod agent_library;
+pub mod meeting_audio;
 pub mod privacy;
 pub mod screen_ocr;
 pub mod screen_overlay;
@@ -8,6 +9,7 @@ pub mod secrets;
 pub mod shell;
 pub mod speech;
 pub mod startup;
+pub mod text_expander;
 pub mod tray;
 pub mod wake_word;
 

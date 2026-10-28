@@ -1,13 +1,21 @@
+import { GlassSettings, glassStyle, useGlassTheme } from './glass-theme.jsx';
+import { PlaybackSymbol } from './playback-symbol.jsx';
+import { MediaDial } from './media-dial.jsx';
+import { installUiSounds, setUiSoundsEnabled, readUiSoundsEnabled } from './ui-sounds.js';
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createPortal } from 'react-dom';
 import { PageBoundary } from './page-boundary.jsx';
 import { WakeEyes } from './wake-eyes.jsx';
+import { SplitRange } from './split-range.jsx';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { compactStatusLanes, compactStatusModules, defaultCompactStatusOrder, normalizeCompactStatusOrder, resolveCompactStatus } from './compact-status.js';
+import { visibleInterval } from './visible-interval.js';
+import { findReminderInNote, parseReminderSentence } from './reminder-sentence.js';
 import { AgentSettings, AgentsWorkspace, readAgentPreferences, saveAgentPreferences, defaultAskInstructions } from './agents-ui.jsx';
 import { SettingsDisclosure, HomeActionSettings, PrioritySettings } from './settings-controls.jsx';
 import { ConversionWorkspace, readConversionDefaults, saveConversionDefaults } from './conversion-ui.jsx';
+import { MeetingCaptureController, MeetingsWorkspace } from './meetings-ui.jsx';
 import { Home01Icon, ClipboardIcon, InboxIcon, TextFontIcon, BotIcon, SlidersHorizontalIcon,
   NotebookTextIcon, CloudIcon, Settings02Icon, PinIcon, VolumeHighIcon, PlayIcon,
   PauseIcon, NextIcon, PreviousIcon, Add01Icon, CopyIcon, TrashIcon, RefreshCwIcon,
@@ -22,13 +30,14 @@ import { Home01Icon, ClipboardIcon, InboxIcon, TextFontIcon, BotIcon, SlidersHor
   ColorPickerIcon, CommandIcon, AlarmClockIcon, File01Icon, File02Icon,
   Image01Icon, Video01Icon, FileAudioIcon, FileArchiveIcon, FileCodeIcon,
   FileTextIcon, Folder01Icon, Pdf01Icon, ComputerIcon, SignatureIcon,
-  Download01Icon, ListMusicIcon, SendIcon, ClipboardPasteIcon } from '@hugeicons/core-free-icons';
+  Download01Icon, ListMusicIcon, SendIcon, ClipboardPasteIcon, AudioWaveformIcon, StopIcon } from '@hugeicons/core-free-icons';
 
 const initial = {
-  page: 'Home', dark: true, accentGradient: 'lime', mediaCardStyle: 'standard', expanded: false, pinned: false, status: '', modules: {}, activity: '', clipboard: [], shelf: [],
-  text: '', note: '', weatherCity: '', weatherLines: [], weatherLoading: false,
+  page: 'Home', dark: true, accentGradient: 'lime', mediaCardStyle: 'backdrop', expanded: false, pinned: false, status: '', modules: {}, activity: '', clipboard: [], shelf: [],
+  text: '', note: '', noteQuickReminders: [], weatherCity: '', weatherLines: [], weatherLoading: false,
   wakeWord: { status: 'off', phrase: 'Hey Island', revision: 0, local: true },
   outputDevices: [], selectedOutputDeviceId: null, defaultOutputDeviceId: null, commandResult: null, commandError: null,
+  meetings: { sessions: [], source: 'microphone', active: false },
 };
 
 function send(kind, data = {}) {
@@ -47,14 +56,16 @@ function mergeMedia(previous, incoming) {
   };
 }
 
-const pages = ['Home', 'Clipboard', 'Shelf', 'Convert', 'Text', 'Agents', 'Ask', 'Note', 'Weather', 'Controls'];
-const accentGradients = [['lime', 'Lime'], ['ice', 'Ice'], ['rose', 'Rose'], ['violet', 'Violet']];
+const pages = ['Home', 'Clipboard', 'Shelf', 'Convert', 'Text', 'Agents', 'Ask', 'Note', 'Weather', 'Controls', 'Meetings', 'Expand'];
+const accentGradients = [['lime', 'Lime'], ['ice', 'Ice'], ['violet', 'Violet'], ['mint', 'Mint'], ['honey', 'Honey'], ['ruby', 'Ruby'], ['cobalt', 'Cobalt'], ['slate', 'Slate']];
 const isEditor = element => element?.matches?.('input, textarea, [contenteditable="true"]');
 const icons = {
   Home: Home01Icon, Clipboard: ClipboardIcon, Shelf: InboxIcon, Convert: File01Icon, Text: TextFontIcon,
   VoiceWake: RecordIcon, Question: NoteEditIcon, Ask: Mic01Icon, Agents: CodeCircleIcon, Bot: BotIcon, Note: NotebookTextIcon, Weather: CloudIcon,
   Controls: SlidersHorizontalIcon, Settings: Settings02Icon, Pin: PinIcon,
-  Volume: VolumeHighIcon, Play: PlayIcon, Pause: PauseIcon, Next: NextIcon,
+  Meetings: AudioWaveformIcon,
+  Expand: ClipboardPasteIcon,
+  Volume: VolumeHighIcon, Play: PlayIcon, Pause: PauseIcon, Stop: StopIcon, Next: NextIcon,
   Previous: PreviousIcon, Add: Add01Icon, Copy: CopyIcon, Trash: TrashIcon,
   Refresh: RefreshCwIcon, Wifi: Wifi02Icon, Bluetooth: BluetoothIcon,
   Moon: Moon01Icon, Battery: BatteryIcon, Clock: Time01Icon, Mic: Mic01Icon, Camera: Camera01Icon,
@@ -440,6 +451,8 @@ function CompactTransition(props) {
   const [contextPresent, setContextPresent] = useState(false);
   const contextTimer = useRef(null);
   const leaveTimer = useRef(null);
+  const compactRef = useRef(null);
+  const [contextFits, setContextFits] = useState(false);
   const swipe = useRef(null);
   const suppressPillClick = useRef(false);
   const canSuggest = !!state.shellSettings?.openOnClick && props.contextTools?.length > 0
@@ -492,6 +505,19 @@ function CompactTransition(props) {
     return () => clearTimeout(timer);
   }, [handoff.identity, !!handoff.previous, reduced, state.compactFaded]);
   const privacyCount = Number(!!state.microphone) + Number(!!state.camera);
+  const privacySpace = privacyCount ? privacyCount * 21 + (privacyCount - 1) * 3 + 8 : 0;
+  useLayoutEffect(() => {
+    const root = compactRef.current;
+    if (!root || !contextPresent || !canSuggest) { setContextFits(false); return; }
+    // Native width uses this same budget plus its 16pt child inset. Wait for
+    // the growing viewport before revealing buttons at the rounded edges.
+    const required = 24 + 16 + 68 + props.contextTools.length * 27 + privacySpace;
+    const measure = () => setContextFits(root.clientWidth >= required - 1);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(root);
+    return () => observer.disconnect();
+  }, [contextPresent, canSuggest, props.contextTools?.length, privacySpace]);
   const startContextReveal = () => {
     if (!canSuggest) return;
     window.clearTimeout(leaveTimer.current);
@@ -526,12 +552,12 @@ function CompactTransition(props) {
     if (swipe.current?.opened) window.setTimeout(() => { suppressPillClick.current = false; }, 0);
     swipe.current = null;
   };
-  const contextRail = contextPresent && canSuggest && <div className={'compact-context-rail' + (!contextVisible ? ' is-leaving' : '')} inert={!contextVisible} aria-hidden={!contextVisible} role="toolbar" aria-label={`${state.foregroundApp.name} tools`}>
+  const contextRail = contextPresent && canSuggest && <div data-ready={contextFits} className={'compact-context-rail' + (!contextVisible ? ' is-leaving' : '')} inert={!contextVisible || !contextFits} aria-hidden={!contextVisible || !contextFits} role="toolbar" aria-label={`${state.foregroundApp.name} tools`}>
     <button type="button" className="compact-context-app" title="Open Home" onClick={() => send('compactOpen', { page: 'Home' })}>{state.foregroundApp.name}</button>
     {props.contextTools.map(action => <button type="button" key={action.id} title={action.detail} aria-label={`${action.label}: ${action.detail}`} onClick={event => { event.stopPropagation(); setContextOpen(false); props.onRunContextTool(action.id); }}><Icon name={action.icon} size={16} /></button>)}
   </div>;
-  return <div className={'compact-transition' + (handoff.returning ? ' is-returning' : '') + (contextOpen && canSuggest ? ' is-context-open' : '')}
-    style={{ '--compact-privacy-space': `${privacyCount ? privacyCount * 21 + (privacyCount - 1) * 3 + 8 : 0}px` }}
+  return <div ref={compactRef} className={'compact-transition' + (handoff.returning ? ' is-returning' : '') + (contextVisible && contextFits ? ' is-context-open' : '')}
+    style={{ '--compact-privacy-space': `${privacySpace}px` }}
     onPointerEnter={() => { send('compactPointer', { inside: true }); startContextReveal(); }}
     onPointerLeave={() => { send('compactPointer', { inside: false }); closeContextReveal(); }}
     onPointerDown={onContextPointerDown} onPointerMove={onContextPointerMove} onPointerUp={onContextPointerUp} onPointerCancel={onContextPointerUp}
@@ -591,8 +617,8 @@ function CompactPill({ state, compactStatus, screenRecordingAt, screenRecordingE
       : update ? <><span className="compact-update-mark"><Icon name="Refresh" size={14} /></span><span className="compact-update-name" title={`${update.label} ${update.version}`}><strong>{update.label} update</strong></span><span className="compact-update-action">{update.busy ? 'Later' : 'Update'}</span></>
       : media ? <><span className="compact-artwork">{media.artwork ? <img src={media.artwork} alt="" draggable="false" /> : <Icon name="Play" size={14} />}</span><span className="compact-media-name" title={media.title || media.artist || 'Playing'}>{media.title || media.artist || 'Playing'}</span><span className="compact-wave" aria-hidden="true">{[.48, .82, 1, .65, .94, .55].map((weight, index) => <i key={index} style={{ '--weight': weight }} />)}</span></>
       : activeRuns ? <><span className="compact-agent-mark"><Icon name={activeSession?.provider === 'codex' ? 'Agents' : 'Terminal'} size={14} /></span><span className="compact-agent-label" title={agentLabel}><strong>{agentLabel}</strong></span>{otherAgentCount + childAgentCount > 0 && <span className="compact-agent-children" aria-label={`${otherAgentCount} other tasks, ${childAgentCount} child agents`}>+{otherAgentCount + childAgentCount}</span>}<span className="compact-agent-bars" aria-hidden="true"><i /><i /><i /></span></>
-      : rain ? <><span className="compact-weather-mark">{weatherGlyph(61, 17)}</span><span className="compact-weather-copy"><strong>{rain.active ? 'Rain now' : 'Rain expected'}</strong><small>{rain.active ? 'In the forecast' : forecastClock(rain.time)}{rain.probability == null ? '' : ` · ${rain.probability}%`}</small></span></>
-      : <><span className="compact-idle-leading">{batteryView.side === 'left' && battery}<strong className="compact-clock">{state.clockEnabled ? state.clockLabel : state.status || 'Island'}</strong></span><span className="compact-idle-trailing">{batteryView.side !== 'left' && battery}</span></>}
+      : rain ? <><span className="compact-weather-mark">{weatherGlyph(61, 17)}</span><span className="compact-weather-copy"><strong>{rain.active ? 'Rain' : 'Rain soon'}</strong><small>{rain.active ? (rain.probability == null ? '' : `${rain.probability}%`) : forecastClock(rain.time)}</small></span></>
+      : <><span className="compact-idle-leading">{batteryView.side === 'left' && battery}<strong className="compact-clock">{state.clockEnabled ? (state.clockLabel || state.status || 'Pluto') : state.status || 'Pluto'}</strong></span><span className="compact-idle-trailing">{batteryView.side !== 'left' && battery}</span></>}
   </div>;
 }
 
@@ -1201,7 +1227,11 @@ function SettingsCard({ icon, title, detail, children, className = '' }) {
   return <section className={'settings-card ' + className}><div className="settings-card-heading"><Icon name={icon} size={17} /><div><strong>{title}</strong></div></div>{children}</section>;
 }
 
-function SettingsPanel({ state, batteryView, setBatteryView, accentGradient, setAccentGradient, mediaCardStyle, setMediaCardStyle, homeActions, setHomeActions, compactPriorityOrder, setCompactPriorityOrder, section, setSection, sectionScrollPositions }) {
+function UiSoundToggle() {
+  const [enabled, setEnabled] = useState(readUiSoundsEnabled);
+  return <SettingsToggle label="UI sounds" value={enabled} onChange={() => { setUiSoundsEnabled(!enabled); setEnabled(!enabled); }} />;
+}
+function SettingsPanel({ material, updateMaterial, state, batteryView, setBatteryView, accentGradient, setAccentGradient, mediaCardStyle, setMediaCardStyle, homeActions, setHomeActions, compactPriorityOrder, setCompactPriorityOrder, section, setSection, sectionScrollPositions }) {
   const speech = state.speechSettings || {};
   const [voicePreferences, setVoicePreferences] = useState(readAgentPreferences);
   const changeVoicePreference = patch => { const next = { ...readAgentPreferences(), ...patch }; setVoicePreferences(next); saveAgentPreferences(next); };
@@ -1210,9 +1240,13 @@ function SettingsPanel({ state, batteryView, setBatteryView, accentGradient, set
   const wake = state.wakeWord || {};
   const wakeOn = ['arming', 'listening', 'triggered', 'paused'].includes(wake.status);
   const conversion = state.conversion || {};
+  const meetings = state.meetings || {};
   const [conversionDefaults, setConversionDefaults] = useState(readConversionDefaults);
   const [confirmEngineRemoval, setConfirmEngineRemoval] = useState(false);
   const [conversionEditor, setConversionEditor] = useState('engine');
+  const [meetingEditor, setMeetingEditor] = useState('runtime');
+  const [confirmMeetingRuntimeRemoval, setConfirmMeetingRuntimeRemoval] = useState(false);
+  const [confirmMeetingModelRemoval, setConfirmMeetingModelRemoval] = useState(false);
   const [speechEditor, setSpeechEditor] = useState('provider');
   const updateConversionDefaults = patch => setConversionDefaults(previous => {
     const next = { ...previous, ...patch }; saveConversionDefaults(next); return next;
@@ -1307,6 +1341,7 @@ function SettingsPanel({ state, batteryView, setBatteryView, accentGradient, set
     ['voice', 'VoiceWake', 'Voice'],
     ['ask', 'Question', 'Ask'],
     ['conversion', 'File', 'Conversion'],
+    ['meetings', 'Meetings', 'Meetings'],
   ];
   return <section className={'settings-page ' + (section === 'agents' && agentSettingsDetail ? 'is-agent-detail' : '')} aria-label="Island settings">
     <div className={'settings-workspace ' + (section === 'agents' && agentSettingsDetail ? 'is-agent-detail' : '')}>
@@ -1315,8 +1350,10 @@ function SettingsPanel({ state, batteryView, setBatteryView, accentGradient, set
         {section === 'general' && <>
           <div className="settings-grid">
             <SettingsCard icon="Power" title="Startup" detail="Open Island when you sign in."><SettingsToggle label="Start with Windows" value={!!state.startup?.enabled} disabled={!state.startup?.canChange || state.startup?.busy} onChange={() => send('startupSet', { enabled: !state.startup?.enabled })} /><div className="settings-save-row"><span>{state.startup?.description || 'Checking startup state…'}</span><button type="button" className="settings-inline-action" disabled={state.startup?.busy} onClick={() => send('startupSet')}>Check</button></div></SettingsCard>
-            <SettingsCard icon="Moon" title="Appearance" detail="Theme and accent." className="settings-card-appearance"><SettingsSegments className="settings-appearance-segments" value={state.dark ? 'dark' : 'light'} options={ [['dark', 'Dark'], ['light', 'Light']] } onChange={value => { if (state.dark !== (value === 'dark')) send('themeToggle'); }} /><div className="settings-accent-choice"><span>Accent gradient</span><div role="group" aria-label="Accent gradient">{accentGradients.map(([id, label]) => <button type="button" key={id} className={'accent-swatch accent-' + id} aria-label={label} aria-pressed={accentGradient === id} title={label} onClick={() => setAccentGradient(id)}><i aria-hidden="true" />{accentGradient === id && <Icon name="Check" size={12} />}</button>)}</div></div></SettingsCard>
-            <SettingsCard icon="Play" title="Media card" className="settings-card-media"><SettingsSegments value={mediaCardStyle} options={ [['standard', 'Standard'], ['backdrop', 'Artwork'], ['studio', 'Studio']] } onChange={setMediaCardStyle} /></SettingsCard>
+            <SettingsCard icon="Refresh" title="Updates" detail={`Pluto ${state.appUpdate?.installedVersion || ''}`}><p className="settings-note" role="status">{state.appUpdate?.notice || 'Check for a signed Pluto release.'}</p><div className="settings-engine-actions"><button type="button" disabled={state.appUpdate?.checking || state.appUpdate?.downloading} onClick={() => send('appUpdateCheck')}>{state.appUpdate?.checking ? 'Checking…' : 'Check for updates'}</button>{state.appUpdate?.available && state.appUpdate?.canInstall && <button type="button" className="settings-inline-action" disabled={state.appUpdate?.downloading || state.appUpdate?.checking} onClick={() => send('appUpdateInstall')}>{state.appUpdate?.downloading ? 'Verifying…' : `Install ${state.appUpdate.latestVersion}`}</button>}</div></SettingsCard>
+            <SettingsCard icon="Moon" title="Appearance" detail="Theme and accent." className="settings-card-appearance"><SettingsSegments className="settings-appearance-segments" value={state.dark ? 'dark' : 'light'} options={ [['dark', 'Dark'], ['light', 'Light']] } onChange={value => { if (state.dark !== (value === 'dark')) send('themeToggle'); }} /><div className="settings-accent-choice"><span>Accent gradient</span><div role="group" aria-label="Accent gradient">{accentGradients.map(([id, label]) => <button type="button" key={id} className={'accent-swatch accent-' + id} aria-label={label} aria-pressed={accentGradient === id} title={label} onClick={() => setAccentGradient(id)}><i aria-hidden="true" />{accentGradient === id && <Icon name="Check" size={12} />}</button>)}</div></div><GlassSettings Toggle={SettingsToggle} material={material} updateMaterial={updateMaterial}/></SettingsCard>
+            <SettingsCard icon="Play" title="Media card" className="settings-card-media"><SettingsSegments value={mediaCardStyle} options={ [['standard', 'Standard'], ['backdrop', 'Artwork'], ['studio', 'Editorial'], ['segments', 'Segments'], ['halo', 'Halo'], ['mosaic', 'Mosaic']] } onChange={setMediaCardStyle} /></SettingsCard>
+            <SettingsCard icon="Expand" title="Text expander" detail="Insert saved text with a short shortcut."><SettingsToggle label="Enable everywhere" value={!!state.textExpander?.enabled} onChange={() => send('textExpanderSet', { enabled: !state.textExpander?.enabled })} /><p className="settings-note">Shortcuts are stored on this PC. Do not save passwords or secrets.</p></SettingsCard>
             <SettingsCard icon="Settings" title="Island behavior" detail="Shape and privacy controls." className="settings-card-wide"><div className="settings-line"><span>Shape</span><SettingsSegments value={shell.shape || 'notch'} options={ [['notch', 'Notch'], ['capsule', 'Capsule']] } onChange={value => send('shellSetting', { key: 'shape', value })} /></div><SettingsToggle label="Privacy indicators" value={!!shell.privacy} onChange={() => send('shellSetting', { key: 'privacy', value: !shell.privacy })} /><SettingsToggle label="Hide during full screen" value={!!shell.hideFullscreen} onChange={() => send('shellSetting', { key: 'hideFullscreen', value: !shell.hideFullscreen })} /><div className="settings-capture-setting"><SettingsToggle label="Exclude Island from screen capture" value={!!shell.excludeFromScreenCapture} disabled={!shell.screenCaptureExclusionSupported} onChange={() => send('shellSetting', { key: 'excludeFromScreenCapture', value: !shell.excludeFromScreenCapture })} /><p className="settings-note">{shell.screenCaptureExclusionSupported ? 'Keeps Island visible on your display while omitting its window from supported capture APIs. Capture behavior varies by app.' : 'Requires Windows 10 version 2004 or later.'}</p></div></SettingsCard>
           </div>
         </>}
@@ -1329,7 +1366,7 @@ function SettingsPanel({ state, batteryView, setBatteryView, accentGradient, set
         {section === 'priority' && <PrioritySettings order={compactPriorityOrder} onChange={setCompactPriorityOrder} modules={compactStatusModules} lanes={compactStatusLanes} Icon={Icon} />}
         {section === 'behavior' && <>
           <div className="settings-grid">
-            <SettingsCard icon="Loading" title="Motion" detail="Keep transitions quick and comfortable." className="settings-card-wide"><SettingsToggle label="Reduce motion" value={!!shell.reducedMotion} onChange={() => send('shellSetting', { key: 'reducedMotion', value: !shell.reducedMotion })} />
+            <SettingsCard icon="Loading" title="Motion" detail="Keep transitions quick and comfortable." className="settings-card-wide"><UiSoundToggle /> <SettingsToggle label="Reduce motion" value={!!shell.reducedMotion} onChange={() => send('shellSetting', { key: 'reducedMotion', value: !shell.reducedMotion })} />
               <div className="settings-choice"><span>Open notch on</span><SettingsSegments value={shell.openOnClick ? 'click' : 'hover'} options={ [['hover', 'Hover'], ['click', 'Click']] } onChange={value => send('shellSetting', { key: 'openOnClick', value: value === 'click' })} /></div>
               {shell.openOnClick && <div className="settings-choice"><span>Close notch on</span><SettingsSegments value={shell.closeOnOutsideClick ? 'outside' : 'leave'} options={ [['leave', 'Auto close'], ['outside', 'Click outside']] } onChange={value => send('shellSetting', { key: 'closeOnOutsideClick', value: value === 'outside' })} /></div>}
               {!shell.openOnClick && <div className="settings-choice"><span>Open after hover</span><SettingsSegments value={shell.hoverOpen ?? 200} options={ [[0, 'Instant'], [100, '100 ms'], [200, '200 ms'], [350, '350 ms']] } onChange={value => send('shellSetting', { key: 'hoverOpen', value })} /></div>}
@@ -1340,9 +1377,9 @@ function SettingsPanel({ state, batteryView, setBatteryView, accentGradient, set
         </>}
         {section === 'tools' && <>
           <div className="settings-grid">
-            <SettingsCard icon="Clipboard" title="Clipboard" detail="History stays on this PC until Island closes."><SettingsToggle label="Capture copied text" value={!!state.clipboardCaptureEnabled} onChange={() => send('clipboardSetting', { captureEnabled: !state.clipboardCaptureEnabled })} /><div className="settings-setting-row settings-history-row"><span>History limit</span><SettingsSegments className="settings-history-segments" value={state.clipboardHistoryLimit || 200} options={ [[50, '50'], [200, '200'], [500, '500'], [1000, '1000']] } onChange={value => send('clipboardSetting', { historyLimit: value })} /></div><button type="button" className="settings-inline-action" onClick={() => send('clipboardClear')}>Clear history</button></SettingsCard>
+            <SettingsCard icon="Clipboard" title="Clipboard" detail="History stays on this PC until Island closes."><SettingsToggle label="Capture copied text, images, and audio" value={!!state.clipboardCaptureEnabled} onChange={() => send('clipboardSetting', { captureEnabled: !state.clipboardCaptureEnabled })} /><div className="settings-setting-row settings-history-row"><span>Text history limit</span><SettingsSegments className="settings-history-segments" value={state.clipboardHistoryLimit || 50} options={ [[50, '50'], [200, '200'], [500, '500'], [1000, '1000']] } onChange={value => send('clipboardSetting', { historyLimit: value })} /></div><button type="button" className="settings-inline-action" onClick={() => send('clipboardClear')}>Clear history</button></SettingsCard>
             <SettingsCard icon="Weather" title="Weather" detail="Forecast units for your saved place."><div className="settings-setting-row settings-weather-units-row"><span>Units</span><SettingsSegments className="settings-weather-units" value={state.weatherUnits || 'metric'} options={ [['metric', '°C · m/s'], ['imperial', '°F · mph']] } onChange={value => send('weatherUnitsSet', { units: value })} /></div><div className="settings-setting-row"><span>Place</span><strong className="settings-value">{state.weatherCity || 'Choose on Weather page'}</strong></div></SettingsCard>
-            <SettingsCard icon="Home" title="Pages" detail="Choose which tools appear in navigation." className="settings-card-wide"><div className="settings-page-toggles">{[['clipboard', 'Clipboard'], ['shelf', 'Shelf'], ['convert', 'Convert'], ['text', 'Text'], ['agents', 'Agents'], ['note', 'Note'], ['weather', 'Weather'], ['controls', 'Controls']].map(([id, label]) => <SettingsToggle key={id} label={label} value={state.modules?.[id] !== false} onChange={() => send('moduleSetting', { module: id, enabled: state.modules?.[id] === false })} />)}</div></SettingsCard>
+            <SettingsCard icon="Home" title="Pages" detail="Choose which tools appear in navigation." className="settings-card-wide"><div className="settings-page-toggles">{[['clipboard', 'Clipboard'], ['shelf', 'Shelf'], ['convert', 'Convert'], ['text', 'Text'], ['agents', 'Agents'], ['note', 'Note'], ['weather', 'Weather'], ['controls', 'Controls'], ['meetings', 'Meetings'], ['expand', 'Expand']].map(([id, label]) => <SettingsToggle key={id} label={label} value={state.modules?.[id] !== false} disabled={id === 'meetings' && !!state.meetings?.active} onChange={() => send('moduleSetting', { module: id, enabled: state.modules?.[id] === false })} />)}</div></SettingsCard>
           </div>
         </>}
         {section === 'quick-actions' && <HomeActionSettings actions={homeActions} onChange={setHomeActions} catalog={homeActionCatalog} Icon={Icon} />}
@@ -1372,9 +1409,45 @@ function SettingsPanel({ state, batteryView, setBatteryView, accentGradient, set
           </SettingsDisclosure>
           <SettingsDisclosure id="images" icon="Image" title="Image defaults" summary={`${conversionDefaults.format.toUpperCase()} · ${conversionDefaults.quality}%`} active={conversionEditor} onOpen={setConversionEditor} Icon={Icon}>
             <div className="settings-conversion-field"><span>Format</span><SettingsSegments value={conversionDefaults.format} options={ [['png', 'PNG'], ['jpg', 'JPEG'], ['webp', 'WebP'], ['bmp', 'BMP'], ['tiff', 'TIFF'], ['gif', 'GIF']] } onChange={format => updateConversionDefaults({ format })} /></div>
-            <div className="settings-conversion-field"><label htmlFor="conversion-default-quality">JPEG quality</label><div className="settings-conversion-range"><input id="conversion-default-quality" type="range" min="35" max="100" value={conversionDefaults.quality} onChange={event => updateConversionDefaults({ quality: +event.target.value })} /><span>{conversionDefaults.quality}%</span></div></div>
+            <div className="settings-conversion-field"><label htmlFor="conversion-default-quality">JPEG quality</label><div className="settings-conversion-range"><SplitRange id="conversion-default-quality" label="QUALITY" min={35} max={100} value={conversionDefaults.quality} onChange={event => updateConversionDefaults({ quality: +event.target.value })} /></div></div>
           </SettingsDisclosure>
           <SettingsDisclosure id="limit" icon="File" title="Optional size limit" summary={`${conversionDefaults.limit} ${conversionDefaults.unit} · Fit size only`} active={conversionEditor} onOpen={setConversionEditor} Icon={Icon}><div className="settings-conversion-field"><label htmlFor="conversion-default-limit">Starting limit</label><div className="settings-conversion-input"><input id="conversion-default-limit" type="number" min={conversionDefaults.unit === 'MB' ? '.01' : '1'} max="100000" step={conversionDefaults.unit === 'MB' ? '.01' : '1'} value={conversionDefaults.limit} onChange={event => updateConversionDefaults({ limit: Math.max(conversionDefaults.unit === 'MB' ? .01 : 1, Math.min(100000, +event.target.value || 1)) })} /><SettingsSegments value={conversionDefaults.unit} options={ [['KB', 'KB'], ['MB', 'MB']] } onChange={unit => updateConversionDefaults({ unit, limit: unit === 'KB' ? Math.round(conversionDefaults.limit * 1000) : Math.round(conversionDefaults.limit / 10) / 100 })} /></div><small>Applies only when you choose Fit size for a batch.</small></div></SettingsDisclosure>
+        </div>}
+        {section === 'meetings' && <div className="meeting-settings-grid">
+          <SettingsDisclosure id="runtime" icon="Download" title="Local speech runtime" summary={meetings.engineBusy ? meetings.phase || 'Installing…' : meetings.engineInstalled ? meetings.engineVersion || 'Installed' : 'Not installed'} active={meetingEditor} onOpen={setMeetingEditor} Icon={Icon}>
+            <div className="meeting-manager-status"><i className={meetings.engineInstalled ? 'is-ready' : ''} /><div><strong>{meetings.engineInstalled ? 'NeMo-Speech.cpp is ready' : 'Optional CPU runtime'}</strong><small>{meetings.engineInstalled ? 'Managed inside Pluto app data · no PATH changes' : 'Installed only when you request it · no background service'}</small></div></div>
+            {meetings.engineInstalled && <div className="settings-engine-version"><span>Installed <strong>{meetings.engineVersion || 'Unknown'}</strong></span><span>Latest stable <strong>{meetings.engineBusy ? 'Checking…' : meetings.availableVersion || 'Not checked'}</strong></span>{meetings.updateAvailable && <b>Update ready</b>}</div>}
+            <div className="meeting-manager-actions">
+              {!meetings.engineInstalled && <button type="button" className="primary" disabled={meetings.engineBusy || meetings.checkingUpdate || meetings.modelBusy || meetings.active} onClick={() => { setConfirmMeetingRuntimeRemoval(false); send('meetingEngineInstall'); }}>Install runtime</button>}
+              {meetings.engineInstalled && meetings.updateAvailable && <button type="button" className="primary" disabled={meetings.engineBusy || meetings.checkingUpdate || meetings.modelBusy || meetings.active} onClick={() => { setConfirmMeetingRuntimeRemoval(false); send('meetingEngineInstall'); }}>Update runtime</button>}
+              <button type="button" disabled={meetings.engineBusy || meetings.checkingUpdate || meetings.modelBusy || meetings.active} onClick={() => send('meetingEngineCheckUpdate')}>{meetings.checkingUpdate ? 'Checking…' : 'Check for updates'}</button>
+            </div>
+            <details className="settings-engine-maintenance"><summary>Manage installation</summary><div className="meeting-manager-actions">
+              {meetings.engineInstalled && <button type="button" disabled={meetings.engineBusy || meetings.modelBusy || meetings.active} onClick={() => send('meetingEngineInstall')}>Reinstall latest</button>}
+              {meetings.engineInstalled && <button type="button" className={confirmMeetingRuntimeRemoval ? 'is-armed' : ''} disabled={meetings.engineBusy || meetings.modelBusy || meetings.active} onClick={() => { if (confirmMeetingRuntimeRemoval) { send('meetingEngineRemove'); setConfirmMeetingRuntimeRemoval(false); } else setConfirmMeetingRuntimeRemoval(true); }}>{confirmMeetingRuntimeRemoval ? 'Confirm remove' : 'Remove runtime'}</button>}
+            </div></details>
+            {meetings.engineBusy && <div className="meeting-engine-progress" role="status"><div><span>{meetings.phase || 'Preparing download'}</span><strong>Working…</strong></div><div className="meeting-engine-progress-track"><i /></div></div>}
+            <p className="settings-note" role="status">{meetings.notice || 'NeMo-Speech.cpp is Apache-2.0. The official stable release is downloaded only on request, checked against its published SHA-256, and installed per user. No PATH changes or background service are used.'}</p>
+          </SettingsDisclosure>
+          <SettingsDisclosure id="model" icon="Audio" title="Streaming speech model" summary={meetings.modelBusy ? meetings.phase || 'Downloading…' : meetings.modelInstalled ? `${(meetings.modelBytes / 1e9).toFixed(1)} GB · ready` : 'Not downloaded'} active={meetingEditor} onOpen={setMeetingEditor} Icon={Icon}>
+            <div className="meeting-manager-status"><i className={meetings.modelInstalled ? 'is-ready' : ''} /><div><strong>Nemotron 3.5 ASR Streaming · 0.6B Q8</strong><small>{meetings.modelInstalled ? `Local model cache · ${(meetings.modelBytes / 1e9).toFixed(2)} GB` : 'Separate from the runtime · downloaded only on request'}</small></div></div>
+            <div className="meeting-manager-actions">
+              {!meetings.modelInstalled && <button type="button" className="primary" disabled={!meetings.engineInstalled || meetings.modelBusy || meetings.engineBusy || meetings.active} onClick={() => { setConfirmMeetingModelRemoval(false); send('meetingModelInstall'); }}>{meetings.engineInstalled ? 'Download model' : 'Install runtime first'}</button>}
+              {meetings.modelInstalled && <button type="button" className="primary" disabled={meetings.modelBusy || meetings.engineBusy || meetings.checkingUpdate || meetings.active} onClick={() => { setConfirmMeetingModelRemoval(false); send('meetingModelInstall'); }}>Verify / refresh model</button>}
+              {meetings.modelInstalled && <button type="button" className={confirmMeetingModelRemoval ? 'is-armed' : ''} disabled={meetings.modelBusy || meetings.engineBusy || meetings.checkingUpdate || meetings.active} onClick={() => { if (confirmMeetingModelRemoval) { send('meetingModelRemove'); setConfirmMeetingModelRemoval(false); } else setConfirmMeetingModelRemoval(true); }}>{confirmMeetingModelRemoval ? 'Confirm remove' : 'Remove model'}</button>}
+            </div>
+            {meetings.modelBusy && <div className="meeting-engine-progress" role="status"><div><span>{meetings.phase || 'Downloading and verifying model'}</span><strong>Working…</strong></div><div className="meeting-engine-progress-track"><i /></div></div>}
+            <p className="settings-note">Model terms: NVIDIA OpenMDW-1.1. Streaming ASR runs locally on CPU. The model lists Hindi among its supported languages; Malayalam is not listed. Published CPU performance figures are for a separate English model, so speed on this multilingual model depends on your laptop. The model is loaded for a meeting and released when you stop.</p>
+          </SettingsDisclosure>
+          <SettingsDisclosure id="language" icon="Text" title="Recognition language" summary={({ 'en-US': 'English · default', 'hi-IN': 'Hindi', auto: 'Auto detect' }[meetings.language] || 'English · default')} active={meetingEditor} onOpen={setMeetingEditor} Icon={Icon}>
+            <div className="meeting-source-picker"><span>Choose a preferred language</span><div role="group" aria-label="Meeting transcription language" className="meeting-source-options">{[['en-US', 'English'], ['hi-IN', 'Hindi'], ['auto', 'Auto']].map(([id, label]) => <button key={id} type="button" disabled={meetings.active} aria-pressed={(meetings.language || 'en-US') === id} className={(meetings.language || 'en-US') === id ? 'is-selected' : ''} onClick={() => send('meetingLanguageSet', { language: id })}>{label}</button>)}</div></div>
+            <p className="settings-note">English is selected by default. Choose Hindi for Hindi-led meetings, or Auto to let the multilingual model detect the language. Mixed English/Hindi speech can vary by speaker and recording conditions.</p>
+          </SettingsDisclosure>
+          <SettingsDisclosure id="microphone" icon="Mic" title="Meeting microphone" summary={`Sensitivity ${meetings.micSensitivity ?? 55}%`} active={meetingEditor} onOpen={setMeetingEditor} Icon={Icon}>
+            <div className="settings-conversion-field"><label htmlFor="meeting-mic-sensitivity">Mic sensitivity</label><div className="settings-conversion-range"><SplitRange id="meeting-mic-sensitivity" label="MIC" min={20} max={100} step={5} value={meetings.micSensitivity ?? 55} disabled={meetings.active} onChange={event => send('meetingMicSensitivitySet', { value: Number(event.target.value) })} /></div></div>
+            <p className="settings-note">Lower sensitivity filters quieter room audio, including some speaker bleed. It can also miss soft speech. For the cleanest Mic + system recording, use headphones; Pluto also removes clearly duplicated playback lines from the saved transcript.</p>
+          </SettingsDisclosure>
+          <p className="meeting-settings-note">Pluto stores finalized transcript text locally and does not save raw meeting audio. Runtime and model can be updated or removed here; deleting either keeps your meeting history.</p>
         </div>}
         {section === 'ask' && <SettingsCard icon="Ask" title="Ask answer style">
           <p className="settings-note">Guide the length, tone, and formatting of spoken answers. Conversation background stays in Ask → Context.</p>
@@ -1821,8 +1894,27 @@ const commandActions = [
   ['capture', 'Capture area', 'Capture'], ['ocr', 'Screen text', 'OCR'], ['qr', 'Scan QR code', 'Qr'],
   ['color', 'Pick color', 'ColorPicker'], ['record', 'Record screen', 'Record'], ['dictate', 'Voice to text', 'Mic'],
   ['Clipboard', 'Clipboard', 'Clipboard'], ['Shelf', 'Shelf', 'Shelf'], ['Note', 'Notes', 'Note'],
-  ['Text', 'Text tools', 'Text'], ['Weather', 'Weather', 'Weather'], ['Controls', 'Controls', 'Controls'], ['Agents', 'Agents', 'Agents'],
+  ['Text', 'Text tools', 'Text'], ['Expand', 'Text expander', 'Expand'], ['Weather', 'Weather', 'Weather'], ['Controls', 'Controls', 'Controls'], ['Agents', 'Agents', 'Agents'],
 ];
+
+function TextExpandPage({ state }) {
+  const [trigger, setTrigger] = useState('');
+  const [replacement, setReplacement] = useState('');
+  const [tab, setTab] = useState('create');
+  const settings = state.textExpander || { enabled: false, entries: [] };
+  const entries = settings.entries || [];
+  const duplicate = entries.some(entry => entry.trigger.toLowerCase() === trigger.trim().toLowerCase());
+  const valid = /^![a-z0-9]{1,23}$/i.test(trigger.trim()) && replacement.trim().length > 0 && replacement.length <= 2000 && !duplicate && entries.length < 100;
+  return <section className="expand-page note-workspace" data-layout-height={315}>
+    <div className="note-mode-switch" role="tablist" aria-label="Text expander"><button id="expand-create-tab" type="button" role="tab" aria-controls="expand-create-panel" aria-selected={tab === 'create'} className={tab === 'create' ? 'active' : ''} onClick={() => setTab('create')}>Create</button><button id="expand-saved-tab" type="button" role="tab" aria-controls="expand-saved-panel" aria-selected={tab === 'saved'} className={tab === 'saved' ? 'active' : ''} onClick={() => setTab('saved')}>Saved <span className="expand-count">{entries.length}</span></button></div>
+    <div className="note-status"><span>Text expander</span><small>{settings.enabled ? 'Enabled' : 'Off · turn on in Settings'}</small></div>
+    {tab === 'create' ? <form id="expand-create-panel" role="tabpanel" aria-labelledby="expand-create-tab" className="expand-create" onSubmit={event => { event.preventDefault(); if (!valid) return; send('textExpanderAdd', { trigger: trigger.trim(), replacement }); setTrigger(''); setReplacement(''); setTab('saved'); }}>
+      <div className="note-quick-reminder expand-shortcut"><Icon name="Expand" size={15} /><input aria-label="Shortcut" value={trigger} maxLength={24} placeholder="Shortcut · !AMN" spellCheck={false} onChange={event => setTrigger(event.target.value)} /><span>then Space</span></div>
+      <textarea className="note-editor expand-replacement" aria-label="Text to insert" value={replacement} maxLength={2000} placeholder="Text to insert…" onChange={event => setReplacement(event.target.value)} />
+      <div className="note-bottom expand-bottom"><small role="status">{duplicate ? 'This shortcut is already saved.' : trigger && !/^![a-z0-9]{1,23}$/i.test(trigger.trim()) ? 'Start with !, then use letters or numbers.' : entries.length >= 100 ? 'Shortcut limit reached.' : 'Type the shortcut and press Space to expand it.'}</small><span className="note-bottom-spacer" /><button className="expand-save" type="submit" disabled={!valid}>Save shortcut</button></div>
+    </form> : <div id="expand-saved-panel" role="tabpanel" aria-labelledby="expand-saved-tab" className="expand-saved note-quick-list">{entries.length ? entries.map((entry, index) => <article className="note-quick-item" key={`${entry.trigger}-${index}`}><span><strong>{entry.trigger}</strong><small title={entry.replacement}>{entry.replacement}</small></span><button className="note-tool expand-remove" type="button" title={`Remove ${entry.trigger}`} aria-label={`Remove ${entry.trigger}`} onClick={() => send('textExpanderRemove', { index })}><Icon name="Trash" size={15} /></button></article>) : <div className="expand-empty"><strong>No shortcuts saved</strong><button type="button" onClick={() => setTab('create')}>Create one</button></div>}</div>}
+  </section>;
+}
 
 function CommandPage({ query, setQuery, state, onClose, onRoute }) {
   const inputRef = useRef(null);
@@ -1881,7 +1973,7 @@ function CommandPage({ query, setQuery, state, onClose, onRoute }) {
 }
 
 // Playback interpolation belongs to the visible controls, not the whole app.
-function MediaTransport({ media, receivedAt }) {
+function MediaTransport({ media, receivedAt, variant }) {
   const [mediaClock, setMediaClock] = useState(() => performance.now());
   const [seekDraftMs, setSeekDraftMs] = useState(null);
   const seekPendingRef = useRef(null);
@@ -1930,16 +2022,24 @@ function MediaTransport({ media, receivedAt }) {
     seekPendingRef.current = null;
     setSeekDraftMs(null);
   }, [media?.position_ms]);
+  const playControl = media.can_toggle && <button type="button" className="media-play" aria-label={media.playing ? 'Pause' : 'Play'} onClick={() => send('mediaToggle')}><PlaybackSymbol playing={media.playing} /></button>;
+  if (variant !== 'studio') return <div className="media-dial-transport">
+    <MediaDial variant={variant} key={`${media.session_id}:${media.title}`} value={seekDraftMs ?? mediaPositionMs} duration={mediaDurationMs} disabled={!media.can_seek || !mediaDurationMs} onPreview={setSeekDraftMs} onCommit={mediaSeekTo}>{playControl}</MediaDial>
+    <div className="dial-track-controls">
+      {media.can_previous && <button type="button" aria-label="Previous track" onClick={() => send('mediaPrevious')}><Icon name="Previous" size={18}/></button>}
+      {media.can_next && <button type="button" aria-label="Next track" onClick={() => send('mediaNext')}><Icon name="Next" size={18}/></button>}
+    </div>
+  </div>;
   return <>
-                <div className="media-progress" aria-label="Playback timeline">
+                <div className="media-progress" aria-label="Playback timeline"><div className="media-seek-shell">
                   <input className="media-seek" type="range" min="0" max={mediaDurationMs || 1} step="500" aria-label="Seek in current media" disabled={!media.can_seek} value={seekDraftMs ?? mediaPositionMs} style={{ '--range-progress': `${mediaDurationMs ? Math.min(100, (seekDraftMs ?? mediaPositionMs) / mediaDurationMs * 100) : 0}%` }} onChange={event => setSeekDraftMs(Number(event.currentTarget.value))} onPointerUp={event => mediaSeekTo(Number(event.currentTarget.value))} onPointerCancel={event => mediaSeekTo(Number(event.currentTarget.value))} onKeyUp={event => mediaSeekTo(Number(event.currentTarget.value))} onBlur={event => { if (seekDraftMs != null) mediaSeekTo(Number(event.currentTarget.value)); }} />
-                  <div className="media-times"><small>{mediaTime(seekDraftMs ?? mediaPositionMs)}</small><small>{mediaTime(mediaDurationMs || null)}</small></div>
+                  </div>
                 </div>
                 <div className="media-controls">
                   <span className="media-control-side">{media.can_seek && <button type="button" aria-label="Back 10 seconds" title="Back 10 seconds" onClick={() => mediaSeekTo(mediaPositionMs - 10000)}><Icon name="Back10" size={18} /></button>}</span>
                   <span className="media-control-center">
                     {media.can_previous && <button type="button" aria-label="Previous track" title="Previous track" onClick={() => send('mediaPrevious')}><Icon name="Previous" size={18} /></button>}
-                    {media.can_toggle && <button type="button" className="media-play" aria-label={media.playing ? 'Pause' : 'Play'} title={media.playing ? 'Pause' : 'Play'} onClick={() => send('mediaToggle')}><Icon name={media.playing ? 'Pause' : 'Play'} size={18} /></button>}
+                    {media.can_toggle && <button type="button" className="media-play" aria-label={media.playing ? 'Pause' : 'Play'} title={media.playing ? 'Pause' : 'Play'} onClick={() => send('mediaToggle')}><PlaybackSymbol playing={media.playing} /></button>}
                     {media.can_next && <button type="button" aria-label="Next track" title="Next track" onClick={() => send('mediaNext')}><Icon name="Next" size={18} /></button>}
                   </span>
                   <span className="media-control-side">{media.can_seek && <button type="button" aria-label="Forward 10 seconds" title="Forward 10 seconds" onClick={() => mediaSeekTo(mediaPositionMs + 10000)}><Icon name="Forward10" size={18} /></button>}</span>
@@ -1948,6 +2048,15 @@ function MediaTransport({ media, receivedAt }) {
 }
 
 function App() {
+  const [material, updateMaterial] = useGlassTheme();
+  useEffect(() => {
+    const accessibility = matchMedia('(prefers-reduced-transparency: reduce), (prefers-contrast: more), (forced-colors: active)');
+    const sync = () => send('glassMaterial', { enabled: material.enabled && !accessibility.matches, motion: material.motion });
+    sync();
+    accessibility.addEventListener('change', sync);
+    return () => accessibility.removeEventListener('change', sync);
+  }, [material.enabled, material.motion]);
+  useEffect(() => installUiSounds(), []);
   const [state, setState] = useState(initial);
   const appearanceMigrationDone = useRef(false);
   useLayoutEffect(() => {
@@ -1973,6 +2082,18 @@ function App() {
     const timer = setTimeout(() => send('compactResync', { generation: state.compactRenderGeneration }), 750);
     return () => clearTimeout(timer);
   }, [state.expanded, state.compactFaded, state.compactRenderGeneration]);
+  useEffect(() => {
+    if (state.expanded) return;
+    const resync = () => {
+      if (document.visibilityState === 'visible') send('compactResync', { generation: state.compactRenderGeneration });
+    };
+    document.addEventListener('visibilitychange', resync);
+    window.addEventListener('pageshow', resync);
+    return () => {
+      document.removeEventListener('visibilitychange', resync);
+      window.removeEventListener('pageshow', resync);
+    };
+  }, [state.expanded, state.compactRenderGeneration]);
   const [selectedOpenCodeSession, setSelectedOpenCodeSession] = useState('');
   const [openCodeFolder, setOpenCodeFolder] = useState('');
   const [openCodePrompt, setOpenCodePrompt] = useState('');
@@ -1997,6 +2118,8 @@ function App() {
   const [shellPhase, setShellPhase] = useState('idle');
   const hasExpandedOnce = useRef(false);
 
+  const [failedMediaArtwork, setFailedMediaArtwork] = useState(null);
+  const mediaArtwork = state.media?.artwork && state.media.artwork !== failedMediaArtwork ? state.media.artwork : null;
   const displayPage = state.page;
   const accentGradient = accentGradients.some(([id]) => id === state.accentGradient) ? state.accentGradient : 'lime';
   const setAccentGradient = value => {
@@ -2005,14 +2128,20 @@ function App() {
     try { localStorage.setItem('island.accent-gradient', value); } catch {}
     send('appearanceSet', { accentGradient: value });
   };
-  const mediaCardStyle = ['backdrop', 'studio'].includes(state.mediaCardStyle) ? state.mediaCardStyle : 'standard';
+  const mediaCardStyle = ['standard', 'backdrop', 'studio', 'segments', 'halo', 'mosaic'].includes(state.mediaCardStyle) ? state.mediaCardStyle : 'backdrop';
   const setMediaCardStyle = value => {
-    if (!['standard', 'backdrop', 'studio'].includes(value)) return;
+    if (!['standard', 'backdrop', 'studio', 'segments', 'halo', 'mosaic'].includes(value)) return;
     setState(previous => ({ ...previous, mediaCardStyle: value }));
     send('appearanceSet', { mediaCardStyle: value });
   };
   const [text, setText] = useState('');
   const [note, setNote] = useState('');
+  const [reminderSentence, setReminderSentence] = useState('');
+  const parsedReminder = reminderSentence.trim()
+    ? parseReminderSentence(reminderSentence)
+    : findReminderInNote(note);
+  const reminderAlreadyAdded = !!parsedReminder && (state.noteQuickReminders ?? []).some(item => item.text === parsedReminder.text && item.at === parsedReminder.at);
+  const noteDraftRef = useRef({ value: '', pending: false });
   const [city, setCity] = useState('');
   const [noteClearArmed, setNoteClearArmed] = useState(false);
   const [clipboardQuery, setClipboardQuery] = useState('');
@@ -2201,8 +2330,7 @@ function App() {
   useEffect(() => () => clearTimeout(weatherTransitionTimerRef.current), []);
   useEffect(() => {
     if (!state.weatherData?.hourly?.time?.length) return undefined;
-    const timer = setInterval(() => setWeatherClockNow(Date.now()), 60_000);
-    return () => clearInterval(timer);
+    return visibleInterval(() => setWeatherClockNow(Date.now()), 60_000);
   }, [!!state.weatherData?.hourly?.time?.length, state.weatherData?.timezone]);
   useEffect(() => {
     const cityKey = state.weatherCity?.trim().toLocaleLowerCase() ?? '';
@@ -2229,7 +2357,7 @@ function App() {
   const volumeDraftRef = useRef(null);
   const volumeDraggingRef = useRef(false);
   const volumeTimerRef = useRef(null);
-  const volumeLastSentRef = useRef({ value: null, at: 0 });
+  const volumeSyncTimerRef = useRef(null);
   const navRef = useRef(null);
   const bodyRef = useRef(null);
   const layoutWideRef = useRef(null);
@@ -2242,14 +2370,18 @@ function App() {
   useEffect(() => {
     if (!screenRecordingAt) { setScreenRecordingElapsed(0); return undefined; }
     const update = () => setScreenRecordingElapsed(Math.max(0, Math.floor((Date.now() - screenRecordingAt) / 1000)));
-    update();
-    const timer = setInterval(update, 500);
-    return () => clearInterval(timer);
+    return visibleInterval(update, 1000);
   }, [screenRecordingAt]);
   useEffect(() => {
     let phaseTimer;
+    let receivedPage = initial.page;
     window.islandReceive = next => {
-      if (next.page === 'Convert') setSettingsOpen(false);
+      // A native route change can open Convert, but routine snapshots of an
+      // already-selected Convert page must not dismiss its Settings overlay.
+      if (typeof next.page === 'string') {
+        if (next.page === 'Convert' && receivedPage !== next.page) setSettingsOpen(false);
+        receivedPage = next.page;
+      }
       let update = next;
       if (!appearanceMigrationDone.current && typeof next.accentGradient === 'string') {
         appearanceMigrationDone.current = true;
@@ -2276,9 +2408,18 @@ function App() {
         setHomeActionsState(savedActions);
         try { localStorage.setItem('island.home-actions', JSON.stringify(savedActions)); } catch {}
       }
-      setText(next.text ?? '');
-      setNote(next.note ?? '');
-      if (next.weatherCity !== weatherCityRef.current) {
+      if (Object.prototype.hasOwnProperty.call(next, 'text')) setText(next.text ?? '');
+      if (Object.prototype.hasOwnProperty.call(next, 'note')) {
+        const incomingNote = typeof next.note === 'string' ? next.note : '';
+        const draft = noteDraftRef.current;
+        // Ignore older full-state snapshots until the debounced save echoes
+        // the most recent local edit back from the native shell.
+        if (!draft.pending || incomingNote === draft.value) {
+          noteDraftRef.current = { value: incomingNote, pending: false };
+          setNote(incomingNote);
+        }
+      }
+      if (Object.prototype.hasOwnProperty.call(next, 'weatherCity') && next.weatherCity !== weatherCityRef.current) {
         weatherCityRef.current = next.weatherCity ?? '';
         setCity(next.weatherCity ?? '');
       }
@@ -2370,11 +2511,11 @@ function App() {
   }, []);
   useEffect(() => {
     if (state.outputVolume == null || volumeDraggingRef.current) return;
-    const last = volumeLastSentRef.current;
-    // Ignore a queued pre-drag snapshot until the newest slider write lands.
-    if (last.value != null && performance.now() - last.at < 700 && last.value !== state.outputVolume) return;
-    volumeDraftRef.current = state.outputVolume;
-    setVolumeDraft(state.outputVolume);
+    if (volumeDraftRef.current === state.outputVolume) {
+      clearTimeout(volumeSyncTimerRef.current);
+      volumeDraftRef.current = null;
+      setVolumeDraft(null);
+    }
   }, [state.outputVolume]);
   useEffect(() => {
     if (!outputPickerOpen) return undefined;
@@ -2389,9 +2530,9 @@ function App() {
       window.removeEventListener('keydown', onKeyDown);
     };
   }, [outputPickerOpen]);
-  useEffect(() => () => { clearTimeout(volumeTimerRef.current); }, []);
+  useEffect(() => () => { clearTimeout(volumeTimerRef.current); clearTimeout(volumeSyncTimerRef.current); }, []);
   const page = state.page;
-  const nav = name => { if (name !== 'Note') setShowReminderCalendar(false); setSignOpen(false); setCommandOpen(false); setDictateOpen(false); setScreenSelection(null); setSettingsOpen(false); send('page', { page: name }); };
+  const nav = name => { if (name !== 'Note') setShowReminderCalendar(false); setSignOpen(false); setCommandOpen(false); setDictateOpen(false); setScreenSelection(null); setSettingsOpen(false); setState(previous => previous.page === name ? previous : { ...previous, page: name }); send('page', { page: name }); };
   const openScreenSelection = mode => { setSignOpen(false); setScreenResult(null); setCommandOpen(false); setSettingsOpen(false); setDictateOpen(false); setScreenSelection(mode); };
   const openDictation = () => { setHoldCapture(false); window.islandHoldReleased = false; if (['arming', 'listening'].includes(state.wakeWord?.status)) send('wakeWordSet', { enabled: false, phrase: state.wakeWord?.phrase }); setAgentDictateAutoSubmit(false); setSignOpen(false); setScreenResult(null); setCommandOpen(false); setSettingsOpen(false); setScreenSelection(null); setDictateMode('home'); setDictateTranscriptExpanded(false); setDictateOpen(true); };
   const openSignature = () => { setScreenResult(null); setCommandOpen(false); setSettingsOpen(false); setDictateOpen(false); setScreenSelection(null); setSignOpen(true); };
@@ -2485,6 +2626,23 @@ function App() {
       .slice(0, 5);
   }, [state.foregroundApp?.kind, state.foregroundApp?.executable, state.modules]);
   const visible = pages.filter(name => name === 'Home' || modules[name === 'Ask' ? 'agents' : name.toLowerCase()] !== false);
+  // Settings has a fixed layout contract, independent of live page data.
+  // A weather result or note count must not cancel its first-paint handoff.
+  useLayoutEffect(() => {
+    if (!state.expanded || !settingsOpen || state.wakeWord?.surface) return;
+    layoutWideRef.current = false;
+    const requestLayout = () => send('layout', {
+      wide: false, allowLarge: true, settingsOpen: true,
+      wakeSurface: false, page: displayPage,
+      generation: state.compactRenderGeneration ?? 0,
+    });
+    // Native can ask again after revealing a previously hidden WebView.
+    window.islandRequestLayout = requestLayout;
+    requestLayout();
+    return () => {
+      if (window.islandRequestLayout === requestLayout) delete window.islandRequestLayout;
+    };
+  }, [settingsOpen, state.expanded, state.wakeWord?.surface, displayPage, state.compactRenderGeneration]);
   useLayoutEffect(() => {
     // The profile editor now fits the standard notch width; don't widen the
     // native window when switching to it.
@@ -2498,18 +2656,7 @@ function App() {
     // auto-sized block layout, which can expand its nested scroller, clamp its
     // scrollTop to zero, and then shrink it again. The saved scroll position
     // cannot recover from that browser-side clamp.
-    if (settingsOpen && !state.wakeWord?.surface) {
-      if (layoutWideRef.current !== wide) layoutWideRef.current = wide;
-      send('layout', {
-        wide,
-        allowLarge: true,
-        settingsOpen: true,
-        wakeSurface: false,
-        page: displayPage,
-        generation: state.compactRenderGeneration ?? 0,
-      });
-      return;
-    }
+    if (settingsOpen && !state.wakeWord?.surface) return;
     const content = bodyRef.current?.firstElementChild;
     if (!content) return;
     let last = 0;
@@ -2529,7 +2676,9 @@ function App() {
       const preferredHeight = Math.max(Number(pageRoot?.dataset.layoutHeight) || 0, captureHeight);
       let naturalHeight;
       if (Number.isFinite(preferredHeight) && preferredHeight > 0) {
-        naturalHeight = Math.min(preferredHeight, 480);
+        // The WebView2 share picker uses its parent HWND bounds. Meetings
+        // temporarily asks for a taller host so its source list stays usable.
+        naturalHeight = Math.min(preferredHeight, displayPage === 'Meetings' ? 600 : 480);
       } else {
       const previousDisplay = content.style.display;
       const previousHeight = content.style.height;
@@ -2554,7 +2703,7 @@ function App() {
       }
       const height = Math.ceil((bar?.offsetHeight ?? 43) + naturalHeight
         + parseFloat(styles.paddingTop) + parseFloat(styles.paddingBottom));
-      const allowLarge = settingsOpen || (displayPage === 'Home' && (!!screenResult || commandOpen || signOpen || (dictateOpen && dictateMode === 'home' && dictateTranscriptExpanded))) || displayPage === 'Agents' || displayPage === 'Ask' || displayPage === 'Convert';
+      const allowLarge = settingsOpen || (displayPage === 'Home' && (!!screenResult || commandOpen || signOpen || (dictateOpen && dictateMode === 'home' && dictateTranscriptExpanded))) || displayPage === 'Agents' || displayPage === 'Ask' || displayPage === 'Convert' || displayPage === 'Meetings';
       if (force || Math.abs(height - last) >= 4 || lastWide !== wide || lastAllowLarge !== allowLarge || lastSettingsOpen !== settingsOpen) { last = height; lastWide = wide; lastAllowLarge = allowLarge; lastSettingsOpen = settingsOpen; layoutWideRef.current = wide; send('layout', { height, wide, allowLarge, settingsOpen: settingsOpen && !state.wakeWord?.surface, wakeSurface: !!state.wakeWord?.surface, wakeRevision: state.wakeWord?.revision ?? 0, page: displayPage, generation: state.compactRenderGeneration ?? 0 }); }
     };
     let frame = 0;
@@ -2584,7 +2733,9 @@ function App() {
     mutations.observe(content, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-layout-height'] });
     const requestLayout = () => schedule(true);
     window.islandRequestLayout = requestLayout;
-    schedule(true);
+    // The committed DOM is measurable in useLayoutEffect. Send the first
+    // target now; coalesce subsequent observer notifications into one frame.
+    report(true);
     return () => { mutations.disconnect(); observer.disconnect(); cancelAnimationFrame(frame); if (window.islandRequestLayout === requestLayout) delete window.islandRequestLayout; };
   // Notes and Reminders can have different intrinsic heights while the
   // flex-sized workspace keeps the same observed outer size. Re-run the
@@ -2593,7 +2744,10 @@ function App() {
   }, [displayPage, noteView, showReminderCalendar, signOpen, state.expanded, state.compactRenderGeneration, state.wakeWord?.surface, state.wakeWord?.revision, state.weatherData, state.noteFolders?.length, showFolderInput, folderEditing, dictateOpen, dictateMode, dictateTranscriptExpanded, screenSelection, screenResult, commandOpen, settingsOpen]);
   const clips = state.clipboard ?? [];
   const homeClips = (state.homeClipboard ?? clips).map(item => ({ item, index: clips.indexOf(item) })).filter(({ index }) => index >= 0);
-  const filteredClips = clips.map((item, index) => ({ item, index })).filter(({ item }) => item.toLocaleLowerCase().includes(clipboardQuery.toLocaleLowerCase()));
+  const filteredClips = useMemo(() => {
+    const query = clipboardQuery.toLocaleLowerCase();
+    return clips.map((item, index) => ({ item, index })).filter(({ item }) => item.toLocaleLowerCase().includes(query));
+  }, [clips, clipboardQuery]);
   const shelf = state.shelf ?? [];
   const shelfIndexAtPoint = (x, y) => {
     const item = document.elementFromPoint(x, y)?.closest?.('[data-shelf-index]');
@@ -2765,10 +2919,14 @@ function App() {
     volumeTimerRef.current = null;
     const value = volumeDraftRef.current;
     if (value == null) return;
-    volumeLastSentRef.current = { value, at: performance.now() };
     send('outputVolume', { value });
+    if (!volumeDraggingRef.current) {
+      clearTimeout(volumeSyncTimerRef.current);
+      volumeSyncTimerRef.current = setTimeout(() => { volumeDraftRef.current = null; setVolumeDraft(null); }, 250);
+    }
   };
   const changeVolume = (value, immediate = false) => {
+    clearTimeout(volumeSyncTimerRef.current);
     const next = Math.max(0, Math.min(100, Math.round(value)));
     volumeDraftRef.current = next;
     setVolumeDraft(next);
@@ -2784,16 +2942,19 @@ function App() {
     const targetX = selected.offsetLeft;
     const targetWidth = selected.offsetWidth;
     const paint = () => {
-      indicator.style.transform = `translate3d(${spring.x}px, 0, 0)`;
-      indicator.style.width = `${spring.width}px`;
+      const ratio = window.devicePixelRatio || 1;
+      indicator.style.transform = `translate3d(${Math.round(spring.x * ratio) / ratio}px, 0, 0)`;
+      indicator.style.width = `${Math.round(spring.width * ratio) / ratio}px`;
     };
     cancelAnimationFrame(spring.frame);
-    if (!spring.placed || spring.node !== indicator || state.shellSettings?.reducedMotion || state.shellSettings?.systemReducedMotion || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    if (!spring.placed || spring.node !== indicator || (material.enabled && !material.motion) || state.shellSettings?.reducedMotion || state.shellSettings?.systemReducedMotion || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       spring.node = indicator;
       Object.assign(spring, { x: targetX, width: targetWidth, vx: 0, vw: 0, placed: true });
       paint();
       return;
     }
+    if (spring.vx * (targetX - spring.x) <= 0) spring.vx = 0;
+    if (spring.vw * (targetWidth - spring.width) <= 0) spring.vw = 0;
     spring.last = performance.now();
     const tick = now => {
       const elapsed = Math.min((now - spring.last) / 1000, .04);
@@ -2817,8 +2978,8 @@ function App() {
     };
     spring.frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(spring.frame);
-  }, [page, visible.join('|'), state.expanded, settingsOpen, state.shellSettings?.reducedMotion, state.shellSettings?.systemReducedMotion]);
-  const rainCandidate = upcomingRain(state.weatherData, weatherClockNow);
+  }, [page, visible.join('|'), state.expanded, settingsOpen, state.shellSettings?.reducedMotion, state.shellSettings?.systemReducedMotion, material.enabled, material.motion]);
+  const rainCandidate = useMemo(() => upcomingRain(state.weatherData, weatherClockNow), [state.weatherData, weatherClockNow]);
   const updateCandidates = [
     state.opencode?.updateAvailable && !state.opencode?.installing && { id: 'opencode', label: 'OpenCode', version: state.opencode.latestVersion, busy: !!(state.opencode.activeCount || state.agents?.opencode?.activeCount) },
     state.agents?.codex?.updateAvailable && !state.agents.codex.installing && { id: 'codex', label: 'Codex ACP', version: state.agents.codex.latestVersion, busy: !!state.agents.codex.activeCount },
@@ -2865,12 +3026,13 @@ function App() {
       visible: !state.expanded && !state.compactFaded,
     });
   }, [compactStatus.id, compactStatus.payload?.feedback?.id, state.expanded, state.compactFaded]);
-  return <div data-reduced-motion={!!(state.shellSettings?.reducedMotion || state.shellSettings?.systemReducedMotion)} className={'island accent-' + accentGradient + ' ' + (state.dark ? 'dark' : 'light') + (state.expanded ? ' expanded' : ' compact') + ((state.shellSettings?.shape || 'notch') === 'capsule' ? ' capsule-shape' : ' notch-shape') + ' ' + shellPhase + (state.compactFaded ? ' compact-faded' : '') + (fileDragOver ? ' file-dragging' : '') + (state.wakeWord?.surface ? ' voice-surface-open' : '') + (settingsOpen ? ' settings-open' : '') + (settingsClosing ? ' settings-closing' : '') + (settingsReturning ? ' settings-returning' : '')}
+  return <div style={glassStyle(material)} data-material={material.enabled ? "glass" : "standard"} data-glass-motion={material.enabled && material.motion} data-reduced-motion={!!(state.shellSettings?.reducedMotion || state.shellSettings?.systemReducedMotion)} className={'island accent-' + accentGradient + ' ' + (state.dark ? 'dark' : 'light') + (state.expanded ? ' expanded' : ' compact') + ((state.shellSettings?.shape || 'notch') === 'capsule' ? ' capsule-shape' : ' notch-shape') + ' ' + shellPhase + (state.compactFaded ? ' compact-faded' : '') + (fileDragOver ? ' file-dragging' : '') + (state.wakeWord?.surface ? ' voice-surface-open' : '') + (settingsOpen ? ' settings-open' : '') + (settingsClosing ? ' settings-closing' : '') + (settingsReturning ? ' settings-returning' : '')}
     onFocusCapture={event => { if (isEditor(event.target)) send('textFocus'); }}
     onBlurCapture={event => { if (isEditor(event.target)) queueMicrotask(() => { if (!isEditor(document.activeElement)) send('textBlur'); }); }}>
     {!state.expanded ? <CompactTransition state={state} compactStatus={compactStatus} batteryView={batteryView} screenRecordingAt={screenRecordingAt} screenRecordingElapsed={screenRecordingElapsed} screenRecordingStopping={screenRecordingStopping} contextTools={contextTools} onRunContextTool={runContextAction} /> : <>
     <header className={'bar ' + (settingsOpen ? 'settings-bar' : '')}>
-      {settingsOpen ? <div className="settings-topbar"><button type="button" aria-label="Back to app" title="Back to app" onClick={closeSettingsWithMotion}><Icon name="PreviousMonth" size={17} /></button><strong>Settings</strong><span>{({ general: 'General', compact: 'Status', priority: 'Priority', behavior: 'Motion', tools: 'Tools', 'quick-actions': 'Quick actions', agents: 'Agents', dictation: 'Dictation', voice: 'Voice', ask: 'Ask', conversion: 'Conversion' })[settingsSection]}</span></div> : <nav ref={navRef} aria-label="Island pages"><span className="tab-indicator" aria-hidden="true" />{visible.map(name => <button key={name} data-page={name} className={'tab ' + (page === name ? 'active' : '')} title={name} aria-label={name} aria-current={page === name ? 'page' : undefined} onClick={() => nav(name)}><Icon name={name} /><span className="tab-label">{name}</span></button>)}</nav>}
+      {settingsOpen ? <div className="settings-topbar"><button type="button" aria-label="Back to app" title="Back to app" onClick={closeSettingsWithMotion}><Icon name="PreviousMonth" size={17} /></button><strong>Settings</strong><span>{({ general: 'General', compact: 'Status', priority: 'Priority', behavior: 'Motion', tools: 'Tools', 'quick-actions': 'Quick actions', agents: 'Agents', dictation: 'Dictation', voice: 'Voice', ask: 'Ask', conversion: 'Conversion', meetings: 'Meetings' })[settingsSection]}</span></div> : <nav ref={navRef} aria-label="Island pages"><span className="tab-indicator" aria-hidden="true" />{visible.map(name => <button key={name} data-page={name} className={'tab ' + (page === name ? 'active' : '')} title={name} aria-label={name} aria-current={page === name ? 'page' : undefined} onClick={() => nav(name)}><Icon name={name} /><span className="tab-label">{name}</span></button>)}</nav>}
+      <button className={'icon-button wake-quick ' + (['arming', 'listening', 'triggered', 'paused'].includes(state.wakeWord?.status) ? 'pinned' : '')} title={state.wakeWord?.error || (!state.speechSettings?.configured ? "Configure transcription in Voice settings first" : state.wakeWord?.status === "paused" ? "Wake listening paused while microphone is in use · click to disable" : "Toggle wake listening")} aria-label="Toggle wake listening" aria-pressed={['arming', 'listening', 'triggered', 'paused'].includes(state.wakeWord?.status)} disabled={!state.speechSettings?.configured && !['arming', 'listening', 'triggered', 'paused'].includes(state.wakeWord?.status)} onClick={() => send('wakeWordSet', { enabled: !['arming', 'listening', 'triggered', 'paused'].includes(state.wakeWord?.status), phrase: state.wakeWord?.phrase || readAgentPreferences().wakePhrase || 'Hey Pluto' })}><Icon name="Mic" /></button>
       <button className={'icon-button ' + (state.pinned ? 'pinned' : '')} title={state.pinned ? 'Unpin island' : 'Keep island open'} aria-label={state.pinned ? 'Unpin island' : 'Keep island open'} aria-pressed={!!state.pinned} onClick={() => send('pinToggle')}>
         <Icon name="Pin" />
       </button>
@@ -2878,21 +3040,21 @@ function App() {
     </header>
     {state.dropActive && <div className={'convert-native-drop intent-' + state.dropIntent} role="group" aria-label="Choose a drop destination" aria-live="polite"><div className={state.dropIntent === 1 ? 'active' : state.dropIntent === 3 ? 'is-disabled' : ''}><Icon name="File" size={23} /><strong>Convert</strong><small>{state.dropIntent === 3 ? 'Files only' : 'Resize or change format'}</small></div><div className={state.dropIntent === 2 ? 'active' : ''}><Icon name="Shelf" size={23} /><strong>Shelf</strong><small>Save for later</small></div></div>}
     <main className="body" ref={bodyRef}><div className="page-content entering" key={`${displayPage}:${settingsOpen ? 'settings' : 'page'}`}><PageBoundary key={`${displayPage}:${settingsOpen ? 'settings' : 'page'}:${commandOpen}:${signOpen}`}>
-      {settingsOpen ? <SettingsPanel state={state} batteryView={batteryView} setBatteryView={setBatteryView} accentGradient={accentGradient} setAccentGradient={setAccentGradient} mediaCardStyle={mediaCardStyle} setMediaCardStyle={setMediaCardStyle} homeActions={homeActions} setHomeActions={setHomeActions} compactPriorityOrder={compactPriorityOrder} setCompactPriorityOrder={setCompactPriorityOrder} section={settingsSection} setSection={setSettingsSection} sectionScrollPositions={settingsScrollPositions} /> : <>
+      {settingsOpen ? <SettingsPanel material={material} updateMaterial={updateMaterial} state={state} batteryView={batteryView} setBatteryView={setBatteryView} accentGradient={accentGradient} setAccentGradient={setAccentGradient} mediaCardStyle={mediaCardStyle} setMediaCardStyle={setMediaCardStyle} homeActions={homeActions} setHomeActions={setHomeActions} compactPriorityOrder={compactPriorityOrder} setCompactPriorityOrder={setCompactPriorityOrder} section={settingsSection} setSection={setSettingsSection} sectionScrollPositions={settingsScrollPositions} /> : <>
       {displayPage === 'Home' && (commandOpen ? <CommandPage query={commandQuery} setQuery={setCommandQuery} state={state} onClose={() => setCommandOpen(false)} onRoute={routeCommand} /> : signOpen ? <div className="home-layout sign-home-layout"><SignaturePanel onBack={() => setSignOpen(false)} strokesRef={signatureStrokesRef} /></div> : <div className="home-layout" data-layout-height={dictateOpen && dictateMode === 'home' && dictateTranscriptExpanded ? 380 : undefined}>
         <div className={'home-grid ' + (!screenSelection && !dictateOpen && state.media ? 'has-media ' : '') + (screenSelection ? 'is-tool-selecting ' : '') + (dictateOpen ? 'is-dictating' : '')}>
           {dictateOpen ? <div className="home-dictate-slot" ref={homeDictateSlotRef} /> : screenSelection ? <ScreenSelectionSetup mode={screenSelection} onBack={() => setScreenSelection(null)} onSelect={beginScreenTool} recordQuality={recordQuality} onRecordQualityChange={quality => { setRecordQuality(quality); try { window.localStorage.setItem('island.screen-record-quality.v1', quality); } catch {} }} /> : <>
-          <section className={'home-primary ' + (state.media ? `has-player media-card-${mediaCardStyle}-mode ` : '') + (state.media?.artwork && mediaCardStyle === 'backdrop' ? 'media-card-has-artwork ' : '') + (!state.media && !state.activeRuns && !homeClips.length ? 'is-welcome' : '')} aria-label={state.media ? 'Now playing' : state.activeRuns ? 'Agent activity' : homeClips.length ? 'Recent clipboard' : 'Welcome'}>
-            {state.media && mediaCardStyle === 'backdrop' && state.media.artwork && <div className="media-backdrop" aria-hidden="true"><img src={state.media.artwork} alt="" draggable="false" /><span /></div>}
+          <section className={'home-primary ' + (state.media ? `has-player media-card-${mediaCardStyle}-mode ` : '') + (mediaArtwork && mediaCardStyle === 'backdrop' ? 'media-card-has-artwork ' : '') + (!state.media && !state.activeRuns && !homeClips.length ? 'is-welcome' : '')} aria-label={state.media ? 'Now playing' : state.activeRuns ? 'Agent activity' : homeClips.length ? 'Recent clipboard' : 'Welcome'}>
+            {mediaArtwork && mediaCardStyle === 'backdrop' && <div className="media-backdrop" aria-hidden="true"><img src={mediaArtwork} alt="" draggable="false" onError={() => setFailedMediaArtwork(mediaArtwork)} /><span /></div>}
             {(state.media || state.activeRuns || homeClips.length > 0) && <div className="primary-heading"><span className="eyebrow">{state.media ? state.media.playing ? 'Now playing' : 'Paused' : state.activeRuns ? 'Agents running' : 'Recent clipboard'}</span>{state.media ? <>{(state.media.sessions ?? []).length > 1 ? <MediaSessionSwitcher sessions={state.media.sessions} selectedId={state.media.session_id} onSelect={id => send('mediaSelect', { id })} reducedMotion={!!(state.shellSettings?.reducedMotion || state.shellSettings?.systemReducedMotion)} /> : <span className="primary-count">{mediaSourceName(state.media.source)}</span>}</> : <span className="primary-count">{state.activeRuns ? `${state.activeRuns} agents` : homeClips.length}</span>}</div>}
             {state.media ? <div className={'media-content ' + (mediaCardStyle === 'backdrop' ? 'media-content-backdrop' : '')}>
-              <div className={'media-art ' + (state.media.artwork ? 'has-art' : '')}>
-                {state.media.artwork ? <img src={state.media.artwork} alt="Album artwork" /> : <Icon name="Play" size={24} />}
-              </div>
-              <div className="media-main">
+              <div className="media-identity">
+                <div className={'media-art ' + (mediaArtwork ? 'has-art' : '')}>
+                  {mediaArtwork ? <img src={mediaArtwork} alt="Album artwork" onError={() => setFailedMediaArtwork(mediaArtwork)} /> : <svg viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M7 13v6m6-12v18m6-15v12m6-8v4" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg>}
+                </div>
                 <div className="media-title"><strong title={state.media.title || mediaSourceName(state.media.source)}>{state.media.title || mediaSourceName(state.media.source)}</strong>{state.media.artist && <span title={state.media.artist}>{state.media.artist}</span>}</div>
-                <MediaTransport media={state.media} receivedAt={mediaReceivedAt} />
               </div>
+              <MediaTransport media={state.media} receivedAt={mediaReceivedAt} variant={mediaCardStyle} />
             </div>
               : state.activeRuns ? <><div className="home-agent-status"><div><strong className="primary-title">{state.status || 'Agent activity'}</strong><p className="primary-detail">{state.activity || 'Waiting for the next provider update'}</p></div></div><button className="primary-action" onClick={() => nav('Agents')}>View activity</button></>
               : homeClips.length ? <div className="recent-clips">{homeClips.slice(0, 3).map(({ item, index }) => <button key={index} className="recent-clip" title="Copy to clipboard" onClick={() => send('clipboardCopy', { index })}><span>{preview(item)}</span><small>Copy</small></button>)}</div>
@@ -2911,8 +3073,7 @@ function App() {
         {!dictateOpen && !screenSelection && !signOpen && screenResult && <ScreenResultCard result={screenResult} colors={screenColors} onDismiss={() => setScreenResult(null)} />}
         {!(dictateOpen && dictateMode === 'home' && dictateTranscriptExpanded) && <div className="output-row">
           <Icon name="Volume" size={17} />
-          <input className="volume-range" type="range" min="0" max="100" aria-label="Output device volume" value={outputVolume} disabled={state.outputVolume == null} style={{ '--range-progress': `${outputVolume}%` }} onChange={event => changeVolume(Number(event.target.value))} onPointerDown={event => { volumeDraggingRef.current = true; event.currentTarget.setPointerCapture(event.pointerId); const rect = event.currentTarget.getBoundingClientRect(); changeVolume((event.clientX - rect.left) / rect.width * 100); }} onPointerMove={event => { if (!volumeDraggingRef.current) return; const rect = event.currentTarget.getBoundingClientRect(); changeVolume((event.clientX - rect.left) / rect.width * 100); }} onPointerUp={event => { if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); volumeDraggingRef.current = false; const rect = event.currentTarget.getBoundingClientRect(); changeVolume((event.clientX - rect.left) / rect.width * 100, true); }} onPointerCancel={() => { volumeDraggingRef.current = false; flushVolume(); }} onKeyDown={() => { volumeDraggingRef.current = true; }} onKeyUp={() => { volumeDraggingRef.current = false; flushVolume(); }} onBlur={() => { volumeDraggingRef.current = false; flushVolume(); }} />
-          <span>{state.outputVolume == null ? '—' : `${outputVolume}%`}</span>
+          <SplitRange className="volume-range" label="VOLUME" value={outputVolume} disabled={state.outputVolume == null} onChange={event => changeVolume(Number(event.target.value))} onPointerDown={() => { volumeDraggingRef.current = true; }} onPointerUp={() => { volumeDraggingRef.current = false; flushVolume(); }} onPointerCancel={() => { volumeDraggingRef.current = false; flushVolume(); }} onKeyDown={() => { volumeDraggingRef.current = true; }} onKeyUp={() => { volumeDraggingRef.current = false; flushVolume(); }} onBlur={() => { volumeDraggingRef.current = false; flushVolume(); }} />
           <div className="device-picker">
             <button className="device-picker-trigger" type="button" aria-label="Select output device" aria-haspopup="listbox" aria-expanded={outputPickerOpen} title="Select the audio device whose volume Island controls" onClick={() => setOutputPickerOpen(open => !open)}>
               <Icon name="Speaker" size={15} /><span>{outputDeviceLabel}</span><i aria-hidden="true" />
@@ -2927,8 +3088,8 @@ function App() {
         <div className={'home-strip ' + (fileDragOver ? 'file-dragover' : '')} aria-label="Shelf dock"><button className="strip-heading" onClick={() => nav('Shelf')} title="Open Shelf"><Icon name="Shelf" size={18} /><strong>Shelf</strong><small>{shelf.length}</small></button><div className="strip-files">{fileDragOver ? <span className="strip-drop-message">Release to add to Shelf</span> : shelf.length ? shelf.slice(0, 4).map((item, index) => <button className="strip-file" key={index} title="Open saved item" aria-label={`Open shelf item ${index + 1}`} onClick={() => send('shelfOpen', { index })}><ShelfVisual kind={state.shelfKinds?.[index]} visual={state.shelfIcons?.[index]} compact /></button>) : <span className="strip-empty">Drag files or shortcuts onto the island</span>}</div></div>
       </div>)}
       {displayPage === 'Clipboard' && <section className="stack">
-        <div className="list-toolbar clipboard-toolbar"><div className="clipboard-search"><Icon name="Search" size={16} /><input type="search" aria-label="Search clipboard history" placeholder="Search clipboard" value={clipboardQuery} onChange={event => setClipboardQuery(event.target.value)} /></div><span className="clipboard-count">{filteredClips.length}</span>{clips.length > 0 && <button className="subtle-action" onClick={() => send('clipboardClear')}>Clear</button>}</div>
-        <div className="scroll-list clipboard-list">{filteredClips.length ? filteredClips.map(({ item, index }) => {
+        <div className="list-toolbar clipboard-toolbar"><div className="clipboard-search"><Icon name="Search" size={16} /><input type="search" aria-label="Search clipboard history" placeholder="Search clipboard" value={clipboardQuery} onChange={event => setClipboardQuery(event.target.value)} /></div><span className="clipboard-count">{filteredClips.length + (state.clipboardMedia?.length || 0)}</span>{(clips.length > 0 || state.clipboardMedia?.length > 0) && <button className="subtle-action" onClick={() => send('clipboardClear')}>Clear</button>}</div>
+        <div className="scroll-list clipboard-list">{(state.clipboardMedia || []).map((item, index) => item.label.toLocaleLowerCase().includes(clipboardQuery.toLocaleLowerCase()) && <article className="clip-card" key={`media-${index}`}><span className="clip-card-glyph">{item.preview ? <img className="clipboard-media-thumb" src={item.preview} alt="" /> : <Icon name={item.kind === 'audio' ? 'Audio' : 'Image'} size={20} />}</span><div className="clip-card-content"><small>{item.kind.toUpperCase()}</small><strong>{item.label}</strong><div className="clip-card-actions"><button type="button" onClick={() => send('clipboardMediaCopy', { index })}><Icon name="Copy" size={13} />Copy {item.kind}</button></div></div></article>)}{filteredClips.length ? filteredClips.map(({ item, index }) => {
           const hexMatch = item.match(/^#([\da-f]{6})$/i);
           const rgbMatch = item.match(/^rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)$/i);
           const channels = hexMatch
@@ -2946,7 +3107,7 @@ function App() {
               </> : <button type="button" onClick={() => send('clipboardCopy', { index })}><Icon name="Copy" size={13} />Copy text</button>}</div>
             </div>
           </article>;
-        }) : <div className="empty-state"><Icon name="Clipboard" size={26} /><strong>{clips.length ? 'No match' : 'Your clipboard is clear'}</strong><span>{clips.length ? 'Try a different search.' : state.clipboardCapturing ? 'Text you copy will appear here automatically.' : 'Turn on clipboard capture in Settings.'}</span></div>}</div>
+        }) : !state.clipboardMedia?.length && <div className="empty-state"><Icon name="Clipboard" size={26} /><strong>{clips.length ? 'No match' : 'Your clipboard is clear'}</strong><span>{clips.length ? 'Try a different search.' : state.clipboardCapturing ? 'Text, images, and audio you copy will appear here.' : 'Turn on clipboard capture in Settings.'}</span></div>}</div>
       </section>}
       {displayPage === 'Convert' && <ConversionWorkspace state={state} send={send} Icon={Icon} onSettings={() => { setSettingsSection('conversion'); setSettingsOpen(true); }} />}
       {displayPage === 'Shelf' && <section className="stack">
@@ -2962,17 +3123,26 @@ function App() {
         <div className="tool-grid"><span className="tool-heading">TOOLS</span>{[['Paste text','textReadClipboard'],['Copy text','textCopy'],['Uppercase','textUpper'],['Lowercase','textLower'],['Trim space','textTrim'],['Clear','textClear']].map(([label, kind]) => <button key={kind} onClick={() => send(kind)}>{label}</button>)}{futureAction('Title case')}{futureAction('JSON format')}{futureAction('Base64')}{futureAction('Make QR')}</div>
       </section>}
       {['Agents', 'Ask'].includes(displayPage) && <AgentsWorkspace voiceSurface={!!state.wakeWord?.surface} askMode={displayPage === 'Ask'} state={state} Icon={Icon} send={send} onDictate={options => { const autoSubmit = options?.autoSubmit === true; setHoldCapture(options?.hold === true); if (options?.hold) window.islandHoldReleased = false; if ((!autoSubmit || options?.hold) && ['arming', 'listening'].includes(state.wakeWord?.status)) send('wakeWordSet', { enabled: false, phrase: state.wakeWord?.phrase }); setAgentDictateAutoSubmit(autoSubmit); setSettingsOpen(false); setDictateMode('agent'); setDictateOpen(true); }} dictateActive={dictateOpen && dictateMode === 'agent'} dictateSlotRef={agentDictateSlotRef} dictatedText={agentDictatedText} dictatedAutoSubmit={agentDictateAutoSubmit} onDictatedTextConsumed={() => { setAgentDictatedText(''); setAgentDictateAutoSubmit(false); setHoldCapture(false); window.islandHoldReleased = false; }} renderAnswer={renderOpenCodeReply} openCodeProfiles={<OpenCodeAgentManager agents={visibleOpenCodeAgents} models={openCode.models || []} notice={openCode.notice} error={openCode.agentError} onRefresh={() => send('opencodeAgentsRefresh')} onSave={profile => send('opencodeSaveAgent', profile)} onDelete={id => send('opencodeDeleteAgent', { id })} />} />}
+      {displayPage === 'Meetings' && <MeetingsWorkspace state={state} send={send} Icon={Icon} onSettings={() => { setSettingsSection('meetings'); setSettingsOpen(true); }} />}
+      {displayPage === 'Expand' && <TextExpandPage state={state} />}
       {displayPage === 'Note' && <section className="note-workspace">
-        <div className="note-mode-switch" role="tablist" aria-label="Notes and reminders"><button type="button" role="tab" aria-selected={noteView === 'notes'} className={noteView === 'notes' ? 'active' : ''} onClick={() => { setNoteView('notes'); setShowReminderCalendar(false); }}>Notes</button><button type="button" role="tab" aria-selected={noteView === 'reminders'} className={noteView === 'reminders' ? 'active' : ''} onClick={() => { setNoteView('reminders'); setShowReminderCalendar(false); }}>Reminders{state.noteReminderAt && <i className={state.noteReminderDue ? 'is-due' : ''} />}</button></div>
+        <div className="note-mode-switch" role="tablist" aria-label="Notes and reminders"><button type="button" role="tab" aria-selected={noteView === 'notes'} className={noteView === 'notes' ? 'active' : ''} onClick={() => { setNoteView('notes'); setShowReminderCalendar(false); }}>Notes</button><button type="button" role="tab" aria-selected={noteView === 'reminders'} className={noteView === 'reminders' ? 'active' : ''} onClick={() => { setNoteView('reminders'); setShowReminderCalendar(false); }}>Reminders{(state.noteReminderAt || state.noteQuickReminders?.length > 0) && <i className={state.noteReminderDue || state.noteQuickReminders?.some(item => item.notified) ? 'is-due' : ''} />}</button></div>
         {showReminderCalendar ? <ReminderCalendar initialAt={state.noteReminderAt} backLabel={noteView === 'notes' ? 'Notes' : 'Reminders'} onClose={closeReminderCalendar} onSet={at => { send('noteReminderSet', { at }); setShowReminderCalendar(false); }} /> : noteView === 'notes' ? <>
           <div className="note-status"><span>Saved automatically</span><small>{note.length} characters</small></div>
-          <div className="folder-row">{(state.noteFolders ?? ['Notes']).map((folder, index) => <button key={index} className={'folder-chip ' + (state.noteFolderSelected === index ? 'active' : '')} onClick={() => { send('noteFolderSelect', { index }); setFolderEditing(false); setFolderDeleteArmed(false); }}>{folder}</button>)}<button className="add-folder" aria-label="Add folder" title="Add folder" onClick={() => { setShowFolderInput(value => !value); setFolderEditing(false); }}><Icon name="FolderAdd" size={16} /></button><button className="folder-manage" aria-label="Rename selected folder" title="Rename folder" onClick={() => { setFolderName(state.noteFolders?.[state.noteFolderSelected] ?? 'Notes'); setFolderEditing(true); setShowFolderInput(false); }}><Icon name="Edit" size={15} /></button>{(state.noteFolders?.length ?? 1) > 1 && <button className="folder-manage" aria-label={folderDeleteArmed ? 'Confirm delete folder' : 'Delete selected folder'} title="Delete folder" onClick={() => { if (folderDeleteArmed) { send('noteFolderDelete', { index: state.noteFolderSelected }); setFolderDeleteArmed(false); } else setFolderDeleteArmed(true); }}>{folderDeleteArmed ? 'Delete?' : <Icon name="Trash" size={15} />}</button>}</div>
-          {(showFolderInput || folderEditing) && <form className="new-folder" onSubmit={event => { event.preventDefault(); if (folderName.trim()) { send(folderEditing ? 'noteFolderRename' : 'noteFolderAdd', { index: state.noteFolderSelected, name: folderName.trim() }); setFolderName(''); setShowFolderInput(false); setFolderEditing(false); } }}><input autoFocus maxLength={48} aria-label={folderEditing ? 'Rename folder' : 'New folder name'} placeholder="Folder name" value={folderName} onChange={event => setFolderName(event.target.value)} /><button type="submit">{folderEditing ? 'Save' : 'Add'}</button></form>}
-          <textarea className="note-editor" aria-label="Local note" value={note} onChange={event => { setNote(event.target.value); send('noteSet', { value: event.target.value }); }} placeholder="Keep a thought close…" />
-          <div className="note-bottom"><button className={'reminder-pill ' + (state.noteReminderDue ? 'due' : '')} onClick={() => setShowReminderCalendar(true)}><Icon name="Calendar" size={17} /><span>{state.noteReminderAt ? new Date(state.noteReminderAt * 1000).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'Add reminder'}</span></button>{state.noteReminderAt && <button className="note-tool" title="Remove reminder" aria-label="Remove reminder" onClick={() => send('noteReminderClear')}>×</button>}<span className="note-bottom-spacer" /><button className="note-tool" title="Copy note" aria-label="Copy note" onClick={() => send('noteCopy')}><Icon name="Copy" size={16} /></button><button className="note-tool" title={noteClearArmed ? 'Confirm clear note' : 'Clear note'} aria-label={noteClearArmed ? 'Confirm clear note' : 'Clear note'} onClick={() => { if (noteClearArmed) { send('noteClear'); setNoteClearArmed(false); } else setNoteClearArmed(true); }}>{noteClearArmed ? 'Clear?' : <Icon name="Trash" size={16} />}</button></div>
+          <div className="folder-row">{(state.noteFolders ?? ['Notes']).map((folder, index) => <button key={index} className={'folder-chip ' + (state.noteFolderSelected === index ? 'active' : '')} onClick={() => { noteDraftRef.current.pending = false; send('noteFolderSelect', { index }); setFolderEditing(false); setFolderDeleteArmed(false); }}>{folder}</button>)}<button className="add-folder" aria-label="Add folder" title="Add folder" onClick={() => { setShowFolderInput(value => !value); setFolderEditing(false); }}><Icon name="FolderAdd" size={16} /></button><button className="folder-manage" aria-label="Rename selected folder" title="Rename folder" onClick={() => { setFolderName(state.noteFolders?.[state.noteFolderSelected] ?? 'Notes'); setFolderEditing(true); setShowFolderInput(false); }}><Icon name="Edit" size={15} /></button>{(state.noteFolders?.length ?? 1) > 1 && <button className="folder-manage" aria-label={folderDeleteArmed ? 'Confirm delete folder' : 'Delete selected folder'} title="Delete folder" onClick={() => { if (folderDeleteArmed) { noteDraftRef.current.pending = false; send('noteFolderDelete', { index: state.noteFolderSelected }); setFolderDeleteArmed(false); } else setFolderDeleteArmed(true); }}>{folderDeleteArmed ? 'Delete?' : <Icon name="Trash" size={15} />}</button>}</div>
+          {(showFolderInput || folderEditing) && <form className="new-folder" onSubmit={event => { event.preventDefault(); if (folderName.trim()) { if (!folderEditing) noteDraftRef.current.pending = false; send(folderEditing ? 'noteFolderRename' : 'noteFolderAdd', { index: state.noteFolderSelected, name: folderName.trim() }); setFolderName(''); setShowFolderInput(false); setFolderEditing(false); } }}><input autoFocus maxLength={48} aria-label={folderEditing ? 'Rename folder' : 'New folder name'} placeholder="Folder name" value={folderName} onChange={event => setFolderName(event.target.value)} /><button type="submit">{folderEditing ? 'Save' : 'Add'}</button></form>}
+          <textarea className="note-editor" aria-label="Local note" value={note} onChange={event => { noteDraftRef.current = { value: event.target.value, pending: true }; setNote(event.target.value); send('noteSet', { value: event.target.value }); }} placeholder="Keep a thought close…" />
+          <form className="note-quick-reminder" onSubmit={event => { event.preventDefault(); if (!parsedReminder || reminderAlreadyAdded || (state.noteQuickReminders?.length ?? 0) >= 50) return; send('noteQuickReminderAdd', parsedReminder); setReminderSentence(''); }}>
+            <Icon name="Reminder" size={15} />
+            <input aria-label="Type a reminder with a day and time" value={reminderSentence} onChange={event => setReminderSentence(event.target.value)} placeholder={parsedReminder ? `From note: ${parsedReminder.text}` : 'Or type a reminder here'} />
+            <button type="submit" disabled={!parsedReminder || reminderAlreadyAdded || (state.noteQuickReminders?.length ?? 0) >= 50}>Add</button>
+            {(reminderSentence.trim() || parsedReminder) && <small role="status">{reminderAlreadyAdded ? 'Already added' : parsedReminder ? `${parsedReminder.text} · ${new Date(parsedReminder.at * 1000).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}` : 'Add a specific time, such as tomorrow at 9am or in 30 minutes.'}</small>}
+          </form>
+          <div className="note-bottom"><button className={'reminder-pill ' + (state.noteReminderDue ? 'due' : '')} onClick={() => setShowReminderCalendar(true)}><Icon name="Calendar" size={17} /><span>{state.noteReminderAt ? new Date(state.noteReminderAt * 1000).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'Add reminder'}</span></button>{state.noteReminderAt && <button className="note-tool" title="Remove reminder" aria-label="Remove reminder" onClick={() => send('noteReminderClear')}>×</button>}<span className="note-bottom-spacer" /><button className="note-tool" title="Copy note" aria-label="Copy note" onClick={() => send('noteCopy')}><Icon name="Copy" size={16} /></button><button className="note-tool" title={noteClearArmed ? 'Confirm clear note' : 'Clear note'} aria-label={noteClearArmed ? 'Confirm clear note' : 'Clear note'} onClick={() => { if (noteClearArmed) { noteDraftRef.current = { value: '', pending: false }; setNote(''); send('noteClear'); setNoteClearArmed(false); } else setNoteClearArmed(true); }}>{noteClearArmed ? 'Clear?' : <Icon name="Trash" size={16} />}</button></div>
         </> : <div className="reminders-view">
-          <div className="reminders-heading"><div><span className="eyebrow">NOTEBOOK REMINDER</span><strong>{state.noteReminderDue ? 'Reminder is due' : state.noteReminderAt ? 'Scheduled reminder' : 'Nothing scheduled'}</strong></div><Icon name="Reminder" size={20} /></div>
-          {state.noteReminderAt ? <div className={'reminder-card ' + (state.noteReminderDue ? 'is-due' : '')}><span className="reminder-date"><Icon name="Calendar" size={18} /><strong>{new Date(state.noteReminderAt * 1000).toLocaleString([], { dateStyle: 'full', timeStyle: 'short' })}</strong></span><p>{note.trim() || 'Reminder for your notes'}</p><div><button type="button" onClick={() => setShowReminderCalendar(true)}>Change time</button><button type="button" onClick={() => send('noteReminderClear')}>Clear reminder</button></div></div> : <div className="reminder-empty"><Icon name="Calendar" size={25} /><strong>No reminder yet</strong><span>Choose a time for this note.</span><button className="utility-primary" type="button" onClick={() => setShowReminderCalendar(true)}>Schedule reminder</button></div>}
+          <div className="reminders-heading"><div><span className="eyebrow">REMINDERS</span><strong>{state.noteReminderDue ? 'Reminder is due' : state.noteReminderAt || state.noteQuickReminders?.length ? 'Scheduled reminders' : 'Nothing scheduled'}</strong></div><Icon name="Reminder" size={20} /></div>
+          {state.noteReminderAt ? <div className={'reminder-card ' + (state.noteReminderDue ? 'is-due' : '')}><span className="reminder-date"><Icon name="Calendar" size={18} /><strong>{new Date(state.noteReminderAt * 1000).toLocaleString([], { dateStyle: 'full', timeStyle: 'short' })}</strong></span><p>{note.trim() || 'Reminder for your notes'}</p><div><button type="button" onClick={() => setShowReminderCalendar(true)}>Change time</button><button type="button" onClick={() => send('noteReminderClear')}>Clear reminder</button></div></div> : !state.noteQuickReminders?.length && <div className="reminder-empty"><Icon name="Calendar" size={25} /><strong>No reminder yet</strong><span>Choose a time for this note.</span><button className="utility-primary" type="button" onClick={() => setShowReminderCalendar(true)}>Schedule reminder</button></div>}
+          {!!state.noteQuickReminders?.length && <div className="note-quick-list">{state.noteQuickReminders.map((item, index) => <div className="note-quick-item" key={`${item.at}:${item.text}:${index}`}><span><strong>{item.text}</strong><small>{new Date(item.at * 1000).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}{item.notified ? ' · Done' : ''}</small></span><button type="button" aria-label={`Remove reminder: ${item.text}`} onClick={() => send('noteQuickReminderRemove', { index })}><Icon name="Trash" size={14}/></button></div>)}</div>}
           {state.noteReminderAt && <button className="reminders-edit-note" type="button" onClick={() => { setShowReminderCalendar(false); setNoteView('notes'); }}><Icon name="Edit" size={15} />Edit the linked note</button>}
         </div>}
       </section>}
@@ -3022,6 +3192,7 @@ function App() {
       </>}
     </PageBoundary></div></main>
     </>}
+    <MeetingCaptureController meeting={state.meetings} send={send} />
     {dictateOpen && dictatePortalTarget && createPortal(<DictatePanel captureSensitivity={readAgentPreferences().transcriptionSensitivity} pauseMs={readAgentPreferences().speechPauseMs} noiseSuppression={readAgentPreferences().speechNoiseSuppression} minimal={!!state.wakeWord?.surface && !holdCapture} holdCapture={holdCapture} autoSubmit={agentDictateAutoSubmit && !holdCapture} compact={dictateMode === 'agent'} speechSettings={state.speechSettings} onClose={() => { if (state.wakeWord?.surface && !holdCapture) { send('voiceSurface', { open: false, dismiss: true }); } else if (dictateMode === 'agent' && agentDictateAutoSubmit) send('wakeWordResume', { phrase: state.wakeWord?.phrase || 'Hey Island' }); setHoldCapture(false); window.islandHoldReleased = false; setAgentDictateAutoSubmit(false); setDictateOpen(false); }} onInsert={dictateMode === 'agent' ? value => { setAgentDictatedText(value); setDictateOpen(false); } : undefined} transcriptExpanded={dictateTranscriptExpanded} onTranscriptExpandedChange={setDictateTranscriptExpanded} />, dictatePortalTarget)}
   </div>;
 }

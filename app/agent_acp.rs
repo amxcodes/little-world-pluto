@@ -39,7 +39,9 @@ pub struct Snapshot {
     pub auth_methods: Vec<Value>,
     pub sessions: Vec<Session>,
     pub selected_id: String,
-    pub response: Option<Response>,
+    pub response: Option<Arc<Response>>,
+    #[serde(skip)]
+    pub last_finished_response: Option<Arc<Response>>,
     pub permissions: Vec<Permission>,
     pub questions: Vec<Question>,
     pub active_count: usize,
@@ -268,9 +270,9 @@ enum Pending {
     },
 }
 
-pub fn start(provider: &'static str) -> (Sender<Action>, Receiver<Snapshot>) {
+pub fn start(provider: &'static str) -> (Sender<Action>, pluto::latest::Receiver<Snapshot>) {
     let (actions, incoming) = mpsc::channel();
-    let (outgoing, snapshots) = mpsc::channel();
+    let (outgoing, snapshots) = pluto::latest::channel();
     let _ = thread::Builder::new()
         .name(format!("island-acp-{provider}"))
         .spawn(move || Worker::new(provider, incoming, outgoing).run());
@@ -280,7 +282,7 @@ pub fn start(provider: &'static str) -> (Sender<Action>, Receiver<Snapshot>) {
 struct Worker {
     provider: &'static str,
     actions: Receiver<Action>,
-    outgoing: Sender<Snapshot>,
+    outgoing: pluto::latest::Sender<Snapshot>,
     child: Option<Child>,
     stdin: Option<ChildStdin>,
     messages: Option<Receiver<Value>>,
@@ -288,9 +290,9 @@ struct Worker {
     auth_methods: Vec<Value>,
     pending: HashMap<u64, Pending>,
     loaded: HashSet<String>,
-    cached_responses: HashMap<String, Response>,
-    load_fallback: HashMap<String, Response>,
-    prompt_fallback: HashMap<String, Response>,
+    cached_responses: HashMap<String, Arc<Response>>,
+    load_fallback: HashMap<String, Arc<Response>>,
+    prompt_fallback: HashMap<String, Arc<Response>>,
     message_ids: HashMap<String, String>,
     active_children: HashMap<String, String>,
     child_names: HashMap<String, String>,
@@ -312,7 +314,11 @@ struct Worker {
 }
 
 impl Worker {
-    fn new(provider: &'static str, actions: Receiver<Action>, outgoing: Sender<Snapshot>) -> Self {
+    fn new(
+        provider: &'static str,
+        actions: Receiver<Action>,
+        outgoing: pluto::latest::Sender<Snapshot>,
+    ) -> Self {
         Self {
             provider,
             actions,
@@ -417,10 +423,10 @@ impl Worker {
             if let Some(message) = incoming {
                 self.handle_message(message);
             }
-            if let Some(child) = self.child.as_mut() {
-                if child.try_wait().ok().flatten().is_some() {
-                    self.disconnect("Agent process stopped. Reconnect to continue.");
-                }
+            if let Some(child) = self.child.as_mut()
+                && child.try_wait().ok().flatten().is_some()
+            {
+                self.disconnect("Agent process stopped. Reconnect to continue.");
             }
             self.poll_terminals();
             self.publish(false);
@@ -612,6 +618,7 @@ impl Worker {
         }
         self.snapshot.active_count = 0;
         if let Some(response) = &mut self.snapshot.response {
+            let response = Arc::make_mut(response);
             response.waiting = false;
         }
         self.retry_at = Instant::now() + Duration::from_secs(10);
@@ -767,7 +774,7 @@ impl Worker {
                     let line = params["line"].as_u64().unwrap_or(1).max(1) as usize;
                     let limit = params["limit"]
                         .as_u64()
-                        .map(|value| value.max(1).min(50_000) as usize);
+                        .map(|value| value.clamp(1, 50_000) as usize);
                     let selected = content
                         .split_inclusive('\n')
                         .skip(line.saturating_sub(1))
@@ -961,15 +968,15 @@ impl Worker {
                             format!("island-terminal-{}-{}", self.next_terminal_id, self.next_id);
                         self.next_terminal_id = self.next_terminal_id.wrapping_add(1);
                         let mut readers = Vec::with_capacity(2);
-                        if let Some(stdout) = child.stdout.take() {
-                            if let Some(reader) = capture_pipe(stdout, capture.clone()) {
-                                readers.push(reader);
-                            }
+                        if let Some(stdout) = child.stdout.take()
+                            && let Some(reader) = capture_pipe(stdout, capture.clone())
+                        {
+                            readers.push(reader);
                         }
-                        if let Some(stderr) = child.stderr.take() {
-                            if let Some(reader) = capture_pipe(stderr, capture.clone()) {
-                                readers.push(reader);
-                            }
+                        if let Some(stderr) = child.stderr.take()
+                            && let Some(reader) = capture_pipe(stderr, capture.clone())
+                        {
+                            readers.push(reader);
                         }
                         self.terminals.insert(
                             id_string.clone(),
@@ -1258,8 +1265,8 @@ impl Worker {
                 self.snapshot.selected_id = id.clone();
                 self.snapshot.response = self.cached_responses.get(&id).cloned();
                 self.dirty = true;
-                if !id.is_empty() && !self.loaded.contains(&id) {
-                    if let Some(session) = self
+                if !id.is_empty() && !self.loaded.contains(&id)
+                    && let Some(session) = self
                         .snapshot
                         .sessions
                         .iter()
@@ -1279,23 +1286,23 @@ impl Worker {
                         if self.snapshot.capabilities["loadSession"] == true {
                             if let Some(previous) = self.cached_responses.get(&id).cloned() {
                                 let mut visible = previous.clone();
-                                visible.waiting = true;
+                                Arc::make_mut(&mut visible).waiting = true;
                                 self.snapshot.response = Some(visible);
                                 self.load_fallback.insert(id.clone(), previous);
                             } else {
-                                self.snapshot.response = Some(Response {
+                                self.snapshot.response = Some(Arc::new(Response {
                                     session_id: id.clone(),
                                     waiting: true,
                                     ..Response::default()
-                                });
+                                }));
                             }
                             self.cached_responses.insert(
                                 id.clone(),
-                                Response {
+                                Arc::new(Response {
                                     session_id: id.clone(),
                                     waiting: true,
                                     ..Response::default()
-                                },
+                                }),
                             );
                             self.request("session/load", params, Pending::Load { session_id: id });
                         } else if !self.snapshot.capabilities["sessionCapabilities"]["resume"]
@@ -1308,7 +1315,6 @@ impl Worker {
                             );
                         }
                     }
-                }
             }
             Action::Prepare {
                 directory,
@@ -1382,12 +1388,14 @@ impl Worker {
                     self.fail_operation("start", "Connect the provider before starting a task.");
                     return;
                 }
-                let cwd = if system_prompt.starts_with("Pluto response mode: wake-answer\n") {
+                let private_workspace = system_prompt.starts_with("Pluto response mode: wake-answer\n")
+                    || system_prompt.starts_with("Pluto response mode: meeting-optimize\n");
+                let cwd = if private_workspace {
                     let root = std::env::var_os("LOCALAPPDATA")
                         .map(PathBuf::from)
                         .unwrap_or_else(std::env::temp_dir)
                         .join("Pluto")
-                        .join("VoiceWorkspace");
+                        .join(if system_prompt.starts_with("Pluto response mode: meeting-optimize\n") { "MeetingReviewWorkspace" } else { "VoiceWorkspace" });
                     if let Err(error) = std::fs::create_dir_all(&root) {
                         self.fail_operation(
                             "start",
@@ -1409,7 +1417,7 @@ impl Worker {
                     return;
                 }
                 let additional_directories =
-                    if system_prompt.starts_with("Pluto response mode: wake-answer\n") {
+                    if private_workspace {
                         Vec::new()
                     } else {
                         self.allowed_directories(additional_directories)
@@ -1548,8 +1556,8 @@ impl Worker {
                 }
             }
             Action::Fork(source_id) => {
-                if !self.snapshot.capabilities["sessionCapabilities"]["fork"].is_null() {
-                    if let Some(session) = self
+                if !self.snapshot.capabilities["sessionCapabilities"]["fork"].is_null()
+                    && let Some(session) = self
                         .snapshot
                         .sessions
                         .iter()
@@ -1576,7 +1584,6 @@ impl Worker {
                             },
                         );
                     }
-                }
             }
             Action::Configure {
                 session_id,
@@ -1636,13 +1643,11 @@ impl Worker {
                             .options
                             .iter()
                             .any(|option| option["optionId"] == option_id)
-                }) {
-                    if let Ok(raw) = serde_json::from_str::<Value>(&request_id) {
-                        if self.write(json!({"jsonrpc":"2.0","id":raw,"result":{"outcome":{"outcome":"selected","optionId":option_id}}})) {
+                })
+                    && let Ok(raw) = serde_json::from_str::<Value>(&request_id)
+                        && self.write(json!({"jsonrpc":"2.0","id":raw,"result":{"outcome":{"outcome":"selected","optionId":option_id}}})) {
                             self.snapshot.permissions.remove(index); self.dirty = true;
                         }
-                    }
-                }
             }
             Action::Answer {
                 session_id,
@@ -1717,49 +1722,45 @@ impl Worker {
                     && mime.starts_with("image/")
                     && size <= 8 * 1024 * 1024
                     && size as usize <= embedded_budget
+                    && let Ok(bytes) = std::fs::read(p)
                 {
-                    if let Ok(bytes) = std::fs::read(p) {
-                        embedded_budget =
-                            embedded_budget.saturating_sub(bytes.len().saturating_mul(4) / 3);
-                        blocks.push(json!({"type":"image","mimeType":mime,"data":base64::engine::general_purpose::STANDARD.encode(bytes)}));
-                        continue;
-                    }
+                    embedded_budget =
+                        embedded_budget.saturating_sub(bytes.len().saturating_mul(4) / 3);
+                    blocks.push(json!({"type":"image","mimeType":mime,"data":base64::engine::general_purpose::STANDARD.encode(bytes)}));
+                    continue;
                 }
                 if audio_supported
                     && mime.starts_with("audio/")
                     && size <= 8 * 1024 * 1024
                     && size as usize <= embedded_budget
+                    && let Ok(bytes) = std::fs::read(p)
                 {
-                    if let Ok(bytes) = std::fs::read(p) {
-                        embedded_budget =
-                            embedded_budget.saturating_sub(bytes.len().saturating_mul(4) / 3);
-                        blocks.push(json!({"type":"audio","mimeType":mime,"data":base64::engine::general_purpose::STANDARD.encode(bytes)}));
-                        continue;
-                    }
+                    embedded_budget =
+                        embedded_budget.saturating_sub(bytes.len().saturating_mul(4) / 3);
+                    blocks.push(json!({"type":"audio","mimeType":mime,"data":base64::engine::general_purpose::STANDARD.encode(bytes)}));
+                    continue;
                 }
                 if embedded_supported
                     && mime.starts_with("text/")
                     && size <= 1024 * 1024
                     && size as usize <= embedded_budget
+                    && let Ok(text) = std::fs::read_to_string(p)
                 {
-                    if let Ok(text) = std::fs::read_to_string(p) {
-                        embedded_budget = embedded_budget.saturating_sub(text.len());
-                        blocks.push(json!({"type":"resource","resource":{"uri":uri,"mimeType":mime,"text":text}}));
-                        continue;
-                    }
+                    embedded_budget = embedded_budget.saturating_sub(text.len());
+                    blocks.push(json!({"type":"resource","resource":{"uri":uri,"mimeType":mime,"text":text}}));
+                    continue;
                 }
                 if embedded_supported
                     && !mime.starts_with("image/")
                     && !mime.starts_with("audio/")
                     && size <= 4 * 1024 * 1024
                     && size as usize <= embedded_budget
+                    && let Ok(bytes) = std::fs::read(p)
                 {
-                    if let Ok(bytes) = std::fs::read(p) {
-                        embedded_budget =
-                            embedded_budget.saturating_sub(bytes.len().saturating_mul(4) / 3);
-                        blocks.push(json!({"type":"resource","resource":{"uri":uri,"mimeType":mime,"blob":base64::engine::general_purpose::STANDARD.encode(bytes)}}));
-                        continue;
-                    }
+                    embedded_budget =
+                        embedded_budget.saturating_sub(bytes.len().saturating_mul(4) / 3);
+                    blocks.push(json!({"type":"resource","resource":{"uri":uri,"mimeType":mime,"blob":base64::engine::general_purpose::STANDARD.encode(bytes)}}));
+                    continue;
                 }
                 blocks.push(json!({"type":"resource_link","uri":uri,"name":name,"mimeType":mime,"size":size}));
             }
@@ -1786,7 +1787,7 @@ impl Worker {
         if let Some(previous) = self.cached_responses.get(&session_id).cloned() {
             self.prompt_fallback.insert(session_id.clone(), previous);
         }
-        let response = Response {
+        let response = Arc::new(Response {
             session_id: session_id.clone(),
             waiting: true,
             visual_policy: crate::agent_presentation::VisualPolicy::for_request(
@@ -1794,7 +1795,7 @@ impl Worker {
                 hybrid_whiteboard,
             ),
             ..Response::default()
-        };
+        });
         self.message_ids.remove(&session_id);
         self.snapshot.response = Some(response.clone());
         self.cached_responses.insert(session_id.clone(), response);
@@ -2338,16 +2339,19 @@ impl Worker {
                     session.ready = true;
                 }
                 self.apply_options(&session_id, result);
-                if let Some(previous) = self.load_fallback.remove(&session_id) {
-                    if self
+                if let Some(previous) = self.load_fallback.remove(&session_id)
+                    && self
                         .cached_responses
                         .get(&session_id)
                         .is_none_or(|response| response.text.is_empty())
-                    {
-                        self.cached_responses.insert(session_id.clone(), previous);
-                    }
+                {
+                    self.cached_responses.insert(session_id.clone(), previous);
                 }
-                if let Some(response) = self.cached_responses.get_mut(&session_id) {
+                if let Some(response) = self
+                    .cached_responses
+                    .get_mut(&session_id)
+                    .map(Arc::make_mut)
+                {
                     response.waiting = false;
                     project_presentation(response);
                 }
@@ -2367,7 +2371,11 @@ impl Worker {
                     session.ready = true;
                 }
                 self.apply_options(&session_id, result);
-                if let Some(response) = self.cached_responses.get_mut(&session_id) {
+                if let Some(response) = self
+                    .cached_responses
+                    .get_mut(&session_id)
+                    .map(Arc::make_mut)
+                {
                     project_presentation(response);
                 }
                 if self.snapshot.selected_id == session_id {
@@ -2377,7 +2385,11 @@ impl Worker {
             }
             Pending::Prompt { session_id } => {
                 self.prompt_fallback.remove(&session_id);
-                if let Some(response) = self.cached_responses.get_mut(&session_id) {
+                if let Some(response) = self
+                    .cached_responses
+                    .get_mut(&session_id)
+                    .map(Arc::make_mut)
+                {
                     if !result["usage"].is_null() {
                         response.usage = Some(result["usage"].clone());
                     }
@@ -2468,6 +2480,10 @@ impl Worker {
         self.dirty = true;
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Carries the existing ACP continuation fields without changing the protocol state machine"
+    )]
     fn configure_then_prompt(
         &mut self,
         session_id: String,
@@ -2504,6 +2520,13 @@ impl Worker {
                             system_prompt,
                             hybrid_whiteboard,
                         },
+                    );
+                    return;
+                }
+                if system_prompt.starts_with("Pluto response mode: meeting-optimize\n") {
+                    self.fail_operation(
+                        "start",
+                        &format!("The saved {id} choice is unavailable. Choose a supported model in Agents, then retry."),
                     );
                     return;
                 }
@@ -2551,15 +2574,17 @@ impl Worker {
             .count()
             + self.active_subagent_count();
         if let Some(response) = &mut self.snapshot.response {
+            let response = Arc::make_mut(response);
             if response.session_id == session_id {
                 response.waiting = false;
                 project_presentation(response);
             }
         }
-        if let Some(response) = self.cached_responses.get_mut(session_id) {
+        if let Some(response) = self.cached_responses.get_mut(session_id).map(Arc::make_mut) {
             response.waiting = false;
             project_presentation(response);
         }
+        self.snapshot.last_finished_response = self.cached_responses.get(session_id).cloned();
         self.snapshot
             .permissions
             .retain(|permission| permission.session_id != session_id);
@@ -2630,36 +2655,35 @@ impl Worker {
                 self.child_states
                     .insert(child.into(), normalize_subagent_state(state));
             }
-        } else if kind == "tool_call" || kind == "tool_call_update" {
-            if let Some(child) = update["subagent"]["childSessionId"]
+        } else if (kind == "tool_call" || kind == "tool_call_update")
+            && let Some(child) = update["subagent"]["childSessionId"]
                 .as_str()
                 .filter(|id| !id.is_empty() && id.len() <= 256)
-            {
-                self.active_children
-                    .entry(child.into())
-                    .or_insert_with(|| session_id.into());
-                self.child_states
-                    .entry(child.into())
-                    .or_insert_with(|| "running".into());
-                if let Some(name) = update["subagent"]["displayName"].as_str() {
-                    self.child_names
-                        .insert(child.into(), name.chars().take(100).collect());
-                }
+        {
+            self.active_children
+                .entry(child.into())
+                .or_insert_with(|| session_id.into());
+            self.child_states
+                .entry(child.into())
+                .or_insert_with(|| "running".into());
+            if let Some(name) = update["subagent"]["displayName"].as_str() {
+                self.child_names
+                    .insert(child.into(), name.chars().take(100).collect());
             }
         }
         if self.provider == "opencode" {
             let child = &update["_meta"]["opencode/child-session"];
-            if let (Some(id), Some(parent)) = (child["id"].as_str(), child["parentID"].as_str()) {
-                if id.len() <= 256 {
-                    self.active_children.insert(id.into(), parent.into());
-                    if let Some(title) = child["title"].as_str() {
-                        self.child_names
-                            .insert(id.into(), title.chars().take(100).collect());
-                    }
-                    self.child_states
-                        .entry(id.into())
-                        .or_insert_with(|| "running".into());
+            if let (Some(id), Some(parent)) = (child["id"].as_str(), child["parentID"].as_str())
+                && id.len() <= 256
+            {
+                self.active_children.insert(id.into(), parent.into());
+                if let Some(title) = child["title"].as_str() {
+                    self.child_names
+                        .insert(id.into(), title.chars().take(100).collect());
                 }
+                self.child_states
+                    .entry(id.into())
+                    .or_insert_with(|| "running".into());
             }
         }
         let source_child = update["_meta"]["opencode/child-session"]["id"]
@@ -2682,11 +2706,14 @@ impl Worker {
                     let response = self
                         .cached_responses
                         .entry(owner_id.clone())
-                        .or_insert_with(|| Response {
-                            session_id: owner_id.clone(),
-                            waiting: true,
-                            ..Response::default()
+                        .or_insert_with(|| {
+                            Arc::new(Response {
+                                session_id: owner_id.clone(),
+                                waiting: true,
+                                ..Response::default()
+                            })
                         });
+                    let response = Arc::make_mut(response);
                     if let Some(child) = source_child {
                         let id = format!("child:{child}");
                         let detail = text.chars().take(220).collect::<String>();
@@ -2735,7 +2762,8 @@ impl Worker {
                 } else {
                     Value::Null
                 };
-                if let Some(response) = self.cached_responses.get_mut(&owner_id) {
+                if let Some(response) = self.cached_responses.get_mut(&owner_id).map(Arc::make_mut)
+                {
                     let raw_id = update["toolCallId"].as_str().unwrap_or("");
                     let id = if let Some(child) = source_child {
                         if raw_id.starts_with(child) {
@@ -2799,7 +2827,8 @@ impl Worker {
                 }
             }
             "plan" if source_child.is_none() => {
-                if let Some(response) = self.cached_responses.get_mut(session_id) {
+                if let Some(response) = self.cached_responses.get_mut(session_id).map(Arc::make_mut)
+                {
                     response.plan = update["entries"]
                         .as_array()
                         .map(|entries| entries.iter().take(30).cloned().collect())
@@ -2819,11 +2848,14 @@ impl Worker {
                     let response = self
                         .cached_responses
                         .entry(owner_id.clone())
-                        .or_insert_with(|| Response {
-                            session_id: owner_id.clone(),
-                            waiting: true,
-                            ..Response::default()
+                        .or_insert_with(|| {
+                            Arc::new(Response {
+                                session_id: owner_id.clone(),
+                                waiting: true,
+                                ..Response::default()
+                            })
                         });
+                    let response = Arc::make_mut(response);
                     if let Some(item) = response
                         .compactions
                         .iter_mut()
@@ -2861,7 +2893,7 @@ impl Worker {
             }
             "compaction_summary_chunk" if source_child.is_none() => {
                 let id = update["compactionId"].as_str().unwrap_or("");
-                if let Some(response) = self.cached_responses.get_mut(&owner_id)
+                if let Some(response) = self.cached_responses.get_mut(&owner_id).map(Arc::make_mut)
                     && let Some(compaction) = response
                         .compactions
                         .iter_mut()
@@ -2870,10 +2902,10 @@ impl Worker {
                     let content = safe_content_block(&update["content"]);
                     if let Some(content) = content {
                         let summary = compaction["summary"].as_array_mut();
-                        if let Some(summary) = summary {
-                            if summary.len() < 200 {
-                                summary.push(content.clone());
-                            }
+                        if let Some(summary) = summary
+                            && summary.len() < 200
+                        {
+                            summary.push(content.clone());
                         }
                         let text = content_block_text(&content);
                         if !text.is_empty() {
@@ -2889,7 +2921,8 @@ impl Worker {
                 }
             }
             "usage_update" if source_child.is_none() => {
-                if let Some(response) = self.cached_responses.get_mut(session_id) {
+                if let Some(response) = self.cached_responses.get_mut(session_id).map(Arc::make_mut)
+                {
                     response.usage = Some(
                         json!({"used":update["used"],"size":update["size"],"cost":update["cost"]}),
                     );
@@ -2935,28 +2968,27 @@ impl Worker {
                         .unwrap_or("running");
                     let normalized = normalize_subagent_state(state);
                     self.child_states.insert(child.into(), normalized.clone());
-                    if let Some(response) = self.cached_responses.get_mut(&owner_id) {
-                        if let Some(step) = response
+                    if let Some(response) =
+                        self.cached_responses.get_mut(&owner_id).map(Arc::make_mut)
+                        && let Some(step) = response
                             .steps
                             .iter_mut()
                             .find(|step| step.id == format!("child:{child}"))
-                        {
-                            step.status = normalized;
-                        }
+                    {
+                        step.status = normalized;
                     }
                     self.active_children.insert(child.into(), session_id.into());
                 }
             }
             "config_option_update" => {
-                if let Some(options) = update["configOptions"].as_array() {
-                    if let Some(session) = self
+                if let Some(options) = update["configOptions"].as_array()
+                    && let Some(session) = self
                         .snapshot
                         .sessions
                         .iter_mut()
                         .find(|session| session.id == session_id)
-                    {
-                        session.config_options = options.clone();
-                    }
+                {
+                    session.config_options = options.clone();
                 }
             }
             "current_mode_update" => {
@@ -2965,10 +2997,9 @@ impl Worker {
                     .sessions
                     .iter_mut()
                     .find(|session| session.id == session_id)
+                    && let Some(modes) = &mut session.modes
                 {
-                    if let Some(modes) = &mut session.modes {
-                        modes["currentModeId"] = update["currentModeId"].clone();
-                    }
+                    modes["currentModeId"] = update["currentModeId"].clone();
                 }
             }
             "available_commands_update" => {
@@ -3106,6 +3137,11 @@ fn valid_config_value(option: &Value, value: &str) -> bool {
 }
 
 fn compose_prompt_text(system_prompt: &str, user_text: &str, hybrid_whiteboard: bool) -> String {
+    if let Some(instructions) =
+        system_prompt.strip_prefix("Pluto response mode: meeting-optimize\n")
+    {
+        return format!("Meeting transcript editing request. {instructions}\n\n{user_text}");
+    }
     if let Some(style) = system_prompt.strip_prefix("Pluto response mode: wake-answer\n") {
         let style: String = style.chars().take(6_000).collect();
         return format!(
@@ -3299,10 +3335,7 @@ fn capture_pipe<R: Read + Send + 'static>(
         .name("island-acp-terminal-output".into())
         .spawn(move || {
             let mut bytes = [0_u8; 8192];
-            loop {
-                let Ok(count) = reader.read(&mut bytes) else {
-                    break;
-                };
+            while let Ok(count) = reader.read(&mut bytes) {
                 if count == 0 {
                     break;
                 }
@@ -3328,7 +3361,7 @@ fn read_acp_messages<R: Read>(stream: R, tx: Sender<Value>) {
     let mut oversized = false;
     loop {
         let (consumed, newline, chunk) = match reader.fill_buf() {
-            Ok(available) if available.is_empty() => break,
+            Ok([]) => break,
             Ok(available) => {
                 let newline = available.iter().position(|byte| *byte == b'\n');
                 let consumed = newline.map_or(available.len(), |index| index + 1);
@@ -4015,6 +4048,7 @@ fn newer_version(latest: &str, installed: &str) -> bool {
 trait NoWindow {
     fn creation_flags_no_window(&mut self) -> &mut Self;
 }
+
 impl NoWindow for Command {
     fn creation_flags_no_window(&mut self) -> &mut Self {
         #[cfg(windows)]
@@ -4023,5 +4057,40 @@ impl NoWindow for Command {
             self.creation_flags(0x0800_0000);
         }
         self
+    }
+}
+
+#[cfg(test)]
+mod memory_tests {
+    use super::*;
+
+    #[test]
+    fn published_response_shares_storage_and_updates_are_isolated() {
+        let response = Arc::new(Response {
+            session_id: "session".into(),
+            text: "A substantial answer. ".repeat(50_000),
+            waiting: true,
+            ..Response::default()
+        });
+        let snapshot = Snapshot {
+            response: Some(Arc::clone(&response)),
+            ..Snapshot::default()
+        };
+        let published = snapshot.clone();
+        assert!(Arc::ptr_eq(
+            snapshot.response.as_ref().unwrap(),
+            published.response.as_ref().unwrap()
+        ));
+        let mut cache = HashMap::from([("session", response)]);
+        let updated = Arc::make_mut(cache.get_mut("session").unwrap());
+        updated.text.push_str("Done.");
+        updated.waiting = false;
+        assert!(published.response.as_ref().unwrap().waiting);
+        assert!(!published.response.as_ref().unwrap().text.ends_with("Done."));
+        assert!(cache["session"].text.ends_with("Done."));
+        assert_eq!(
+            serde_json::to_value(&published).unwrap()["response"]["sessionId"],
+            "session"
+        );
     }
 }

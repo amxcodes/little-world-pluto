@@ -24,16 +24,16 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_ESCAPE;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CS_HREDRAW, CS_VREDRAW, CallNextHookEx, CreateWindowExW, DefWindowProcW, DestroyWindow,
     DispatchMessageW, GWLP_USERDATA, GetMessageW, GetPhysicalCursorPos, GetSystemMetrics,
-    HC_ACTION, HHOOK, HWND_TOPMOST, IDC_CROSS, LWA_COLORKEY, LoadCursorW, MSG, MSLLHOOKSTRUCT,
-    PostMessageW, PostQuitMessage, RegisterClassW, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN,
-    SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SW_HIDE, SW_SHOW, SW_SHOWNOACTIVATE, SWP_NOACTIVATE,
-    SWP_NOSIZE, SWP_NOZORDER, SetCursor, SetForegroundWindow, SetLayeredWindowAttributes,
-    SetWindowDisplayAffinity, SetWindowLongPtrW, SetWindowPos, SetWindowsHookExW, ShowWindow,
-    TranslateMessage, UnhookWindowsHookEx, WH_MOUSE_LL, WM_APP, WM_CLOSE, WM_DESTROY,
-    WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP,
-    WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE, WM_PAINT, WM_RBUTTONDOWN,
-    WM_RBUTTONUP, WM_SETCURSOR, WM_XBUTTONDOWN, WM_XBUTTONUP, WNDCLASSW, WS_EX_LAYERED,
-    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
+    HC_ACTION, HHOOK, HWND_TOPMOST, IDC_CROSS, LWA_ALPHA, LWA_COLORKEY, LoadCursorW, MSG,
+    MSLLHOOKSTRUCT, PostMessageW, PostQuitMessage, RegisterClassW, SM_CXVIRTUALSCREEN,
+    SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SW_HIDE, SW_SHOW, SW_SHOWNOACTIVATE,
+    SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER, SetCursor, SetForegroundWindow,
+    SetLayeredWindowAttributes, SetWindowDisplayAffinity, SetWindowLongPtrW, SetWindowPos,
+    SetWindowsHookExW, ShowWindow, TranslateMessage, UnhookWindowsHookEx, WH_MOUSE_LL, WM_APP,
+    WM_CLOSE, WM_DESTROY, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN,
+    WM_MBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE, WM_PAINT,
+    WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_XBUTTONDOWN, WM_XBUTTONUP, WNDCLASSW,
+    WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
 };
 
 const CLASS_NAME: &str = "IslandNativeScreenOverlay";
@@ -139,6 +139,7 @@ pub enum ResultEvent {
     Canceled,
 }
 
+#[allow(clippy::too_many_arguments)] // Window/capture context is passed once into the overlay worker.
 pub fn launch(
     hidden_windows: Vec<(isize, bool)>,
     notify_window: isize,
@@ -146,6 +147,8 @@ pub fn launch(
     mode: Mode,
     full_screen: bool,
     quality: RecordQuality,
+    glass: bool,
+    dark: bool,
 ) {
     let failure_sender = sender.clone();
     let result = thread::Builder::new()
@@ -158,6 +161,8 @@ pub fn launch(
                 mode,
                 full_screen,
                 quality,
+                glass,
+                dark,
             )
         });
     if result.is_err() {
@@ -183,6 +188,8 @@ struct Overlay {
     sender: Sender<ResultEvent>,
     mode: Mode,
     quality: RecordQuality,
+    glass: bool,
+    dark: bool,
     capture: Capture,
     cursor: POINT,
     color_patch: Option<Capture>,
@@ -195,6 +202,7 @@ struct Overlay {
     canceled: bool,
 }
 
+#[allow(clippy::too_many_arguments)] // Mirrors launch after the worker thread takes ownership.
 fn run(
     hidden_windows: Vec<(isize, bool)>,
     notify_window: isize,
@@ -202,6 +210,8 @@ fn run(
     mode: Mode,
     full_screen: bool,
     quality: RecordQuality,
+    glass: bool,
+    dark: bool,
 ) {
     for (hwnd, _) in &hidden_windows {
         unsafe { ShowWindow(*hwnd as HWND, SW_HIDE) };
@@ -222,6 +232,8 @@ fn run(
                 sender: sender.clone(),
                 mode,
                 quality,
+                glass,
+                dark,
                 capture,
                 cursor: POINT::default(),
                 color_patch: None,
@@ -334,7 +346,7 @@ fn run_window(overlay: &mut Box<Overlay>) -> Result<ResultEvent, String> {
         );
     }
     if overlay.mode == Mode::Color {
-        let preview = match create_color_preview(&mut **overlay, module) {
+        let preview = match create_color_preview(overlay, module) {
             Ok(preview) => preview,
             Err(error) => {
                 unsafe {
@@ -503,7 +515,15 @@ fn create_color_preview(
     if hwnd.is_null() {
         return Err("Pluto could not open the color preview.".into());
     }
-    if unsafe { SetLayeredWindowAttributes(hwnd, TRANSPARENT_COLOR_KEY, 255, LWA_COLORKEY) } == 0 {
+    if unsafe {
+        SetLayeredWindowAttributes(
+            hwnd,
+            TRANSPARENT_COLOR_KEY,
+            if overlay.glass { 232 } else { 255 },
+            LWA_COLORKEY | LWA_ALPHA,
+        )
+    } == 0
+    {
         unsafe {
             DestroyWindow(hwnd);
         }
@@ -1243,11 +1263,10 @@ impl GdiCaptureSurface {
             }
             return Err("Windows could not prepare the screen recorder.".into());
         }
-        let mut info = bitmap_info(width, height);
+        let info = bitmap_info(width, height);
         let mut bits = null_mut();
-        let bitmap = unsafe {
-            CreateDIBSection(screen, &mut info, DIB_RGB_COLORS, &mut bits, null_mut(), 0)
-        };
+        let bitmap =
+            unsafe { CreateDIBSection(screen, &info, DIB_RGB_COLORS, &mut bits, null_mut(), 0) };
         if bitmap.is_null() || bits.is_null() {
             if !bitmap.is_null() {
                 unsafe {
@@ -1330,10 +1349,10 @@ fn capture_region(rect: RECT, width: i32, height: i32) -> Result<Vec<u8>, String
         return Err("Windows could not access the selected screen area.".into());
     }
     let memory = unsafe { CreateCompatibleDC(screen) };
-    let mut info = bitmap_info(width, height);
+    let info = bitmap_info(width, height);
     let mut bits: *mut c_void = null_mut();
     let bitmap =
-        unsafe { CreateDIBSection(screen, &mut info, DIB_RGB_COLORS, &mut bits, null_mut(), 0) };
+        unsafe { CreateDIBSection(screen, &info, DIB_RGB_COLORS, &mut bits, null_mut(), 0) };
     if memory.is_null() || bitmap.is_null() || bits.is_null() {
         if !bitmap.is_null() {
             unsafe {
@@ -1545,13 +1564,13 @@ fn paint(hwnd: HWND, overlay: &mut Overlay) {
         FillRect(dc, &paint.rcPaint, clear);
         DeleteObject(clear as _);
     }
-    if overlay.mode != Mode::Color {
-        if let Some(rect) = overlay.selection {
-            if rect.right > rect.left && rect.bottom > rect.top {
-                draw_selection_border(dc, rect);
-                draw_selection_dimensions(dc, rect);
-            }
-        }
+    if overlay.mode != Mode::Color
+        && let Some(rect) = overlay.selection
+        && rect.right > rect.left
+        && rect.bottom > rect.top
+    {
+        draw_selection_border(dc, rect);
+        draw_selection_dimensions(dc, rect);
     }
     unsafe {
         EndPaint(hwnd, &paint);
@@ -1701,14 +1720,34 @@ fn draw_color_preview(dc: windows_sys::Win32::Graphics::Gdi::HDC, overlay: &Over
         right: COLOR_PREVIEW_WIDTH - 1,
         bottom: COLOR_PREVIEW_HEIGHT - 1,
     };
-    draw_panel(dc, rect, color_ref(20, 21, 25), color_ref(66, 68, 77));
-    draw_text(
+    let light_glass = overlay.glass && !overlay.dark;
+    let muted = if light_glass {
+        color_ref(77, 80, 88)
+    } else {
+        color_ref(156, 158, 168)
+    };
+    let primary = if light_glass {
+        color_ref(29, 31, 37)
+    } else {
+        color_ref(248, 248, 250)
+    };
+    draw_panel(
         dc,
-        "COLOR PICKER",
-        left + 16,
-        top + 13,
-        color_ref(156, 158, 168),
+        rect,
+        if light_glass {
+            color_ref(236, 239, 243)
+        } else if overlay.glass {
+            color_ref(35, 38, 43)
+        } else {
+            color_ref(20, 21, 25)
+        },
+        if overlay.glass {
+            color_ref(132, 139, 150)
+        } else {
+            color_ref(66, 68, 77)
+        },
     );
+    draw_text(dc, "COLOR PICKER", left + 16, top + 13, muted);
     let swatch = RECT {
         left: left + 16,
         top: top + 36,
@@ -1716,22 +1755,16 @@ fn draw_color_preview(dc: windows_sys::Win32::Graphics::Gdi::HDC, overlay: &Over
         bottom: top + 92,
     };
     draw_panel(dc, swatch, color_ref(r, g, b), color_ref(255, 255, 255));
-    draw_text(dc, "HEX", left + 88, top + 34, color_ref(156, 158, 168));
+    draw_text(dc, "HEX", left + 88, top + 34, muted);
     draw_text(
         dc,
         &format!("#{r:02X}{g:02X}{b:02X}"),
         left + 88,
         top + 52,
-        color_ref(248, 248, 250),
+        primary,
     );
-    draw_text(dc, "RGB", left + 88, top + 84, color_ref(156, 158, 168));
-    draw_text(
-        dc,
-        &format!("{r}, {g}, {b}"),
-        left + 88,
-        top + 102,
-        color_ref(210, 212, 220),
-    );
+    draw_text(dc, "RGB", left + 88, top + 84, muted);
+    draw_text(dc, &format!("{r}, {g}, {b}"), left + 88, top + 102, primary);
     let magnifier = RECT {
         left: left + 16,
         top: top + 102,
@@ -1739,7 +1772,7 @@ fn draw_color_preview(dc: windows_sys::Win32::Graphics::Gdi::HDC, overlay: &Over
         bottom: top + 158,
     };
     if let Some(patch) = color {
-        let mut info = bitmap_info(patch.width, patch.height);
+        let info = bitmap_info(patch.width, patch.height);
         unsafe {
             StretchDIBits(
                 dc,
@@ -1752,7 +1785,7 @@ fn draw_color_preview(dc: windows_sys::Win32::Graphics::Gdi::HDC, overlay: &Over
                 patch.width,
                 patch.height,
                 patch.pixels.as_ptr().cast(),
-                &mut info,
+                &info,
                 DIB_RGB_COLORS,
                 SRCCOPY,
             );

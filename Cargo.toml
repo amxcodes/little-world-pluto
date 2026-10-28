@@ -70,12 +70,17 @@ name = "windows_media_probe"
 path = "probes/windows_media_probe.rs"
 required-features = ["windows-media-probe"]
 
+[[example]]
+name = "privacy_probe"
+path = "examples/privacy_probe.rs"
+required-features = ["product-app"]
+
 [dependencies]
 image = { version = "=0.25.9", optional = true, default-features = false, features = ["png", "jpeg", "webp", "bmp", "tiff", "gif"] }
 eframe = { version = "0.36.2", optional = true, default-features = false }
 raw-window-handle = { version = "0.6.2", optional = true }
 rusqlite = { version = "0.37.0", features = ["bundled"], optional = true }
-serde = { version = "1.0", features = ["derive"] }
+serde = { version = "1.0", features = ["derive", "rc"] }
 serde_json = "1.0"
 
 [dev-dependencies]
@@ -102,6 +107,7 @@ windows-sys = { version = "0.61.2", features = [
     "Win32_System_DataExchange",
     "Win32_System_Memory",
     "Win32_UI_HiDpi",
+    "Win32_UI_Controls",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",

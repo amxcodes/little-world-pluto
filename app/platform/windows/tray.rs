@@ -373,11 +373,11 @@ mod tests {
         let context = egui::Context::default();
         let tray = TrayController::new(&context)
             .unwrap_or_else(|error| panic!("could not initialize the Windows tray icon: {error}"));
-        assert!(!tray.dispatch_window().is_null());
+        assert!(!tray.window.is_null());
 
         unsafe {
             windows_sys::Win32::UI::WindowsAndMessaging::SendMessageW(
-                tray.dispatch_window(),
+                tray.window,
                 TRAY_MESSAGE,
                 0,
                 WM_LBUTTONUP as LPARAM,

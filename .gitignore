@@ -1,8 +1,15 @@
 /target/
+/signing/
 /island-ui/node_modules/
-# Local reverse-engineering working files (~2.2 GB), including extracted bundles
-# and tools. Keep the small reviewed reports in reference/Island/outputs/.
-/reference/Island/work/
+# Local working notes, captures, and unpacked third-party material
+/local-notes/
+/unpack/
+/reference/
+/captures/
+/scratch/
+/tmp/
+/island-ui/coverage/
+/island-ui/playwright-report/
 /island-ui/.tmp/
 
 # Local secrets and developer-specific files
@@ -11,6 +18,8 @@
 !.env.example
 *.pfx
 *.p12
+*.p8
+*.pem
 *.key
 *.log
 /.idea/
