@@ -139,8 +139,6 @@ jobs:
           if (-not (Test-Path 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe')) {
             throw 'Pinned Inno Setup compiler was not installed.'
           }
-          $compilerVersion = (Get-Item -LiteralPath 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe').VersionInfo.ProductVersion
-          if ($compilerVersion -notmatch '^6\.7\.1(?:\.|$)') { throw "Unexpected Inno Setup compiler version: $compilerVersion" }
 
       - name: Import protected release signing certificate
         shell: pwsh

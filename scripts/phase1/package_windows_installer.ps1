@@ -81,8 +81,8 @@ try {
     $env:PLUTO_VERSION = $version
     $env:PLUTO_BINARY = $binary
     try {
-        $sign = '--signtool=pluto=$q{0}$q sign /fd SHA256 /tr {1} /td SHA256 /s My /sha1 {2} $f' -f $sdk, $TimestampUrl, $thumbprint
-        & $iscc $sign "--output-dir=$out" (Join-Path $root 'packaging\windows\Pluto.iss')
+        $sign = '-spluto=$q{0}$q sign /fd SHA256 /tr {1} /td SHA256 /s My /sha1 {2} $f' -f $sdk, $TimestampUrl, $thumbprint
+        & $iscc $sign "-o$out" (Join-Path $root 'packaging\windows\Pluto.iss')
         if ($LASTEXITCODE -ne 0) { throw "Inno Setup build failed ($LASTEXITCODE)." }
     }
     finally {
