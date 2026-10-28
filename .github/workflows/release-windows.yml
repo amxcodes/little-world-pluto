@@ -140,6 +140,29 @@ jobs:
             throw 'Pinned Inno Setup compiler was not installed.'
           }
 
+      - name: Install pinned HTTPS timestamp tool
+        shell: pwsh
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP 'osslsigncode-2.14-windows-x64-mingw.zip'
+          $directory = Join-Path $env:RUNNER_TEMP 'pluto-osslsigncode'
+          Invoke-WebRequest -Uri 'https://github.com/mtrojnar/osslsigncode/releases/download/2.14/osslsigncode-2.14-windows-x64-mingw.zip' -OutFile $archive
+          $expected = '9A1722AAF62A27852C4EB9C35749A0248065052D0AE0A93D4ED6BB49DEF027F2'
+          if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -cne $expected) { throw 'HTTPS timestamp tool archive hash mismatch.' }
+          Expand-Archive -LiteralPath $archive -DestinationPath $directory
+          $tool = Join-Path $directory 'bin\osslsigncode.exe'
+          if (-not (Test-Path -LiteralPath $tool -PathType Leaf)) { throw 'HTTPS timestamp tool was not extracted.' }
+          "PLUTO_OSSLSIGNCODE_PATH=$tool" | Add-Content -LiteralPath $env:GITHUB_ENV -Encoding utf8
+          $caFile = Join-Path $env:RUNNER_TEMP 'pluto-windows-trusted-roots.pem'
+          $roots = @(Get-ChildItem Cert:\LocalMachine\Root, Cert:\CurrentUser\Root | Sort-Object Thumbprint -Unique)
+          if ($roots.Count -lt 1) { throw 'Windows trusted root store was empty.' }
+          $pem = foreach ($root in $roots) {
+            '-----BEGIN CERTIFICATE-----'
+            [Convert]::ToBase64String($root.Export([Security.Cryptography.X509Certificates.X509ContentType]::Cert), [Base64FormattingOptions]::InsertLineBreaks)
+            '-----END CERTIFICATE-----'
+          }
+          [IO.File]::WriteAllLines($caFile, [string[]]$pem, [Text.UTF8Encoding]::new($false))
+          "PLUTO_HTTPS_CA_FILE=$caFile" | Add-Content -LiteralPath $env:GITHUB_ENV -Encoding utf8
+
       - name: Import protected release signing certificate
         shell: pwsh
         env:
