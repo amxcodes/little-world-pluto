@@ -1,19 +1,35 @@
 //! Lightweight Windows microphone/camera activity observer.
 //!
-//! This reads only the current user's Windows capability-use timestamps. It
-//! never opens a media device or captures audio/video. The registry location
-//! and active timestamp rule are based on the reverse-engineered Pluto
-//! reference recorded in `ISLAND_WINDOWING_RESEARCH.md`.
+//! Core Audio and Media Foundation provide live microphone/camera state; the
+//! Capability Access Manager registry provides application labels when Windows
+//! publishes them. No media device is opened and no audio/video is captured.
 
 use std::mem::size_of;
 use std::ptr::{null, null_mut};
+use std::sync::mpsc::{SyncSender, sync_channel};
+use std::time::Duration;
+
+use windows_core::implement;
+use windows_startup::Win32::Media::Audio::{
+    AudioSessionStateActive, DEVICE_STATE_ACTIVE, IAudioSessionControl2, IAudioSessionManager2,
+    IMMDeviceEnumerator, MMDeviceEnumerator, eCapture,
+};
+use windows_startup::Win32::Media::MediaFoundation::{
+    IMFSensorActivitiesReport, IMFSensorActivitiesReportCallback,
+    IMFSensorActivitiesReportCallback_Impl, IMFShutdown, MF_VERSION, MFCreateSensorActivityMonitor,
+    MFSTARTUP_FULL, MFShutdown, MFStartup,
+};
+use windows_startup::Win32::System::Com::{
+    CLSCTX_ALL, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx, CoUninitialize,
+};
+use windows_startup::core::Interface;
 
 use windows_sys::Win32::Foundation::{
     ERROR_FILE_NOT_FOUND, ERROR_NO_MORE_ITEMS, ERROR_PATH_NOT_FOUND,
 };
 use windows_sys::Win32::System::Registry::{
-    HKEY, HKEY_CURRENT_USER, KEY_READ, REG_QWORD, RegCloseKey, RegEnumKeyExW, RegOpenKeyExW,
-    RegQueryValueExW,
+    HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ, KEY_WOW64_64KEY, REG_QWORD, RegCloseKey,
+    RegEnumKeyExW, RegOpenKeyExW, RegQueryValueExW,
 };
 
 const CAPABILITY_ROOT: &str =
@@ -55,22 +71,181 @@ impl Capability {
     }
 }
 
-/// Returns the applications Windows currently reports as using either
-/// capability. Missing keys mean no active use; access failures are returned
-/// so the caller can retain its last successful sample instead of flashing
-/// false activity during a transient registry error.
+/// Combines live device activity with Windows' optional per-application usage
+/// records. An error is returned only when both sources for a capability fail,
+/// so the shell can retain its last successful sample.
 pub fn read_current_activity() -> Result<PrivacyActivity, u32> {
-    let (microphone_apps, external_microphone_active) = read_capability(Capability::Microphone)?;
+    let microphone_registry = read_capability(Capability::Microphone);
+    let microphone_sessions = read_capture_sessions();
+    if microphone_sessions.is_err()
+        && let Err(error) = microphone_registry
+    {
+        return Err(error);
+    }
+    let (mut microphone_apps, mut external_microphone_active) =
+        microphone_registry.unwrap_or_default();
+    // Capability Access Manager records are sometimes not updated while a
+    // desktop capture stream is open. Core Audio reports the live capture
+    // sessions directly, without opening the microphone ourselves.
+    if let Ok((active, external)) = microphone_sessions {
+        if active && microphone_apps.is_empty() {
+            microphone_apps.push("Application".into());
+        }
+        external_microphone_active |= external;
+    }
+    let camera_registry = read_capability(Capability::Camera);
+    let camera_sensor = read_camera_sensor_activity();
+    if camera_sensor.is_err()
+        && let Err(error) = camera_registry
+    {
+        return Err(error);
+    }
+    let mut camera_apps = camera_registry.unwrap_or_default().0;
+    if camera_sensor.unwrap_or(false) && camera_apps.is_empty() {
+        camera_apps.push("Application".into());
+    }
     Ok(PrivacyActivity {
         microphone_apps,
         external_microphone_active,
-        camera_apps: read_capability(Capability::Camera)?.0,
+        camera_apps,
     })
 }
 
+#[implement(IMFSensorActivitiesReportCallback)]
+struct CameraActivityCallback {
+    sender: SyncSender<bool>,
+}
+
+#[allow(non_snake_case)]
+impl IMFSensorActivitiesReportCallback_Impl for CameraActivityCallback_Impl {
+    fn OnActivitiesReport(
+        &self,
+        reports: windows_startup::core::Ref<'_, IMFSensorActivitiesReport>,
+    ) -> windows_startup::core::Result<()> {
+        let reports = reports.ok()?;
+        let count = unsafe { reports.GetCount()? };
+        if count == 0 {
+            return Ok(());
+        }
+        let mut active = false;
+        for index in 0..count.min(32) {
+            let report = unsafe { reports.GetActivityReport(index)? };
+            for process_index in 0..unsafe { report.GetProcessCount()? }.min(64) {
+                let process = unsafe { report.GetProcessActivity(process_index)? };
+                active |= unsafe { process.GetStreamingState()?.as_bool() };
+            }
+        }
+        let _ = self.sender.try_send(active);
+        Ok(())
+    }
+}
+
+fn read_camera_sensor_activity() -> windows_startup::core::Result<bool> {
+    // The Windows camera sensor monitor reports actual streaming state. A
+    // brief bounded wait gets its initial snapshot without opening a camera.
+    let _apartment = ComApartment::enter()?;
+    unsafe { MFStartup(MF_VERSION, MFSTARTUP_FULL)? };
+    struct Foundation;
+    impl Drop for Foundation {
+        fn drop(&mut self) {
+            let _ = unsafe { MFShutdown() };
+        }
+    }
+    let _foundation = Foundation;
+    let (sender, receiver) = sync_channel(1);
+    let callback: IMFSensorActivitiesReportCallback = CameraActivityCallback { sender }.into();
+    let monitor = unsafe { MFCreateSensorActivityMonitor(&callback)? };
+    unsafe { monitor.Start()? };
+    let active = receiver
+        .recv_timeout(Duration::from_millis(350))
+        .unwrap_or(false);
+    let _ = unsafe { monitor.Stop() };
+    if let Ok(shutdown) = monitor.cast::<IMFShutdown>() {
+        let _ = unsafe { shutdown.Shutdown() };
+    }
+    Ok(active)
+}
+
+fn read_capture_sessions() -> windows_startup::core::Result<(bool, bool)> {
+    // SAFETY: the polling worker is a dedicated thread. COM is initialized
+    // and uninitialized on that same thread, and all COM pointers stay here.
+    unsafe {
+        let _apartment = ComApartment::enter()?;
+        let enumerator: IMMDeviceEnumerator =
+            CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)?;
+        let devices = enumerator.EnumAudioEndpoints(eCapture, DEVICE_STATE_ACTIVE)?;
+        let mut active = false;
+        let mut external = false;
+        for device_index in 0..devices.GetCount()?.min(16) {
+            let Ok(device) = devices.Item(device_index) else {
+                continue;
+            };
+            let Ok(manager): windows_startup::core::Result<IAudioSessionManager2> =
+                device.Activate(CLSCTX_ALL, None)
+            else {
+                continue;
+            };
+            let Ok(sessions) = manager.GetSessionEnumerator() else {
+                continue;
+            };
+            let Ok(count) = sessions.GetCount() else {
+                continue;
+            };
+            for session_index in 0..count.min(128) {
+                let Ok(session) = sessions.GetSession(session_index) else {
+                    continue;
+                };
+                if session.GetState().ok() != Some(AudioSessionStateActive) {
+                    continue;
+                }
+                active = true;
+                external |= session
+                    .cast::<IAudioSessionControl2>()
+                    .and_then(|session| session.GetProcessId())
+                    .map_or(true, |pid| pid != std::process::id());
+            }
+        }
+        Ok((active, external))
+    }
+}
+
+struct ComApartment;
+
+impl ComApartment {
+    fn enter() -> windows_startup::core::Result<Self> {
+        unsafe { CoInitializeEx(None, COINIT_MULTITHREADED).ok()? };
+        Ok(Self)
+    }
+}
+
+impl Drop for ComApartment {
+    fn drop(&mut self) {
+        unsafe { CoUninitialize() };
+    }
+}
+
 fn read_capability(capability: Capability) -> Result<(Vec<String>, bool), u32> {
+    let mut apps = Vec::new();
+    let mut external = false;
+
+    for hive in [HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE] {
+        let (mut hive_apps, hive_external) = read_capability_from_hive(hive, capability)?;
+        apps.append(&mut hive_apps);
+        external |= hive_external;
+    }
+
+    apps.sort_by_key(|name| name.to_ascii_lowercase());
+    apps.dedup_by(|left, right| left.eq_ignore_ascii_case(right));
+    apps.truncate(MAX_APP_NAMES);
+    Ok((apps, external))
+}
+
+fn read_capability_from_hive(
+    hive: HKEY,
+    capability: Capability,
+) -> Result<(Vec<String>, bool), u32> {
     let root_path = format!(r"{CAPABILITY_ROOT}\{}", capability.registry_name());
-    let root = match RegistryKey::open(HKEY_CURRENT_USER, &root_path) {
+    let root = match RegistryKey::open(hive, &root_path) {
         Ok(root) => root,
         Err(ERROR_FILE_NOT_FOUND | ERROR_PATH_NOT_FOUND) => return Ok((Vec::new(), false)),
         Err(error) => return Err(error),
@@ -91,9 +266,6 @@ fn read_capability(capability: Capability) -> Result<(Vec<String>, bool), u32> {
         }
     }
 
-    apps.sort_by_key(|name| name.to_ascii_lowercase());
-    apps.dedup_by(|left, right| left.eq_ignore_ascii_case(right));
-    apps.truncate(MAX_APP_NAMES);
     Ok((apps, external))
 }
 
@@ -223,7 +395,12 @@ impl RegistryKey {
         let path: Vec<u16> = subkey.encode_utf16().chain([0]).collect();
         let mut key = null_mut();
         // SAFETY: the path is NUL-terminated and the output pointer is valid.
-        let result = unsafe { RegOpenKeyExW(parent, path.as_ptr(), 0, KEY_READ, &mut key) };
+        let view = if parent == HKEY_LOCAL_MACHINE {
+            KEY_WOW64_64KEY
+        } else {
+            0
+        };
+        let result = unsafe { RegOpenKeyExW(parent, path.as_ptr(), 0, KEY_READ | view, &mut key) };
         if result == 0 {
             Ok(Self(key))
         } else {

@@ -131,7 +131,8 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 try {
-$root = Join-Path $env:LOCALAPPDATA 'Island\tools\ffmpeg'
+$root = $env:PLUTO_FFMPEG_ROOT
+if ([string]::IsNullOrWhiteSpace($root)) { throw 'Missing FFmpeg tools folder' }
 New-Item -ItemType Directory -Path $root -Force | Out-Null
 $stage = $env:ISLAND_FFMPEG_STAGE
 $prefix = [IO.Path]::GetFullPath($root).TrimEnd('\') + '\'
@@ -206,6 +207,7 @@ try {
     let mut command = Command::new("powershell.exe");
     command.args(["-NoProfile", "-NonInteractive", "-Command", SCRIPT]);
     command.env("ISLAND_FFMPEG_STAGE", &stage);
+    command.env("PLUTO_FFMPEG_ROOT", root);
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -580,11 +582,11 @@ impl Converter {
         .into();
         if let Some(config) = output_config_path() {
             if self.state.destination.is_empty() {
-                if let Err(error) = fs::remove_file(config) {
-                    if error.kind() != std::io::ErrorKind::NotFound {
-                        self.state.destination_notice =
-                            "Could not clear the saved output folder.".into();
-                    }
+                if let Err(error) = fs::remove_file(config)
+                    && error.kind() != std::io::ErrorKind::NotFound
+                {
+                    self.state.destination_notice =
+                        "Could not clear the saved output folder.".into();
                 }
             } else {
                 if let Some(parent) = config.parent() {
@@ -1036,9 +1038,7 @@ fn media_formats(engine: &Path, cancel: &AtomicBool) -> Vec<String> {
     ]
     .into_iter()
     .filter(|(_, encoder, paired, muxer)| {
-        has_encoder(encoder)
-            && paired.map(|paired| has_encoder(paired)).unwrap_or(true)
-            && has_muxer(muxer)
+        has_encoder(encoder) && paired.map(&has_encoder).unwrap_or(true) && has_muxer(muxer)
     })
     .map(|(format, _, _, _)| format.to_owned())
     .collect()
@@ -1104,47 +1104,46 @@ fn inspect(item: &mut Item, engine: Option<&Path>, formats: &[String], cancel: &
         }
         if let Ok(reader) =
             image::ImageReader::open(&item.path).and_then(|r| r.with_guessed_format())
+            && let Some(format) = reader.format()
         {
-            if let Some(format) = reader.format() {
-                // Animated/multipage inputs must not silently lose frames/pages.
-                if matches!(format, ImageFormat::Gif | ImageFormat::Tiff) {
-                    return Err("Animated and multipage images are not available yet".into());
-                }
-                let decoder = reader.into_decoder().map_err(|_| "Can’t read this image")?;
-                if decoder.dimensions().0 as u64 * decoder.dimensions().1 as u64 > MAX_PIXELS {
-                    return Err("Image exceeds the 32 megapixel memory limit".into());
-                }
-                if format == ImageFormat::WebP {
-                    // Inspect the VP8X animation flag without allocating a frame.
-                    let mut header = [0; 21];
-                    if File::open(&item.path)
-                        .and_then(|mut f| f.read_exact(&mut header))
-                        .is_ok()
-                        && &header[12..16] == b"VP8X"
-                        && header[20] & 2 != 0
-                    {
-                        return Err("Animated images are not available yet".into());
-                    }
-                }
-                if format == ImageFormat::Png {
-                    let decoder = png::Decoder::new(BufReader::new(
-                        File::open(&item.path).map_err(|_| "Can’t read this image")?,
-                    ));
-                    if decoder
-                        .read_info()
-                        .map(|r| r.info().animation_control.is_some())
-                        .unwrap_or(false)
-                    {
-                        return Err("Animated images are not available yet".into());
-                    }
-                }
-                (item.width, item.height) = decoder.dimensions();
-                item.kind = "image".into();
-                item.formats = ["png", "jpg", "webp", "bmp", "tiff", "gif"]
-                    .map(String::from)
-                    .to_vec();
-                return Ok(());
+            // Animated/multipage inputs must not silently lose frames/pages.
+            if matches!(format, ImageFormat::Gif | ImageFormat::Tiff) {
+                return Err("Animated and multipage images are not available yet".into());
             }
+            let decoder = reader.into_decoder().map_err(|_| "Can’t read this image")?;
+            if decoder.dimensions().0 as u64 * decoder.dimensions().1 as u64 > MAX_PIXELS {
+                return Err("Image exceeds the 32 megapixel memory limit".into());
+            }
+            if format == ImageFormat::WebP {
+                // Inspect the VP8X animation flag without allocating a frame.
+                let mut header = [0; 21];
+                if File::open(&item.path)
+                    .and_then(|mut f| f.read_exact(&mut header))
+                    .is_ok()
+                    && &header[12..16] == b"VP8X"
+                    && header[20] & 2 != 0
+                {
+                    return Err("Animated images are not available yet".into());
+                }
+            }
+            if format == ImageFormat::Png {
+                let decoder = png::Decoder::new(BufReader::new(
+                    File::open(&item.path).map_err(|_| "Can’t read this image")?,
+                ));
+                if decoder
+                    .read_info()
+                    .map(|r| r.info().animation_control.is_some())
+                    .unwrap_or(false)
+                {
+                    return Err("Animated images are not available yet".into());
+                }
+            }
+            (item.width, item.height) = decoder.dimensions();
+            item.kind = "image".into();
+            item.formats = ["png", "jpg", "webp", "bmp", "tiff", "gif"]
+                .map(String::from)
+                .to_vec();
+            return Ok(());
         }
         let engine = engine.ok_or("Select a local FFmpeg installation for video and audio")?;
         let probe = engine.with_file_name("ffprobe.exe");
@@ -1669,21 +1668,12 @@ fn convert_media(
                     return Err("Size limit is too small for this video's duration".into());
                 }
                 let audio = (bitrate / 5).clamp(16_000, 96_000);
-                if profile.format == "avi" {
-                    cmd.args([
-                        "-b:v",
-                        &(bitrate - audio).to_string(),
-                        "-b:a",
-                        &audio.to_string(),
-                    ]);
-                } else {
-                    cmd.args([
-                        "-b:v",
-                        &(bitrate - audio).to_string(),
-                        "-b:a",
-                        &audio.to_string(),
-                    ]);
-                }
+                cmd.args([
+                    "-b:v",
+                    &(bitrate - audio).to_string(),
+                    "-b:a",
+                    &audio.to_string(),
+                ]);
             } else {
                 match profile.format.as_str() {
                     "mp4" | "mov" | "mkv" => {

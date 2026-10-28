@@ -6,14 +6,17 @@ use std::io::{Read, Write};
 use std::net::{Ipv4Addr, SocketAddrV4, TcpStream};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::{
+    Arc,
+    mpsc::{self, Receiver, Sender},
+};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 use serde_json::{Value, json};
 
-#[derive(Clone, Default, Serialize)]
+#[derive(Clone, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
     pub connected: bool,
@@ -44,7 +47,7 @@ pub struct Snapshot {
     pub next_cursor: Option<String>,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Session {
     pub id: String,
@@ -56,7 +59,7 @@ pub struct Session {
     pub agent: String,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Permission {
     pub id: String,
@@ -65,7 +68,7 @@ pub struct Permission {
     pub resources: Vec<String>,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Model {
     pub key: String,
@@ -73,7 +76,7 @@ pub struct Model {
     pub provider: String,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Agent {
     pub id: String,
@@ -85,7 +88,7 @@ pub struct Agent {
     pub system: String,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResponsePreview {
     pub session_id: String,
@@ -96,7 +99,7 @@ pub struct ResponsePreview {
     pub steps: Vec<ResponseStep>,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResponsePlanItem {
     pub id: String,
@@ -104,7 +107,7 @@ pub struct ResponsePlanItem {
     pub status: String,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResponseStep {
     pub id: String,
@@ -159,9 +162,9 @@ pub enum Action {
     },
 }
 
-pub fn start() -> (Sender<Action>, Receiver<Snapshot>) {
+pub fn start() -> (Sender<Action>, pluto::latest::Receiver<Arc<Snapshot>>) {
     let (actions, incoming) = mpsc::channel();
-    let (outgoing, snapshots) = mpsc::channel();
+    let (outgoing, snapshots) = pluto::latest::channel();
     let _ = thread::Builder::new()
         .name("island-opencode-control".into())
         .spawn(move || run(incoming, outgoing));
@@ -173,11 +176,11 @@ struct Client {
     password: String,
 }
 
-fn run(incoming: Receiver<Action>, outgoing: Sender<Snapshot>) {
+fn run(incoming: Receiver<Action>, outgoing: pluto::latest::Sender<Arc<Snapshot>>) {
     let mut client: Option<Client> = None;
     let mut snapshot = Snapshot::default();
     let mut last_poll = Instant::now() - Duration::from_secs(10);
-    let mut last_sent = String::new();
+    let mut last_sent: Option<Arc<Snapshot>> = None;
     let mut selected_session = String::new();
     let mut loaded_count = 40usize;
     let (versions_tx, versions_rx) = mpsc::channel();
@@ -213,7 +216,7 @@ fn run(incoming: Receiver<Action>, outgoing: Sender<Snapshot>) {
             let updating = matches!(action, Some(Action::Update));
             if snapshot.active_count > 0 {
                 snapshot.notice = "Finish active OpenCode runs before updating.".into();
-                last_sent.clear();
+                last_sent = None;
                 continue;
             }
             snapshot.installing = true;
@@ -227,7 +230,7 @@ fn run(incoming: Receiver<Action>, outgoing: Sender<Snapshot>) {
             }
             .into();
             snapshot.error.clear();
-            let _ = outgoing.send(snapshot.clone());
+            let _ = outgoing.send(Arc::new(snapshot.clone()));
             match if updating {
                 update_cli(&snapshot.install_source)
             } else {
@@ -253,7 +256,7 @@ fn run(incoming: Receiver<Action>, outgoing: Sender<Snapshot>) {
             last_version_check = Instant::now() - Duration::from_secs(6 * 60 * 60);
             last_model_refresh = Instant::now() - Duration::from_secs(60);
             last_agent_refresh = Instant::now() - Duration::from_secs(30);
-            last_sent.clear();
+            last_sent = None;
             continue;
         }
         if client.is_none() {
@@ -353,15 +356,15 @@ fn run(incoming: Receiver<Action>, outgoing: Sender<Snapshot>) {
                 last_poll = Instant::now();
             }
         }
-        if let Ok((generation, installed, latest, source)) = versions_rx.try_recv() {
-            if generation == version_generation {
-                snapshot.installed_version = installed;
-                snapshot.latest_version = latest;
-                snapshot.install_source = source;
-                snapshot.update_available =
-                    newer_version(&snapshot.latest_version, &snapshot.installed_version);
-                snapshot.checking_update = false;
-            }
+        if let Ok((generation, installed, latest, source)) = versions_rx.try_recv()
+            && generation == version_generation
+        {
+            snapshot.installed_version = installed;
+            snapshot.latest_version = latest;
+            snapshot.install_source = source;
+            snapshot.update_available =
+                newer_version(&snapshot.latest_version, &snapshot.installed_version);
+            snapshot.checking_update = false;
         }
         if !snapshot.checking_update
             && last_version_check.elapsed() >= Duration::from_secs(6 * 60 * 60)
@@ -383,12 +386,13 @@ fn run(incoming: Receiver<Action>, outgoing: Sender<Snapshot>) {
                 snapshot.checking_update = false;
             }
         }
-        let current = serde_json::to_string(&snapshot).unwrap_or_default();
-        if current != last_sent {
-            if outgoing.send(snapshot.clone()).is_err() {
+        // Compare the model directly; do not allocate a full JSON copy every poll.
+        if last_sent.as_deref() != Some(&snapshot) {
+            let current = Arc::new(snapshot.clone());
+            if outgoing.send(Arc::clone(&current)).is_err() {
                 break;
             }
-            last_sent = current;
+            last_sent = Some(current);
         }
         if client.is_none() {
             thread::sleep(Duration::from_secs(3));
@@ -552,18 +556,32 @@ fn install_cli() -> Result<(), String> {
     let script = format!(
         r#"
 $ErrorActionPreference = 'Stop'
-$root = Join-Path $env:LOCALAPPDATA 'Island\tools\opencode'
+$root = Join-Path $env:LOCALAPPDATA 'Pluto\tools\opencode'
 New-Item -ItemType Directory -Path $root -Force | Out-Null
 $stage = Join-Path $root ('stage-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $stage -Force | Out-Null
 try {{
   $archive = Join-Path $stage 'opencode.zip'
   Invoke-WebRequest -Uri '{uri}' -OutFile $archive -UseBasicParsing -TimeoutSec 180
+  $archiveSize = (Get-Item -LiteralPath $archive).Length
+  if ($archiveSize -lt 1 -or $archiveSize -gt 1GB) {{ throw 'OpenCode archive size is outside the allowed range' }}
+  Add-Type -AssemblyName System.IO.Compression.FileSystem
+  $zip = [IO.Compression.ZipFile]::OpenRead($archive)
+  try {{
+    if ($zip.Entries.Count -gt 256) {{ throw 'OpenCode archive has too many entries' }}
+    $expandedSize = ($zip.Entries | Measure-Object -Property Length -Sum).Sum
+    if ($expandedSize -gt 2GB) {{ throw 'OpenCode archive expands beyond the allowed size' }}
+  }} finally {{ $zip.Dispose() }}
   Expand-Archive -LiteralPath $archive -DestinationPath (Join-Path $stage 'unpacked') -Force
-  $binary = Get-ChildItem -LiteralPath (Join-Path $stage 'unpacked') -Recurse -Filter 'opencode.exe' -File | Select-Object -First 1
-  if ($null -eq $binary) {{ throw 'OpenCode executable missing from official archive' }}
+  $binaries = @(Get-ChildItem -LiteralPath (Join-Path $stage 'unpacked') -Recurse -Filter 'opencode.exe' -File)
+  if ($binaries.Count -ne 1) {{ throw 'Expected exactly one OpenCode executable in official archive' }}
+  $binary = $binaries[0]
   $next = Join-Path $root 'opencode.new.exe'
   Copy-Item -LiteralPath $binary.FullName -Destination $next -Force
+  $signature = Get-AuthenticodeSignature -FilePath $next
+  if ($signature.Status -ne 'Valid' -or $null -eq $signature.SignerCertificate) {{ throw "OpenCode signature is not valid: $($signature.Status)" }}
+  $publisher = $signature.SignerCertificate.GetNameInfo([System.Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $false)
+  if ($publisher -ne 'Anomaly Innovations, Inc https://anoma.ly/') {{ throw "Unexpected OpenCode publisher: $publisher" }}
   & $next --version | Out-Null
   if ($LASTEXITCODE -ne 0) {{ throw 'OpenCode binary did not start' }}
   Move-Item -LiteralPath $next -Destination (Join-Path $root 'opencode.exe') -Force
@@ -791,7 +809,7 @@ fn refresh_agents(client: &Client, state: &mut Snapshot) -> Result<(), String> {
             system,
         });
     }
-    agents.sort_by(|left, right| left.id.to_lowercase().cmp(&right.id.to_lowercase()));
+    agents.sort_by_key(|left| left.id.to_lowercase());
     state.agents = agents;
     Ok(())
 }
@@ -920,9 +938,10 @@ fn save_agent(
         .create_new(true)
         .open(&temporary)
         .map_err(|_| "Could not prepare the agent profile file")?;
-    if let Err(_) = file
+    if file
         .write_all(source.as_bytes())
         .and_then(|_| file.sync_all())
+        .is_err()
     {
         let _ = fs::remove_file(&temporary);
         return Err("Could not write the agent profile".into());
@@ -934,13 +953,13 @@ fn save_agent(
             let _ = fs::remove_file(&temporary);
             "Could not replace the existing agent profile"
         })?;
-        if let Err(_) = fs::rename(&temporary, &target) {
+        if fs::rename(&temporary, &target).is_err() {
             let _ = fs::rename(&backup, &target);
             let _ = fs::remove_file(&temporary);
             return Err("Could not replace the existing agent profile".into());
         }
         let _ = fs::remove_file(backup);
-    } else if let Err(_) = fs::rename(&temporary, &target) {
+    } else if fs::rename(&temporary, &target).is_err() {
         let _ = fs::remove_file(&temporary);
         return Err("Could not finish writing the agent profile".into());
     }
@@ -1404,25 +1423,23 @@ fn apply_action(client: &Client, state: &mut Snapshot, action: Action) -> Result
             }
             let attachments = checked_attachments(&files)?;
             if let Some(agent) = checked_primary_agent(state, agent.as_deref())?.map(str::to_owned)
-            {
-                if !state
+                && !state
                     .sessions
                     .iter()
                     .any(|session| session.id == session_id && session.agent == agent)
+            {
+                api(
+                    client,
+                    "POST",
+                    &format!("/api/session/{session_id}/agent"),
+                    Some(&json!({ "agent": agent })),
+                )?;
+                if let Some(session) = state
+                    .sessions
+                    .iter_mut()
+                    .find(|session| session.id == session_id)
                 {
-                    api(
-                        client,
-                        "POST",
-                        &format!("/api/session/{session_id}/agent"),
-                        Some(&json!({ "agent": agent })),
-                    )?;
-                    if let Some(session) = state
-                        .sessions
-                        .iter_mut()
-                        .find(|session| session.id == session_id)
-                    {
-                        session.agent = agent;
-                    }
+                    session.agent = agent;
                 }
             }
             let path = format!("/api/session/{session_id}/prompt");

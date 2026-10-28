@@ -160,7 +160,7 @@ pub const HOVER_CLOSE_DELAY: Duration = Duration::from_millis(350);
 pub const AUTO_TUCK_DELAY: Duration = Duration::from_millis(700);
 pub const CONTENT_ENTER_DELAY: Duration = Duration::from_millis(70);
 pub const CONTENT_ENTER_DURATION: Duration = Duration::from_millis(240);
-pub const CONTENT_EXIT_DURATION: Duration = Duration::from_millis(100);
+pub const CONTENT_EXIT_DURATION: Duration = Duration::from_millis(60);
 pub const HOVER_OPEN_DELAY_MIN_MS: u32 = 0;
 pub const HOVER_OPEN_DELAY_MAX_MS: u32 = 600;
 pub const HOVER_OPEN_DELAY_STEP_MS: u32 = 25;
@@ -211,7 +211,7 @@ mod tests {
         assert_eq!(AUTO_TUCK_DELAY, Duration::from_millis(700));
         assert_eq!(CONTENT_ENTER_DELAY, Duration::from_millis(70));
         assert_eq!(CONTENT_ENTER_DURATION, Duration::from_millis(240));
-        assert_eq!(CONTENT_EXIT_DURATION, Duration::from_millis(100));
+        assert_eq!(CONTENT_EXIT_DURATION, Duration::from_millis(60));
     }
 
     #[test]

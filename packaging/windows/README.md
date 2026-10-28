@@ -1,23 +1,22 @@
-# Windows package signing
+# Pluto Windows installer
 
-`scripts/phase1/package_windows.ps1` builds Pluto, signs `Pluto.exe` and the MSIX, and applies an RFC 3161 SHA-256 timestamp. Release signing requires a publicly trusted code-signing certificate with its private key installed in `Cert:\CurrentUser\My`. The certificate must be valid, include the Code Signing EKU, chain to a trusted root, and have a subject that exactly matches the MSIX manifest publisher (`CN=Littleworld Pluto`). The script refuses to create or use a self-signed release certificate.
+`Pluto.iss` builds a per-user EXE installer. Setup displays only the existing transparent `Assets/Square150x150Logo.png`. There is no welcome artwork, background image, or generated illustration. The logo sits on the installer's solid light or dark surface; `Assets/Pluto.ico` is its Windows icon.
 
-List eligible certificates without exposing private keys:
+The installer places `Pluto.exe` in `%LOCALAPPDATA%\Programs\Pluto`, creates a Start menu entry, and upgrades through a stable Inno Setup `AppId`. User settings and meetings under `%LOCALAPPDATA%\Pluto` are outside the install directory and survive upgrades and uninstall. Installation needs no administrator rights.
+
+If a prior portable Pluto copy already has Start with Windows enabled, Setup points that existing startup entry at the new installed executable. A fresh install does not turn startup on by itself; uninstall removes the installer-owned entry.
+
+`scripts/phase1/package_windows_installer.ps1` builds Pluto and signs the executable, installer, and uninstaller with the Pluto Labs Cascade Motion self-signed Code Signing certificate. It checks the private key, validity dates, Code Signing EKU, subject, and pinned thumbprint. The script refuses unsigned release output. Windows will show an unverified publisher warning on other computers because this certificate has no public trust chain.
+
+On Windows with the Windows SDK and Inno Setup 6.7.1:
 
 ```powershell
 Get-ChildItem Cert:\CurrentUser\My |
   Where-Object { $_.HasPrivateKey } |
   Select-Object Subject, Thumbprint, NotAfter
+
+./scripts/phase1/create_release_certificate.ps1
+./scripts/phase1/package_windows_installer.ps1 -SigningCertificateThumbprint 'THUMBPRINT'
 ```
 
-Then build using the certificate thumbprint:
-
-```powershell
-./scripts/phase1/package_windows.ps1 -SigningCertificateThumbprint "THUMBPRINT"
-```
-
-The thumbprint can also be set in `PLUTO_SIGNING_CERT_THUMBPRINT`. The private key stays in the Windows certificate store; only the public certificate is exported to `target/windows-package/Pluto-Signing.cer`. The executable is written to `target/release/pluto.exe`; the signed package is written to `target/windows-package/Pluto-<version>.msix`.
-
-Obtain the signing identity from a trusted code-signing provider. This script expects the resulting certificate and private key in the Windows certificate store; managed signing services such as Azure Artifact Signing need a separate signing integration. A public signature verifies publisher identity and file integrity; it does not guarantee that a new download has SmartScreen reputation immediately. The Windows package install lifecycle checker is `scripts/phase1/verify_windows_package_install.ps1` and must be run separately on a machine that trusts the signing chain.
-
-The manifest declares a disabled-by-default Windows startup task (`PlutoStartup`). In the packaged app, Settings reads the effective Windows state and can request enable/disable. The UI preserves Windows' `DisabledByUser` and policy states, and the API is unavailable in an unpackaged run. Use Windows Startup settings/Task Manager when Windows has disabled the task for the user or policy.
+The signed output is `target/windows-package/Pluto-Setup-vX.Y.Z-windows-x64.exe`. See [release instructions](../../docs/RELEASING.md) for GitHub setup, tag requirements, and verification.

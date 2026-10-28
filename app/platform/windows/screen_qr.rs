@@ -44,10 +44,10 @@ pub fn decode_image(bytes: &[u8]) -> Result<Option<String>, String> {
     for candidate in scanner.identify(width, height, &gray) {
         let Ok(code) = candidate else { continue };
         let Ok(data) = code.decode() else { continue };
-        if let Ok(text) = String::from_utf8(data.payload) {
-            if !text.trim().is_empty() {
-                return Ok(Some(text));
-            }
+        if let Ok(text) = String::from_utf8(data.payload)
+            && !text.trim().is_empty()
+        {
+            return Ok(Some(text));
         }
     }
     Ok(None)

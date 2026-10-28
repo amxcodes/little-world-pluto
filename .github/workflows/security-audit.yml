@@ -1,0 +1,68 @@
+name: Dependency security audit
+
+on:
+  pull_request:
+    paths:
+      - Cargo.toml
+      - Cargo.lock
+      - rust-toolchain.toml
+      - island-ui/package.json
+      - island-ui/package-lock.json
+      - .github/workflows/security-audit.yml
+  push:
+    paths:
+      - Cargo.toml
+      - Cargo.lock
+      - rust-toolchain.toml
+      - island-ui/package.json
+      - island-ui/package-lock.json
+      - .github/workflows/security-audit.yml
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependency-security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    name: Rust and npm advisory audit
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: island-ui/package-lock.json
+
+      - name: Audit Rust dependencies
+        shell: pwsh
+        run: |
+          $windowsGraph = cargo tree --locked --target x86_64-pc-windows-msvc -e all
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($windowsGraph -match 'quick-xml v0\.38\.4') {
+            throw 'The documented quick-xml audit exception is no longer outside the Windows dependency graph.'
+          }
+          cargo install --locked --version 0.22.2 cargo-audit
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo audit
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Audit UI dependencies
+        working-directory: island-ui
+        shell: pwsh
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm audit --audit-level=high
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

@@ -199,13 +199,11 @@ impl PlutoApp {
                 (show, focus_target, tray.take_quit_request())
             })
             .unwrap_or_default();
-        if show {
-            if let Some(shell) = &self.shell {
-                if let Some(target) = focus_target {
-                    let _ = shell.set_focus_restore_target(target);
-                }
-                let _ = shell.show_settings();
+        if show && let Some(shell) = &self.shell {
+            if let Some(target) = focus_target {
+                let _ = shell.set_focus_restore_target(target);
             }
+            let _ = shell.show_settings();
         }
         if quit {
             self.quit_requested = true;

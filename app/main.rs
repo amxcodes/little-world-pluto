@@ -10,6 +10,8 @@ mod commands;
 mod conversion;
 #[cfg(windows)]
 mod diagnostics;
+#[cfg(windows)]
+mod meetings;
 mod opencode_control;
 #[cfg(windows)]
 mod platform;
@@ -19,6 +21,8 @@ mod product;
 mod shortcuts;
 #[cfg(windows)]
 mod storage;
+#[cfg(windows)]
+mod update;
 
 #[cfg(windows)]
 fn main() {

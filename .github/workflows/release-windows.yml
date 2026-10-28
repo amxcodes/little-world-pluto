@@ -1,0 +1,415 @@
+name: Signed Windows release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build and sign Windows x64 artifacts
+    runs-on: windows-latest
+    environment: release-signing
+    permissions:
+      contents: read
+    env:
+      PLUTO_SIGNING_PUBLISHER: ${{ vars.PLUTO_SIGNING_PUBLISHER }}
+      PLUTO_SIGNING_COMPANY_NAME: ${{ vars.PLUTO_SIGNING_COMPANY_NAME }}
+      PLUTO_SIGNING_CERT_THUMBPRINT: ${{ vars.PLUTO_SIGNING_CERT_THUMBPRINT }}
+    steps:
+      - name: Check out the tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: island-ui/package-lock.json
+
+      - name: Validate release tag and toolchain
+        shell: pwsh
+        run: |
+          $manifest = Get-Content -LiteralPath Cargo.toml -Raw
+          $match = [regex]::Match($manifest, '(?m)^version\s*=\s*"(\d+\.\d+\.\d+)"')
+          if (-not $match.Success) { throw 'Cargo.toml must declare a three-part numeric product version.' }
+          $expectedTag = "v$($match.Groups[1].Value)"
+          if ($env:GITHUB_REF_NAME -cne $expectedTag) {
+            throw "Release tag '$env:GITHUB_REF_NAME' does not match Cargo.toml version '$expectedTag'."
+          }
+          $toolchainMatch = [regex]::Match((Get-Content -LiteralPath rust-toolchain.toml -Raw), '(?m)^channel\s*=\s*"([^"]+)"')
+          if (-not $toolchainMatch.Success) { throw 'rust-toolchain.toml does not specify a pinned channel.' }
+          if ($env:PLUTO_SIGNING_PUBLISHER -cne 'CN=Pluto Labs Cascade Motion' -or
+              $env:PLUTO_SIGNING_COMPANY_NAME -cne 'Pluto Labs Cascade Motion' -or
+              $env:PLUTO_SIGNING_CERT_THUMBPRINT -notmatch '^[0-9A-Fa-f]{40}$') {
+            throw 'Set the Pluto Labs Cascade Motion publisher, company, and 40-character certificate thumbprint in release-signing environment variables.'
+          }
+          $toolchain = $toolchainMatch.Groups[1].Value
+          rustup toolchain install $toolchain --profile minimal
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          rustup default $toolchain
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build the locked UI bundle
+        working-directory: island-ui
+        shell: pwsh
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm audit --audit-level=high
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --test tests/agent-navigation.test.mjs tests/voice-capture.test.mjs tests/voice-submit.test.mjs tests/motion-lifecycle.test.mjs tests/memory-delivery.test.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git diff --exit-code -- dist/index.html
+          if ($LASTEXITCODE -ne 0) { throw 'The committed UI bundle is stale; rebuild and commit island-ui/dist/index.html before tagging.' }
+
+      - name: Audit locked Rust dependencies
+        shell: pwsh
+        run: |
+          $windowsGraph = cargo tree --locked --target x86_64-pc-windows-msvc -e all
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($windowsGraph -match 'quick-xml v0\.38\.4') {
+            throw 'The documented quick-xml audit exception is no longer outside the Windows dependency graph.'
+          }
+          cargo install --locked --version 0.22.2 cargo-audit
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo audit
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build Pluto with Windows version resources
+        shell: pwsh
+        env:
+          PLUTO_REQUIRE_WINDOWS_VERSION_RESOURCE: '1'
+        run: |
+          cargo build --release --locked --features product-app --bin pluto
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $match = [regex]::Match((Get-Content -LiteralPath Cargo.toml -Raw), '(?m)^version\s*=\s*"(\d+)\.(\d+)\.(\d+)"')
+          $expected = "$($match.Groups[1].Value).$($match.Groups[2].Value).$($match.Groups[3].Value).0"
+          $info = (Get-Item -LiteralPath target\release\pluto.exe).VersionInfo
+          if ($info.ProductName -ne 'Littleworld Pluto' -or $info.CompanyName -ne $env:PLUTO_SIGNING_COMPANY_NAME -or
+              $info.OriginalFilename -ne 'pluto.exe' -or $info.FileVersion -ne $expected -or $info.ProductVersion -ne $expected) {
+            throw "Pluto.exe version metadata is missing or inconsistent. Expected version $expected."
+          }
+
+      - name: Verify Rust formatting, tests, and lint
+        shell: pwsh
+        run: |
+          cargo fmt --all -- --check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --locked --all-targets --features product-app
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo clippy --locked --all-targets --features product-app -- -D warnings
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Generate release SBOMs
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path target\release-assets -Force | Out-Null
+          cargo install --locked --version 0.5.9 cargo-cyclonedx
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo cyclonedx --format json --features product-app --target x86_64-pc-windows-msvc --override-filename Pluto-rust-sbom
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $rustSbom = @(Get-ChildItem -LiteralPath . -File -Filter '*Pluto-rust-sbom*.json')
+          if ($rustSbom.Count -ne 1) { throw 'Expected cargo-cyclonedx to produce exactly one Rust SBOM JSON file.' }
+          Move-Item -LiteralPath $rustSbom[0].FullName -Destination target\release-assets\Pluto-rust-sbom.cdx.json
+          Push-Location island-ui
+          try {
+            npm sbom --package-lock-only --sbom-format cyclonedx | Set-Content -LiteralPath ..\target\release-assets\Pluto-ui-sbom.cdx.json -Encoding utf8
+            if ($LASTEXITCODE -ne 0) { throw "npm SBOM generation failed with exit code $LASTEXITCODE." }
+          }
+          finally { Pop-Location }
+
+      - name: Install pinned Inno Setup compiler
+        shell: pwsh
+        run: |
+          choco install innosetup --version=6.7.1 --yes --no-progress
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe')) {
+            throw 'Pinned Inno Setup compiler was not installed.'
+          }
+          $compilerVersion = (& 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' --version | Select-Object -First 1)
+          if ($LASTEXITCODE -ne 0 -or $compilerVersion -notmatch '6\.7\.1') { throw "Unexpected Inno Setup compiler version: $compilerVersion" }
+
+      - name: Import protected release signing certificate
+        shell: pwsh
+        env:
+          PLUTO_SIGNING_PFX_BASE64: ${{ secrets.PLUTO_SIGNING_PFX_BASE64 }}
+          PLUTO_SIGNING_PFX_PASSWORD: ${{ secrets.PLUTO_SIGNING_PFX_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:PLUTO_SIGNING_PFX_BASE64) -or [string]::IsNullOrEmpty($env:PLUTO_SIGNING_PFX_PASSWORD)) {
+            throw 'The release-signing environment must provide PLUTO_SIGNING_PFX_BASE64 and PLUTO_SIGNING_PFX_PASSWORD.'
+          }
+          $pfxPath = Join-Path $env:RUNNER_TEMP "pluto-signing-$PID.pfx"
+          $pfxBytes = $null
+          $password = $null
+          try {
+            $pfxBytes = [Convert]::FromBase64String($env:PLUTO_SIGNING_PFX_BASE64)
+            [IO.File]::WriteAllBytes($pfxPath, $pfxBytes)
+            [Array]::Clear($pfxBytes, 0, $pfxBytes.Length)
+            $pfxBytes = $null
+            $password = ConvertTo-SecureString $env:PLUTO_SIGNING_PFX_PASSWORD -AsPlainText -Force
+            Import-PfxCertificate -FilePath $pfxPath -CertStoreLocation Cert:\CurrentUser\My -Password $password | Out-Null
+            $certificates = @(Get-ChildItem Cert:\CurrentUser\My | Where-Object {
+              $_.Subject -ceq $env:PLUTO_SIGNING_PUBLISHER -and $_.HasPrivateKey
+            })
+            if ($certificates.Count -ne 1) { throw "Expected one signing certificate with subject '$env:PLUTO_SIGNING_PUBLISHER'; found $($certificates.Count)." }
+            $companyName = $certificates[0].GetNameInfo([System.Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $false)
+            if ($companyName -cne $env:PLUTO_SIGNING_COMPANY_NAME) { throw 'The configured company name does not match the signing certificate common name.' }
+            if ($certificates[0].Thumbprint -ine $env:PLUTO_SIGNING_CERT_THUMBPRINT) { throw 'The PFX does not match the pinned release certificate thumbprint.' }
+            "PLUTO_SIGNING_CERT_THUMBPRINT=$($certificates[0].Thumbprint)" | Add-Content -LiteralPath $env:GITHUB_ENV -Encoding utf8
+            "PLUTO_SIGNING_CERT_SUBJECT=$($certificates[0].Subject)" | Add-Content -LiteralPath $env:GITHUB_ENV -Encoding utf8
+          }
+          finally {
+            if ($null -ne $pfxBytes) { [Array]::Clear($pfxBytes, 0, $pfxBytes.Length) }
+            if ($null -ne $password) { $password.Dispose() }
+            if (Test-Path -LiteralPath $pfxPath) { Remove-Item -LiteralPath $pfxPath -Force }
+            Remove-Item Env:PLUTO_SIGNING_PFX_BASE64 -ErrorAction SilentlyContinue
+            Remove-Item Env:PLUTO_SIGNING_PFX_PASSWORD -ErrorAction SilentlyContinue
+          }
+
+      - name: Sign and verify executable and installer
+        shell: pwsh
+        run: |
+          ./scripts/phase1/package_windows_installer.ps1 -SkipBuild -SigningCertificateThumbprint $env:PLUTO_SIGNING_CERT_THUMBPRINT
+
+      - name: Remove signing key from the ephemeral runner
+        if: always()
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:PLUTO_SIGNING_CERT_THUMBPRINT)) { exit 0 }
+          $certificatePath = "Cert:\CurrentUser\My\$($env:PLUTO_SIGNING_CERT_THUMBPRINT)"
+          if (Test-Path -LiteralPath $certificatePath) {
+            Remove-Item -LiteralPath $certificatePath -DeleteKey -Force
+          }
+
+      - name: Assemble traceable release assets
+        shell: pwsh
+        run: |
+          $root = [IO.Path]::GetFullPath('target\release-assets')
+          $target = [IO.Path]::GetFullPath('target') + [IO.Path]::DirectorySeparatorChar
+          if (-not $root.StartsWith($target, [StringComparison]::OrdinalIgnoreCase)) { throw "Release assets escaped target/: $root" }
+          $manifest = Get-Content -LiteralPath Cargo.toml -Raw
+          $versionMatch = [regex]::Match($manifest, '(?m)^version\s*=\s*"(\d+\.\d+\.\d+)"')
+          $version = $versionMatch.Groups[1].Value
+          $exeName = "Pluto-v$version-windows-x64.exe"
+          $setupName = "Pluto-Setup-v$version-windows-x64.exe"
+          Copy-Item -LiteralPath target\release\pluto.exe -Destination (Join-Path $root $exeName)
+          Copy-Item -LiteralPath (Join-Path 'target\windows-package' $setupName) -Destination (Join-Path $root $setupName)
+          $dirty = @(git status --porcelain --untracked-files=all)
+          if ($dirty.Count -ne 0) { throw "Build changed the tagged source checkout:`n$($dirty -join "`n")" }
+          $releaseManifest = [ordered]@{
+            product = 'Littleworld Pluto'
+            version = $version
+            tag = $env:GITHUB_REF_NAME
+            sourceRepository = $env:GITHUB_REPOSITORY
+            sourceRevision = $env:GITHUB_SHA
+            sourceTreeClean = $true
+            target = 'x86_64-pc-windows-msvc'
+            buildWorkflow = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+            rustc = (& rustc --version).Trim()
+            cargo = (& cargo --version).Trim()
+            node = (& node --version).Trim()
+            npm = (& npm --version).Trim()
+            signingPublisher = $env:PLUTO_SIGNING_CERT_SUBJECT
+            signingCertificateThumbprint = $env:PLUTO_SIGNING_CERT_THUMBPRINT
+            signingCompanyName = $env:PLUTO_SIGNING_COMPANY_NAME
+            cargoLockSha256 = (Get-FileHash -LiteralPath Cargo.lock -Algorithm SHA256).Hash.ToLowerInvariant()
+            npmLockSha256 = (Get-FileHash -LiteralPath island-ui\package-lock.json -Algorithm SHA256).Hash.ToLowerInvariant()
+            runnerImageOS = $env:ImageOS
+          }
+          $releaseManifest | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $root 'release-manifest.json') -Encoding utf8
+
+      - name: Scan signed release files with Microsoft Defender
+        shell: pwsh
+        run: |
+          $status = Get-MpComputerStatus -ErrorAction Stop
+          if (-not $status.AMServiceEnabled -or -not $status.AntivirusEnabled) {
+            throw 'Microsoft Defender Antivirus is not active on this runner; refusing to publish an unscanned release.'
+          }
+          Update-MpSignature -ErrorAction Stop
+          $mpCmdRun = Get-ChildItem -LiteralPath "$env:ProgramData\Microsoft\Windows Defender\Platform" -Directory -ErrorAction SilentlyContinue |
+            Sort-Object Name -Descending |
+            ForEach-Object {
+              $candidate = Join-Path $_.FullName 'MpCmdRun.exe'
+              if (Test-Path -LiteralPath $candidate) { $candidate }
+            } | Select-Object -First 1
+          if (-not $mpCmdRun) { $mpCmdRun = Join-Path $env:ProgramFiles 'Windows Defender\MpCmdRun.exe' }
+          if (-not (Test-Path -LiteralPath $mpCmdRun -PathType Leaf)) { throw 'Microsoft Defender scan tool was not found.' }
+          $assets = @(
+            (Join-Path 'target\release-assets' "Pluto-$($env:GITHUB_REF_NAME)-windows-x64.exe"),
+            (Join-Path 'target\release-assets' "Pluto-Setup-$($env:GITHUB_REF_NAME)-windows-x64.exe")
+          )
+          $scanStartedUtc = [DateTime]::UtcNow
+          $scannedPaths = @()
+          foreach ($asset in $assets) {
+            if (-not (Test-Path -LiteralPath $asset -PathType Leaf)) { throw "Expected signed release asset is missing: $asset" }
+            $assetPath = (Resolve-Path -LiteralPath $asset).Path
+            $scannedPaths += $assetPath
+            $before = (Get-FileHash -LiteralPath $asset -Algorithm SHA256).Hash
+            & $mpCmdRun -Scan -ScanType 3 -File $assetPath
+            $scanExitCode = $LASTEXITCODE
+            if ($scanExitCode -ne 0) { throw "Defender scan failed or reported a threat for $asset (exit $scanExitCode)." }
+            if (-not (Test-Path -LiteralPath $asset -PathType Leaf)) { throw "Defender remediated $asset; refusing to publish." }
+            $after = (Get-FileHash -LiteralPath $asset -Algorithm SHA256).Hash
+            if ($before -cne $after) { throw "Defender changed $asset during scanning; refusing to publish." }
+          }
+          $detections = @(Get-MpThreatDetection -ErrorAction Stop)
+          foreach ($detection in $detections) {
+            $resources = [string]::Join("`n", @($detection.Resources | ForEach-Object { [string]$_ }))
+            $detectionTime = $detection.InitialDetectionTime
+            $isRecent = $null -eq $detectionTime -or ([DateTime]$detectionTime).ToUniversalTime() -ge $scanStartedUtc
+            $matchesReleaseAsset = $false
+            foreach ($assetPath in $scannedPaths) {
+              if ($resources.IndexOf($assetPath, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+                $matchesReleaseAsset = $true
+                break
+              }
+            }
+            if ($isRecent -and $matchesReleaseAsset) {
+              throw "Defender recorded a detection for a release asset; refusing to publish. Threat ID: $($detection.ThreatID)."
+            }
+          }
+          $status = Get-MpComputerStatus -ErrorAction Stop
+          $manifestPath = 'target\release-assets\release-manifest.json'
+          $releaseManifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+          $signatureUpdatedUtc = $null
+          if ($null -ne $status.AntivirusSignatureLastUpdated) {
+            $signatureUpdatedUtc = $status.AntivirusSignatureLastUpdated.ToUniversalTime().ToString('o')
+          }
+          $releaseManifest | Add-Member -NotePropertyName defender -NotePropertyValue ([ordered]@{
+            result = 'clean'
+            scanStartedUtc = $scanStartedUtc.ToString('o')
+            scanCompletedUtc = [DateTime]::UtcNow.ToString('o')
+            signatureVersion = $status.AntivirusSignatureVersion
+            engineVersion = $status.AMEngineVersion
+            platformVersion = $status.AMProductVersion
+            signatureLastUpdatedUtc = $signatureUpdatedUtc
+          })
+          $releaseManifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $manifestPath -Encoding utf8
+          $root = [IO.Path]::GetFullPath('target\release-assets')
+          $sumLines = Get-ChildItem -LiteralPath $root -File | Sort-Object Name | ForEach-Object {
+            $digest = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$digest  $($_.Name)"
+          }
+          [IO.File]::WriteAllLines((Join-Path $root 'SHA256SUMS.txt'), $sumLines, [Text.UTF8Encoding]::new($false))
+
+      - name: Smoke-test install and uninstall on the release runner
+        shell: pwsh
+        run: |
+          $match = [regex]::Match((Get-Content -LiteralPath Cargo.toml -Raw), '(?m)^version\s*=\s*"(\d+\.\d+\.\d+)"')
+          $version = $match.Groups[1].Value
+          $installer = [IO.Path]::GetFullPath("target\release-assets\Pluto-Setup-v$version-windows-x64.exe")
+          $installDir = Join-Path $env:RUNNER_TEMP 'PlutoInstallerSmoke'
+          $sentinel = Join-Path $env:LOCALAPPDATA 'Pluto\installer-smoke.txt'
+          $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+          New-Item -Path $runKey -Force | Out-Null
+          New-ItemProperty -Path $runKey -Name LittleWorldIsland -Value '"C:\OldPluto\Pluto.exe"' -PropertyType String -Force | Out-Null
+          New-Item -ItemType Directory -Path (Split-Path $sentinel) -Force | Out-Null
+          Set-Content -LiteralPath $sentinel -Value 'preserve user data' -Encoding ascii
+          $installed = Start-Process -FilePath $installer -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=$installDir") -Wait -PassThru -WindowStyle Hidden
+          if ($installed.ExitCode -ne 0) { throw "Installer failed ($($installed.ExitCode))." }
+          $program = Join-Path $installDir 'Pluto.exe'
+          $uninstaller = Join-Path $installDir 'unins000.exe'
+          if (-not (Test-Path -LiteralPath $program) -or -not (Test-Path -LiteralPath $uninstaller)) { throw 'Installer did not place Pluto and its uninstaller.' }
+          foreach ($signedFile in @($program, $uninstaller)) {
+            $signature = Get-AuthenticodeSignature -LiteralPath $signedFile
+            if ($signature.Status -notin @('Valid', 'NotTrusted') -or $null -eq $signature.SignerCertificate -or
+                $signature.SignerCertificate.Thumbprint -ine $env:PLUTO_SIGNING_CERT_THUMBPRINT) {
+              throw "Installed file signature is invalid: $signedFile"
+            }
+          }
+          if ((Get-ItemPropertyValue -Path $runKey -Name LittleWorldIsland) -cne "`"$program`"") { throw 'Installer did not migrate the enabled startup path.' }
+          $removed = Start-Process -FilePath $uninstaller -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART') -Wait -PassThru -WindowStyle Hidden
+          if ($removed.ExitCode -ne 0) { throw "Uninstaller failed ($($removed.ExitCode))." }
+          if (Test-Path -LiteralPath $program) { throw 'Uninstaller left Pluto.exe behind.' }
+          if (Get-ItemProperty -Path $runKey -Name LittleWorldIsland -ErrorAction SilentlyContinue) { throw 'Uninstaller left a stale startup entry.' }
+          if ((Get-Content -LiteralPath $sentinel -Raw).Trim() -cne 'preserve user data') { throw 'Uninstaller changed user data.' }
+          Remove-Item -LiteralPath $sentinel -Force
+
+      - name: Upload signed release assets for attestation
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pluto-windows-release-assets
+          path: target/release-assets/*
+          if-no-files-found: error
+          retention-days: 1
+
+  attest:
+    name: Attest release artifacts
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - name: Download signed release assets
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: pluto-windows-release-assets
+          path: release-assets
+
+      - name: Attest executable provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: release-assets/Pluto-${{ github.ref_name }}-windows-x64.exe
+
+      - name: Attest installer provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: release-assets/Pluto-Setup-${{ github.ref_name }}-windows-x64.exe
+
+      - name: Attest Rust dependency SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: release-assets/Pluto-${{ github.ref_name }}-windows-x64.exe
+          sbom-path: release-assets/Pluto-rust-sbom.cdx.json
+
+      - name: Attest UI dependency SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: release-assets/Pluto-${{ github.ref_name }}-windows-x64.exe
+          sbom-path: release-assets/Pluto-ui-sbom.cdx.json
+
+  publish:
+    name: Publish reviewed release
+    needs: attest
+    runs-on: ubuntu-latest
+    environment: release-publish
+    permissions:
+      contents: write
+    steps:
+      - name: Download signed release assets
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: pluto-windows-release-assets
+          path: release-assets
+
+      - name: Verify release checksums
+        working-directory: release-assets
+        shell: bash
+        run: sha256sum --check SHA256SUMS.txt
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release create "$GITHUB_REF_NAME" release-assets/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --title "Pluto $GITHUB_REF_NAME" \
+            --generate-notes

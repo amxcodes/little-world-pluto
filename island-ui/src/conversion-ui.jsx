@@ -1,4 +1,5 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { SplitRange } from './split-range.jsx';
 
 const size = bytes => bytes >= 1e6 ? `${(bytes / 1e6).toFixed(1)} MB` : `${Math.ceil(bytes / 1000)} KB`;
 const formatNames = { jpg: 'JPEG', png: 'PNG', webp: 'WebP', bmp: 'Bitmap', tiff: 'TIFF', gif: 'GIF', mp4: 'MP4', mov: 'MOV', mkv: 'MKV', webm: 'WebM', avi: 'AVI', wmv: 'WMV', mp3: 'MP3', m4a: 'M4A', aac: 'AAC', wav: 'WAV', flac: 'FLAC', ogg: 'OGG', opus: 'Opus', aiff: 'AIFF', wma: 'WMA', srt: 'SRT', vtt: 'WebVTT', txt: 'Plain text' };
@@ -154,7 +155,7 @@ export function ConversionWorkspace({ state, send, onSettings, Icon }) {
               <div className="convert-size-input"><label htmlFor="convert-limit-value">Maximum per file</label><div><input id="convert-limit-value" type="text" inputMode="decimal" value={limit} disabled={busy} onChange={e => setLimit(e.target.value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1').slice(0, 10))} /><button aria-label="Change size unit" disabled={busy} onClick={() => { const current = Number.isFinite(+limit) && +limit > 0 ? +limit : (unit === 'MB' ? 2 : 2000); setLimit(unit === 'MB' ? Math.round(current * 1000) : Math.round(current / 10) / 100); setUnit(unit === 'MB' ? 'KB' : 'MB'); }}>{unit}</button></div></div>
               {['image', 'video'].includes(kind) && <button type="button" role="switch" aria-checked={smaller} className="convert-switch-row" disabled={busy} onClick={() => setSmaller(value => !value)}><span>Allow smaller dimensions</span><i aria-hidden="true"><b /></i></button>}
             </div>}
-            {kind === 'image' && format === 'jpg' && <div className="convert-quality"><label htmlFor="convert-quality">JPEG quality <span>{quality}%</span></label><input id="convert-quality" type="range" min="35" max="100" value={quality} disabled={busy} onChange={e => setQuality(+e.target.value)} /></div>}
+            {kind === 'image' && format === 'jpg' && <div className="convert-quality"><label htmlFor="convert-quality">JPEG quality <span>{quality}%</span></label><SplitRange id="convert-quality" label="QUALITY" min={35} max={100} value={quality} disabled={busy} onChange={e => setQuality(+e.target.value)} /></div>}
           </>}
         </div>
       </div>

@@ -18,10 +18,21 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Reject private signing files and local captures
+        shell: pwsh
+        run: |
+          $forbidden = @(git ls-files | Where-Object {
+            $_ -match '(?i)(^|/)(signing|target|local-notes|reference|unpack|captures|scratch|tmp)/' -or
+            $_ -match '(?i)\.(pfx|p12|p8|pem|key)$'
+          })
+          if ($forbidden.Count) { throw "Private or generated paths are tracked: $($forbidden -join ', ')" }
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
@@ -31,8 +42,11 @@ jobs:
         working-directory: island-ui
         run: |
           npm ci
-          node --test tests/agent-navigation.test.mjs tests/voice-capture.test.mjs tests/voice-submit.test.mjs tests/motion-lifecycle.test.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --test tests/agent-navigation.test.mjs tests/voice-capture.test.mjs tests/voice-submit.test.mjs tests/motion-lifecycle.test.mjs tests/memory-delivery.test.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           git diff --exit-code -- dist/index.html
 
       - name: Record toolchain
@@ -50,3 +64,11 @@ jobs:
 
       - name: Build and run tests and probes
         run: cargo test --locked --all-targets --features windows-shell-probe,ui-host-probe,windows-media-probe
+
+      # The media probe and product use different names for the Windows crate;
+      # check these supported feature sets independently.
+      - name: Lint application
+        run: cargo clippy --locked --all-targets --features product-app -- -D warnings
+
+      - name: Test application
+        run: cargo test --locked --all-targets --features product-app
