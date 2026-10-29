@@ -14,13 +14,26 @@
 
 ## What is Pluto?
 
-Little World Pluto keeps everyday tools and AI conversations close at hand in a small desktop workspace. It is an early alpha for Windows; features and setup may change as the project develops.
+Little World Pluto keeps everyday tools and AI conversations close at hand in a small desktop workspace. The notch stays compact until you open it, then expands into pages for quick actions and longer work. It is an early alpha for Windows; features and setup may change as the project develops.
+
+### What you can do
+
+| Area | What it does |
+| --- | --- |
+| Home and status | Shows media, volume, quick actions, the Shelf, and compact activity such as microphone and camera use. |
+| Everyday tools | Keeps text, image, and audio clipboard history; captures the screen; reads OCR and QR codes; picks colors; converts files; shows weather and system controls. |
+| Notes and Expand | Saves notes and reminders, and inserts saved text when you type a shortcut. |
+| Meetings | Transcribes microphone and/or system audio locally into a saved, source-labeled transcript. Install the separate speech runtime and model on demand in Settings; the runtime stops when recording ends. |
+| Agents and Ask | Runs tasks through your configured OpenCode or Codex ACP provider. Answers can include Pluto's built-in visual components; Ask and wake answers stay focused on spoken or plain-text replies. |
+| Appearance | Offers light and dark themes, accent colors, media-card layouts, and optional Liquid Glass styling. |
+
+Features that need a provider, model, permission, or optional tool are configured in Settings. Pluto does not bundle OpenCode, Codex, FFmpeg, or the meeting speech model.
 
 ## Get started
 
 ### Install a release
 
-Download the signed `Pluto-Setup-vX.Y.Z-windows-x64.exe` from [GitHub Releases](https://github.com/amxcodes/little-world-pluto/releases) and run it for your Windows user account. Setup uses Pluto's transparent logo and supports upgrades through the same installer. In Settings → General → Updates, you can check for later signed releases and choose when to install one.
+Download `Pluto-Setup-vX.Y.Z-windows-x64.exe` from [GitHub Releases](https://github.com/amxcodes/little-world-pluto/releases) and run it for your Windows user account. Setup supports upgrades through the same installer. In Settings → General → Updates, you can check for later signed releases and choose when to install one. Releases use a self-signed certificate, so Windows may still show a publisher or reputation warning; see the [release guide](docs/RELEASING.md).
 
 ### Run from source
 
@@ -44,20 +57,40 @@ cargo build --locked --release --features product-app --bin pluto
 
 The executable is `target\release\pluto.exe`. OpenCode or Codex must be installed and configured separately. FFmpeg is optional. See [Dependencies](DEPENDENCIES.md) for details.
 
-## How AI works
+## How Pluto fits together
 
 ```mermaid
 flowchart LR
-    Person[You] <--> UI["Pluto interface<br/>React in WebView2"]
-    UI <--> Host["Rust host<br/>typed local IPC"]
-    Host <--> Local["Windows services<br/>local state and DPAPI secrets"]
-    Host --> Wake["Windows speech recognition<br/>wake phrase"]
-    Host <--> Speech["Speech service<br/>selected in Pluto settings"]
-    Host <--> ACP["OpenCode or Codex<br/>ACP provider"]
-    ACP <--> Model["Model and service<br/>configured with provider"]
+    You[You] <--> UI["Notch and pages<br/>React in WebView2"]
+    UI <--> Host["Pluto Rust host<br/>local IPC"]
+    Host <--> Windows["Windows services<br/>screen, audio, media"]
+    Host <--> Data["Local settings and files<br/>DPAPI-protected secrets"]
+    Host <--> ACP["Selected ACP provider<br/>OpenCode or Codex"]
+    ACP <--> Model["Provider's configured<br/>model or service"]
+    Host <--> Speech["Configured speech service<br/>dictation and voice requests"]
+    UI -->|"Live audio"| Meetings["Optional local meeting<br/>speech runtime and model"]
+    Host <--> Meetings
 ```
 
-Text and voice requests go to the selected OpenCode or Codex provider. Transcription uses the speech service selected in Pluto. Wake phrase matching uses Windows speech recognition. Audio and prompts can leave your PC when these services are used; read the [privacy notes](docs/PRIVACY.md).
+Agents and Ask requests use the selected ACP provider; the provider chooses its configured model and service. Dictation and voice requests use Pluto's configured speech endpoint, while wake phrase matching uses Windows speech recognition. For meetings, WebView captures microphone audio, Windows supplies system loopback audio, and the Rust host starts the separate local transcription runtime and stores the returned transcript. Audio or prompts can leave your PC when you use configured external services; see [Privacy and data handling](docs/PRIVACY.md).
+
+## How Agents turns an answer into a visual
+
+Pluto's answer visuals are built-in UI components, not a separate OpenUI server. The selected agent normally writes Markdown. When a diagram or structured view would help, it may add one fenced `island-ui` JSON block describing *data* for a known component, such as a system map, timeline, comparison, chart, or checklist. The app supplies the layout, colors, and interaction.
+
+```mermaid
+flowchart TD
+    Q["Your question in Agents"] --> P["Pluto adds presentation guidance"]
+    P --> A["Selected OpenCode or Codex provider"]
+    A --> R["Answer: prose and optional island-ui data block"]
+    R --> G{"Rust validation gateway"}
+    G -->|"Valid or safely recovered data"| V{"Visual policy allows it?"}
+    G -->|"No usable block"| T["Show the answer as text"]
+    V -->|Yes| C["Render registered React component<br/>beside the prose"]
+    V -->|No| F["Keep prose; use safe text or omit the visual"]
+```
+
+The gateway accepts version 1, typed data only: at most **32,000 bytes per block**, **24 top-level elements**, **36 total nodes**, **3 nesting levels**, and **4,000 bytes per text field** (often less for labels). It checks each component's fields and numeric ranges. It does not accept provider-supplied HTML, CSS, JavaScript, arbitrary actions, or remote assets. If one component is invalid, the host may keep valid siblings; if no usable presentation remains, the block stays in the text answer. A second policy respects text-only requests, avoids unsupported or misleading subjects, and permits whiteboard sketches only when **Whiteboard explainers** is enabled in Agents settings. The contract lives in [`app/agent_presentation.rs`](app/agent_presentation.rs); the registered renderer lives in [`island-ui/src/agent-presentation.jsx`](island-ui/src/agent-presentation.jsx).
 
 ## Project notes
 
