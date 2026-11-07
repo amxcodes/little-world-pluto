@@ -1,6 +1,6 @@
 # Windows releases
 
-Pluto releases use a signed per-user EXE installer. The GitHub workflow builds from a version-matched `vX.Y.Z` tag, checks locked Rust and npm dependencies, verifies the committed UI bundle and Windows version resources, signs the standalone executable and installer, runs Microsoft Defender against the exact signed files, then publishes SHA-256 checksums, a build manifest, SBOMs, and GitHub artifact attestations. Publishing stops if any gate fails.
+Pluto releases use a signed per-user EXE installer and a portable ZIP bundle. The wake-word feature links Sherpa ONNX as shared runtime libraries to avoid an MSVC static CRT conflict, so each release ships the signed runtime DLLs next to `Pluto.exe`. The GitHub workflow builds from a version-matched `vX.Y.Z` tag, checks locked Rust and npm dependencies, verifies the committed UI bundle and Windows version resources, signs the executable, runtime DLLs, installer, and uninstaller, runs Microsoft Defender against the release files, then publishes SHA-256 checksums, a build manifest, SBOMs, and GitHub artifact attestations. Publishing stops if any gate fails.
 
 ## One-time GitHub setup
 
@@ -20,8 +20,10 @@ If signing is not configured, the release intentionally fails. This self-signed 
 Update `Cargo.toml` to a three-part version, rebuild and commit `island-ui/dist/index.html`, and push the matching protected tag (for example `v0.1.2`). The workflow rejects a mismatched tag or source changes during build. After approval and verification, it publishes:
 
 - `Pluto-Setup-vX.Y.Z-windows-x64.exe` — signed per-user installer and signed uninstaller.
-- `Pluto-vX.Y.Z-windows-x64.exe` — signed standalone executable.
+- `Pluto-vX.Y.Z-windows-x64.zip` — portable bundle with signed executable and native runtime DLLs.
 - `SHA256SUMS.txt`, `release-manifest.json`, and Rust/UI CycloneDX SBOMs.
+
+The portable ZIP must be extracted as a whole; `Pluto.exe` needs the included DLLs beside it. Third-party notices and license texts are included with the installer and portable bundle.
 
 The installer upgrades the per-user install under `%LOCALAPPDATA%\Programs\Pluto`. App data and saved meetings under `%LOCALAPPDATA%\Pluto` are not removed. Verify a downloaded file with `Get-FileHash -Algorithm SHA256`, Windows' signature details, and GitHub provenance:
 
@@ -31,6 +33,7 @@ In Settings → General → Updates, users can check manually and choose **Insta
 
 ```powershell
 gh attestation verify .\Pluto-Setup-vX.Y.Z-windows-x64.exe --repo amxcodes/little-world-pluto
+gh attestation verify .\Pluto-vX.Y.Z-windows-x64.zip --repo amxcodes/little-world-pluto
 ```
 
 ## Defender detections

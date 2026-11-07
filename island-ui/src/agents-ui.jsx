@@ -10,6 +10,7 @@ const defaults = {
   systemPrompt: 'For this compact workspace, lead with the result and keep routine updates concise. Include fuller detail when it helps complete the task. Be explicit about uncertainty and failures; never claim an action succeeded without confirmation. Follow the user\'s request, project instructions, and the provider\'s safety and approval rules.',
   answerView: 'preview', showComposerDuringRun: true, hybridWhiteboard: false,
   askInstructions: defaultAskInstructions,
+  wakeEngine: 'windows',
   wakeSensitivity: 'balanced',
   transcriptionSensitivity: 'balanced',
   speechPauseMs: 1500, speechNoiseSuppression: true,
@@ -44,6 +45,7 @@ export function readAgentPreferences() {
       systemPrompt: typeof saved.systemPrompt === 'string' ? saved.systemPrompt.slice(0, 6000) : defaults.systemPrompt,
       hybridWhiteboard: saved.hybridWhiteboard === true,
       askInstructions: typeof saved.askInstructions === 'string' ? saved.askInstructions.slice(0, 6000) : defaultAskInstructions,
+      wakeEngine: ['windows', 'sherpa'].includes(saved.wakeEngine) ? saved.wakeEngine : 'windows',
       wakeSensitivity: ['low', 'balanced', 'high'].includes(saved.wakeSensitivity) ? saved.wakeSensitivity : 'balanced',
       transcriptionSensitivity: ['low', 'balanced', 'high'].includes(saved.transcriptionSensitivity) ? saved.transcriptionSensitivity : 'balanced',
       speechPauseMs: [900, 1500, 2200].includes(saved.speechPauseMs) ? saved.speechPauseMs : 1500,
@@ -88,6 +90,20 @@ function useAgentPreferences() {
 const plainVoiceText = text => String(text || '').replace(/```island-ui[^\n]*\n[\s\S]*?(?:```|$)/gi, '').replace(/\*\*/g, '').replace(/`/g, '');
 const providerName = id => id === 'codex' ? 'Codex' : 'OpenCode';
 const sendAgent = (send, provider, action, data = {}) => send('agentAction', { provider, action, ...data });
+const supports3DVisualization = value => {
+  const words = String(value || '').toLocaleLowerCase().replace(/[^a-z0-9.]+/g, ' ').trim().split(/\s+/);
+  const gpt = words.findIndex((word, index) => word === 'gpt' && /^6(?:\.\d+)?$/.test(words[index + 1] || '') || /^gpt6(?:\.\d+)?$/.test(word));
+  if (gpt >= 0) {
+    const compact = words[gpt].match(/^gpt6(?:\.(\d+))?$/);
+    const version = compact ? (compact[1] ? `6.${compact[1]}` : '6') : words[gpt + 1];
+    const suffix = words.slice(gpt + (compact ? 1 : 2));
+    if (version === '6' && (!suffix.length || suffix.includes('sol') || suffix.includes('astra'))) return true;
+    if (version.startsWith('6.') && (suffix.includes('sol') || suffix.includes('astra'))) return true;
+  }
+  const kimiIndex = words.indexOf('kimi');
+  const kimiWords = kimiIndex >= 0 ? words.slice(kimiIndex + 1) : [];
+  return kimiWords.some(word => /^k(?:3|2\.(?:8|7))$/.test(word)) || /\bfor\s+coding(?:\s+highspeed)?\b/.test(kimiWords.join(' '));
+};
 const cleanOptions = options => (options || []).filter(option => option?.id && (option.type === 'boolean' || (option.type === 'select' && Array.isArray(option.options))));
 const optionChoices = option => option.options.flatMap(item => Array.isArray(item.options) ? item.options : [item]).filter(item => typeof item.value === 'string');
 const agentOperationLabels = { start: 'start the task', prompt: 'send the message', load: 'load the session', auth: 'sign in', logout: 'sign out', prepare: 'load task options', configure: 'update task options', fork: 'fork the session', session: 'open the session', question: 'send the answer', close: 'close the session', delete: 'remove the session' };
@@ -469,6 +485,7 @@ export function AgentsWorkspace({ state, Icon, send, renderAnswer, openCodeProfi
   const [sending, setSending] = useState({ opencode: false, codex: false });
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [answerExpanded, setAnswerExpanded] = useState(false);
+  const [visualizeContext, setVisualizeContext] = useState('');
   const [armedDelete, setArmedDelete] = useState('');
 
   const pendingRevision = useRef(workspaceMemory.pendingRevision);
@@ -545,6 +562,14 @@ export function AgentsWorkspace({ state, Icon, send, renderAnswer, openCodeProfi
   const matchingCommands = commandQuery == null ? [] : (session?.commands || []).filter(item => item.name?.toLowerCase().includes(commandQuery)).slice(0, 6);
   const modelOption = options.find(option => /model/i.test(`${option.id} ${option.name || ''}`));
   const modelValue = modelOption ? optionChoices(modelOption).find(choice => choice.value === activeConfig[modelOption.id])?.name || activeConfig[modelOption.id] : '';
+  const savedModel = Object.entries(activeConfig || {}).find(([id]) => /model/i.test(id))?.[1];
+  const selectedModelId = modelOption ? String(activeConfig[modelOption.id] ?? modelOption.currentValue ?? '') : String(savedModel ?? '');
+  const selectedModelChoice = modelOption && modelOption.options.flatMap(group => Array.isArray(group.options)
+    ? group.options.map(choice => ({ ...choice, group: group.name || group.id || '' })) : [group]).find(choice => choice.value === selectedModelId);
+  const visualizationContext = `${provider}:${session?.id || 'new'}:${selectedModelId}`;
+  const canVisualize = view === 'task' && !askMode && !voiceSurface && supports3DVisualization(`${selectedModelChoice?.group || ''} ${selectedModelId} ${selectedModelChoice?.name || ''}`);
+  const visualizationEnabled = canVisualize && visualizeContext === visualizationContext;
+  useEffect(() => { setVisualizeContext(''); }, [provider, session?.id, selectedModelId, askMode, voiceSurface]);
   const projectRoot = session?.directory || directory[provider] || '';
   const mentionItems = useMemo(() => {
     if (!mention) return [];
@@ -726,6 +751,7 @@ export function AgentsWorkspace({ state, Icon, send, renderAnswer, openCodeProfi
   const submitText = (value, attachedFiles = files[provider] || [], preserveDraft = false, responseMode = askMode ? 'ask' : voiceSurface ? 'wake' : 'agent') => {
     const text = value.trim();
     if ((!text && !attachedFiles.length) || sending[provider] || !agent.connected || agent.installing || (session && (!session.ready || session.active)) || (!session && agent.activeCount > 0)) return false;
+    const promptText = responseMode === 'agent' && visualizationEnabled && text ? `Visualize this in 3D: ${text}` : text;
     pendingRevision.current[provider] = { revision: agent.operationRevision || 0, preserveDraft };
     submitted.current[provider] = { revision: agent.operationRevision || 0, text, files: [...attachedFiles] };
     setSending(current => ({ ...current, [provider]: true }));
@@ -735,8 +761,8 @@ export function AgentsWorkspace({ state, Icon, send, renderAnswer, openCodeProfi
       : responseMode === 'wake'
         ? 'Island response mode: wake-answer\n' + (preferences.askInstructions ?? defaultAskInstructions)
       : preferences.systemPrompt || '';
-    if (session) sendAgent(send, provider, 'prompt', { sessionId: session.id, text, files: attachedFiles, systemPrompt, hybridWhiteboard: preferences.hybridWhiteboard === true });
-    else sendAgent(send, provider, 'start', { directory: directory[provider] || '', additionalDirectories: additionalDirectories[provider], text, files: attachedFiles, config: Object.entries(config[provider]).map(([id, value]) => ({ id, value })), systemPrompt, hybridWhiteboard: preferences.hybridWhiteboard === true });
+    if (session) sendAgent(send, provider, 'prompt', { sessionId: session.id, text: promptText, files: attachedFiles, systemPrompt, hybridWhiteboard: preferences.hybridWhiteboard === true });
+    else sendAgent(send, provider, 'start', { directory: directory[provider] || '', additionalDirectories: additionalDirectories[provider], text: promptText, files: attachedFiles, config: Object.entries(config[provider]).map(([id, value]) => ({ id, value })), systemPrompt, hybridWhiteboard: preferences.hybridWhiteboard === true });
     return true;
   };
   const submit = event => { event.preventDefault(); submitText(drafts[provider] || '', files[provider] || []); };
@@ -940,7 +966,7 @@ export function AgentsWorkspace({ state, Icon, send, renderAnswer, openCodeProfi
             if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); submit(event); }
           }} maxLength={100000} />
           {!!files[provider]?.length && <div className="agent-files" aria-label="Attached files">{files[provider].map(path => <span className="agent-file-chip" key={path} title={path}><span className="agent-file-kind"><Icon name={attachmentIcon(path)} size={14} /></span><span className="agent-file-name">{path.split(/[\\/]/).at(-1)}</span><button type="button" className="agent-file-remove" aria-label={`Remove ${path}`} onClick={() => setFiles(current => ({ ...current, [provider]: current[provider].filter(file => file !== path) }))}><Icon name="Cancel" size={12} /></button></span>)}</div>}
-          <div className="agent-composer-footer"><button type="button" className="agent-attach" onClick={attach} title="Attach files" aria-label="Attach files"><Icon name="Add" size={18} /></button><button type="button" className="agent-config-chip" onClick={() => { setOptionId(modelOption?.id || ''); setView('options'); }} title="Choose model and task options"><span>{modelValue || 'Model & options'}</span></button><span className="agent-composer-spacer" /><button type="button" className="agent-dictate" onClick={() => { setView('task'); setAnswerExpanded(false); onDictate(); }} title="Dictate into task" aria-label="Dictate into task"><Icon name="Mic" size={17} /></button><button type="submit" className="agent-submit" disabled={sending[provider] || agent.installing || (session && (!session.ready || session.active)) || (!drafts[provider]?.trim() && !files[provider]?.length)} aria-label={sending[provider] ? 'Sending task' : session ? 'Send follow-up' : 'Start task'}><Icon name={sending[provider] ? 'Loading' : 'AgentSend'} size={17} /></button></div>
+          <div className="agent-composer-footer"><button type="button" className="agent-attach" onClick={attach} title="Attach files" aria-label="Attach files"><Icon name="Add" size={18} /></button><button type="button" className="agent-config-chip" onClick={() => { setOptionId(modelOption?.id || ''); setView('options'); }} title="Choose model and task options"><span>{modelValue || 'Model & options'}</span></button>{canVisualize && <button type="button" className="agent-config-chip agent-visualize-toggle" aria-label="Toggle 3D visualization mode" aria-pressed={visualizationEnabled} onClick={() => setVisualizeContext(visualizationEnabled ? '' : visualizationContext)} title="Use the 3D visualization mode for this model"><span>3D</span><span>Visualize</span></button>}<span className="agent-composer-spacer" />{session && !session.ready && <button type="button" className="agent-dictate" onClick={() => sendAgent(send, provider, 'select', { sessionId: session.id })} title="Retry loading session" aria-label="Retry loading session"><Icon name="Refresh" size={17} /></button>}<button type="button" className="agent-dictate" onClick={() => { setVisualizeContext(''); setView('task'); setAnswerExpanded(false); onDictate(); }} title="Dictate into task" aria-label="Dictate into task"><Icon name="Mic" size={17} /></button><button type="submit" className="agent-submit" disabled={sending[provider] || agent.installing || (session && (!session.ready || session.active)) || (!drafts[provider]?.trim() && !files[provider]?.length)} aria-label={sending[provider] ? 'Sending task' : session ? 'Send follow-up' : 'Start task'}><Icon name={sending[provider] ? 'Loading' : 'AgentSend'} size={17} /></button></div>
         </form>}</div>}
         {agent.error && <AgentFeedback error={agent.error} operationKind={agent.operationKind} authRequired={agent.authRequired} authMethods={agent.authMethods} provider={provider} send={send} authenticating={agent.authenticating} Icon={Icon} />}
       </div>}

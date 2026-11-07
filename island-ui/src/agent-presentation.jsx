@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { AssemblyVisual, SystemMap, LineChart } from './agent-visuals.jsx';
 import { WhiteboardSketch } from './agent-whiteboard.jsx';
+import { ConstructionScene } from './agent-construction.jsx';
 
 const tones = new Set(['primary', 'neutral', 'info', 'success', 'warning', 'danger']);
 const toneName = (value, fallback = 'neutral') => tones.has(value) ? value : fallback;
@@ -44,6 +45,7 @@ function ElementView({ element }) {
     case 'space_station': return <AssemblyVisual station />;
     case 'human_scene': return <div className="agent-ui-text">{element.steps?.map((step, index) => <p key={index}><strong>{step.label}</strong> {step.detail}</p>)}</div>;
     case 'assembly': return <AssemblyVisual label={element.label} parts={element.parts} />;
+    case 'construction_scene': return <ConstructionScene label={element.label} ops={element.ops} />;
     case 'system_map': return <SystemMap label={element.label} nodes={element.nodes} links={element.links} />;
     case 'line_chart': return <LineChart label={element.label} unit={element.unit} points={element.points} />;
     case 'waveform': return <WaveformVisual label={element.label} values={element.values} />;

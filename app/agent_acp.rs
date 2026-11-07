@@ -1259,7 +1259,16 @@ impl Worker {
                 self.request("logout", json!({}), Pending::Logout);
             }
             Action::Select(id) => {
-                if id == self.snapshot.selected_id && (id.is_empty() || self.loaded.contains(&id)) {
+                if id == self.snapshot.selected_id
+                    && (id.is_empty()
+                        || self.loaded.contains(&id)
+                        || self.pending.values().any(|pending| match pending {
+                            Pending::Load { session_id } | Pending::Resume { session_id } => {
+                                session_id == &id
+                            }
+                            _ => false,
+                        }))
+                {
                     return;
                 }
                 self.snapshot.selected_id = id.clone();
@@ -2239,6 +2248,26 @@ impl Worker {
                     }
                 }
                 self.snapshot.next_cursor = result["nextCursor"].as_str().map(str::to_owned);
+                // A reconnect clears loaded sessions but keeps the selected ID.
+                // Restore that session so its composer can send again.
+                if !append && !self.snapshot.selected_id.is_empty() {
+                    let selected_id = self.snapshot.selected_id.clone();
+                    if self
+                        .snapshot
+                        .sessions
+                        .iter()
+                        .any(|session| session.id == selected_id)
+                        && !self.loaded.contains(&selected_id)
+                        && !self.pending.values().any(|pending| match pending {
+                            Pending::Load { session_id } | Pending::Resume { session_id } => {
+                                session_id == &selected_id
+                            }
+                            _ => false,
+                        })
+                    {
+                        self.handle_action(Action::Select(selected_id));
+                    }
+                }
             }
             Pending::New {
                 prepare,
@@ -3169,11 +3198,12 @@ Presentation priority (apply by meaning, not decoration):
 1. Text for simple answers, fictional human movement, character descriptions and unsupported physical subjects. Superman flying, Iron Man, skeletons, poses and human figures must NOT automatically trigger visuals. Human rigs are unavailable, even when explicitly requested. An explicit request to visualize these may use a simple conceptual flow/relationship diagram, never a replacement figure assembled from blocks, curves or scribbles. Respect text-only requests.
 2. Relationships, processes and functional explanations -> system_map, timeline, comparison or table. A heart explanation should show blood-flow relationships, not invented anatomical geometry. Use plain labels; distinguish function from physical anatomy.
 3. Simple spatial explainers where a few clear strokes/shapes suffice -> whiteboard_sketch ONLY when enabled below. Prefer familiar silhouettes or bounded geometric shapes; skip drawings that need artistic or anatomical skill.
-4. Known physical object structure -> space_station for ISS, assembly for TVs, remotes, computers and other devices expressible as panels/blocks/cylinders. Do NOT use these for people, organic anatomy or fictional costumes. A device's logical connections still use system_map. An explicit visual request does not make an inaccurate representation acceptable.
+4. Explicit requests for a simple 3D view of a physical object that can honestly be represented with a few boxes -> construction_scene. Otherwise use space_station for ISS or assembly for TVs, remotes, computers and other devices expressible as panels/blocks/cylinders. Do NOT use these for people, organic anatomy or fictional costumes. A device's logical connections still use system_map. An explicit visual request does not make an inaccurate representation acceptable.
 5. Charts only for actual numeric data. Raw visual_scene is a last resort for a simple abstract mechanism, never for people or a detailed object.
 Use at most ONE main explanatory visual, selected by the question's actual purpose. Do not show a visual merely because a topic is scientific. Retain useful existing tables and other semantic components. If no reliable representation fits, explain in text. Do not print this routing decision.
 
 Preferred visual components, designed to work with small models:
+- construction_scene(label,ops:[...]): a bounded, selectable 3D construction view for an explicitly requested simple physical object. Use 1–12 operations in order. A box operation is {op:"box",id,label,detail,position:[x,y,z],size:[width,depth,height]}; a mirror operation is {op:"mirror",id,label,detail,source,axis:"x" or "y"}. IDs must be unique and short; mirror source must be an earlier operation. Position values -8..8; each size .15..8. Mirror reflects the whole source box across the chosen world origin plane. The app owns projection, rotation and colors. Use only if box-like components give an honest conceptual view; label it schematic, not to scale. Never use this for detailed aircraft, organic shapes, people, or an object whose recognizable shape needs curves. No scripts, meshes, assets, URLs or custom paint.
 - assembly(label,parts:[{label,detail,shape,position?,size?}]): 1–12 selectable isometric parts. shape is block, cylinder, sphere, panel, solar_array, truss, module, or radiator. The app draws shaded faces, depth, panel grids, and module seams, and handles all labels outside the drawing. position is [x,y,z] in a small world grid (-8..8); size is [width,depth,height] (0.15..8). Omit position and size for an automatically spaced exploded parts view. Supply positions for every part or omit positions for every part; never mix the two. Use positions only when the spatial arrangement is known. Cylinders/modules stand along z. Label simplified or exploded views as such; never imply CAD precision or manufacture connections. This is the preferred component for machines, devices, layered objects, and physical parts. Use system_map for logical links instead. Keep sizes within a similar order of magnitude so all parts remain visible.
 - space_station: no fields. Interactive ISS illustration with recognizable solar wings, truss, radiators, and module forms. Use for explanations of station structure, modules, or power. It is simplified, not a complete docking map or current configuration. Do not use for unrelated space topics or news.
 - system_map(label,nodes:[{id,label,detail,symbol?}],links:[{from,to,label}]): 2–8 nodes and 1–12 directed links. Unique IDs; links must reference existing nodes; no self-links. Node label <=60 characters, detail <=400, link label <=80. symbol is module, storage, processor, person, energy, or cloud. The app handles placement, readable labels, selectable details, and connection highlighting. Use for architecture, workflows, cause/effect, biological systems, and dependencies. Supply only supported relationships, no coordinates.
@@ -3181,6 +3211,9 @@ Preferred visual components, designed to work with small models:
 
 Examples of automatic choices: 'How do ISS modules fit together?' -> space_station; 'How does a browser load a page?' -> system_map; 'Compare these monthly readings' -> line_chart with the actual readings; 'When was the ISS launched?' -> short text. Use one main visual and a concise takeaway. Do not repeat all of its details in extra cards.
 Minimal valid examples:
+```island-ui
+{"version":1,"elements":[{"type":"construction_scene","label":"Router exterior · schematic, not to scale","ops":[{"op":"box","id":"housing","label":"Housing","detail":"Encloses the electronics.","position":[-2,-1,0],"size":[4,2,0.5]},{"op":"box","id":"antenna_left","label":"Left antenna","detail":"External antenna for wireless signals.","position":[-1.7,0.5,0.4],"size":[0.2,0.2,2]},{"op":"mirror","id":"antenna_right","label":"Right antenna","detail":"Second external antenna.","source":"antenna_left","axis":"x"}]}]}
+```
 ```island-ui
 {"version":1,"elements":[{"type":"assembly","label":"Exploded device layers · schematic","parts":[{"label":"Base","detail":"Supports the assembly.","shape":"block","position":[0,0,0],"size":[3,2,0.3]},{"label":"Circuit board","detail":"Carries the electronic components.","shape":"panel","position":[0,0,1],"size":[2.7,1.7,0.15]},{"label":"Cover","detail":"Protects the internals.","shape":"block","position":[0,0,2],"size":[3,2,0.3]}]}]}
 ```

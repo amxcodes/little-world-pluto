@@ -200,7 +200,7 @@ jobs:
             Remove-Item Env:PLUTO_SIGNING_PFX_PASSWORD -ErrorAction SilentlyContinue
           }
 
-      - name: Sign and verify executable and installer
+      - name: Sign and verify executable, runtime DLLs, and installer
         shell: pwsh
         run: |
           ./scripts/phase1/package_windows_installer.ps1 -SkipBuild -SigningCertificateThumbprint $env:PLUTO_SIGNING_CERT_THUMBPRINT
@@ -224,9 +224,9 @@ jobs:
           $manifest = Get-Content -LiteralPath Cargo.toml -Raw
           $versionMatch = [regex]::Match($manifest, '(?m)^version\s*=\s*"(\d+\.\d+\.\d+)"')
           $version = $versionMatch.Groups[1].Value
-          $exeName = "Pluto-v$version-windows-x64.exe"
+          $portableName = "Pluto-v$version-windows-x64.zip"
           $setupName = "Pluto-Setup-v$version-windows-x64.exe"
-          Copy-Item -LiteralPath target\release\pluto.exe -Destination (Join-Path $root $exeName)
+          Copy-Item -LiteralPath (Join-Path 'target\windows-package' $portableName) -Destination (Join-Path $root $portableName)
           Copy-Item -LiteralPath (Join-Path 'target\windows-package' $setupName) -Destination (Join-Path $root $setupName)
           # The UI bundle is generated and checked against the committed copy after npm build.
           # Do not treat that generated output as a source-tree change during asset assembly.
@@ -270,10 +270,14 @@ jobs:
             } | Select-Object -First 1
           if (-not $mpCmdRun) { $mpCmdRun = Join-Path $env:ProgramFiles 'Windows Defender\MpCmdRun.exe' }
           if (-not (Test-Path -LiteralPath $mpCmdRun -PathType Leaf)) { throw 'Microsoft Defender scan tool was not found.' }
+          $portableBundle = Join-Path 'target\release-assets' "Pluto-$($env:GITHUB_REF_NAME)-windows-x64.zip"
+          $portableDir = Join-Path $env:RUNNER_TEMP 'PlutoDefenderScan'
+          if (Test-Path -LiteralPath $portableDir) { Remove-Item -LiteralPath $portableDir -Recurse -Force }
+          Expand-Archive -LiteralPath $portableBundle -DestinationPath $portableDir
           $assets = @(
-            (Join-Path 'target\release-assets' "Pluto-$($env:GITHUB_REF_NAME)-windows-x64.exe"),
+            $portableBundle,
             (Join-Path 'target\release-assets' "Pluto-Setup-$($env:GITHUB_REF_NAME)-windows-x64.exe")
-          )
+          ) + @(Get-ChildItem -LiteralPath $portableDir -File | Where-Object { $_.Extension -in @('.exe', '.dll') } | ForEach-Object FullName)
           $scanStartedUtc = [DateTime]::UtcNow
           $scannedPaths = @()
           foreach ($asset in $assets) {
@@ -334,6 +338,27 @@ jobs:
           $match = [regex]::Match((Get-Content -LiteralPath Cargo.toml -Raw), '(?m)^version\s*=\s*"(\d+\.\d+\.\d+)"')
           $version = $match.Groups[1].Value
           $installer = [IO.Path]::GetFullPath("target\release-assets\Pluto-Setup-v$version-windows-x64.exe")
+          $portableBundle = [IO.Path]::GetFullPath("target\release-assets\Pluto-v$version-windows-x64.zip")
+          $portableDir = Join-Path $env:RUNNER_TEMP 'PlutoPortableSmoke'
+          if (Test-Path -LiteralPath $portableDir) { Remove-Item -LiteralPath $portableDir -Recurse -Force }
+          Expand-Archive -LiteralPath $portableBundle -DestinationPath $portableDir
+          $releaseProgram = Join-Path $portableDir 'Pluto.exe'
+          $runtimeNames = @(
+            'onnxruntime.dll',
+            'onnxruntime_providers_shared.dll',
+            'sherpa-onnx-c-api.dll',
+            'sherpa-onnx-cxx-api.dll'
+          )
+          foreach ($runtimeName in $runtimeNames) {
+            if (-not (Test-Path -LiteralPath (Join-Path $portableDir $runtimeName) -PathType Leaf)) {
+              throw "Portable bundle is missing runtime DLL $runtimeName."
+            }
+          }
+          if (-not (Test-Path -LiteralPath (Join-Path $portableDir 'THIRD_PARTY_NOTICES.txt')) -or
+              -not (Test-Path -LiteralPath (Join-Path $portableDir 'licenses\Apache-2.0-Sherpa-ONNX.txt')) -or
+              -not (Test-Path -LiteralPath (Join-Path $portableDir 'licenses\MIT-ONNX-Runtime.txt'))) {
+            throw 'Portable bundle is missing third-party notices or license texts.'
+          }
           $installDir = Join-Path $env:RUNNER_TEMP 'PlutoInstallerSmoke'
           $sentinel = Join-Path $env:LOCALAPPDATA 'Pluto\installer-smoke.txt'
           $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
@@ -346,11 +371,25 @@ jobs:
           $program = Join-Path $installDir 'Pluto.exe'
           $uninstaller = Join-Path $installDir 'unins000.exe'
           if (-not (Test-Path -LiteralPath $program) -or -not (Test-Path -LiteralPath $uninstaller)) { throw 'Installer did not place Pluto and its uninstaller.' }
-          $releaseProgram = Join-Path 'target\release-assets' "Pluto-v$version-windows-x64.exe"
           if ((Get-FileHash -LiteralPath $program -Algorithm SHA256).Hash -cne (Get-FileHash -LiteralPath $releaseProgram -Algorithm SHA256).Hash) {
-            throw 'Installed Pluto.exe differs from the signed release executable.'
+            throw 'Installed Pluto.exe differs from the signed portable release executable.'
           }
-          foreach ($signedFile in @($program, $uninstaller)) {
+          foreach ($runtimeName in $runtimeNames) {
+            $portableRuntime = Join-Path $portableDir $runtimeName
+            $installedRuntime = Join-Path $installDir $runtimeName
+            if (-not (Test-Path -LiteralPath $installedRuntime -PathType Leaf) -or
+                (Get-FileHash -LiteralPath $installedRuntime -Algorithm SHA256).Hash -cne
+                (Get-FileHash -LiteralPath $portableRuntime -Algorithm SHA256).Hash) {
+              throw "Installed runtime DLL differs from portable bundle: $runtimeName"
+            }
+          }
+          if (-not (Test-Path -LiteralPath (Join-Path $installDir 'THIRD_PARTY_NOTICES.txt')) -or
+              -not (Test-Path -LiteralPath (Join-Path $installDir 'licenses\Apache-2.0-Sherpa-ONNX.txt')) -or
+              -not (Test-Path -LiteralPath (Join-Path $installDir 'licenses\MIT-ONNX-Runtime.txt'))) {
+            throw 'Installer omitted third-party notices or license texts.'
+          }
+          $signedFiles = @($program, $uninstaller) + @($runtimeNames | ForEach-Object { Join-Path $installDir $_ })
+          foreach ($signedFile in $signedFiles) {
             $signature = Get-AuthenticodeSignature -LiteralPath $signedFile
             if ($null -eq $signature.SignerCertificate -or $null -eq $signature.TimeStamperCertificate -or
                 $signature.SignerCertificate.Thumbprint -ine $env:PLUTO_SIGNING_CERT_THUMBPRINT) {
@@ -397,10 +436,10 @@ jobs:
           name: pluto-windows-release-assets
           path: release-assets
 
-      - name: Attest executable provenance
+      - name: Attest portable bundle provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          subject-path: release-assets/Pluto-${{ github.ref_name }}-windows-x64.exe
+          subject-path: release-assets/Pluto-${{ github.ref_name }}-windows-x64.zip
 
       - name: Attest installer provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
@@ -410,13 +449,13 @@ jobs:
       - name: Attest Rust dependency SBOM
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          subject-path: release-assets/Pluto-${{ github.ref_name }}-windows-x64.exe
+          subject-path: release-assets/Pluto-${{ github.ref_name }}-windows-x64.zip
           sbom-path: release-assets/Pluto-rust-sbom.cdx.json
 
       - name: Attest UI dependency SBOM
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          subject-path: release-assets/Pluto-${{ github.ref_name }}-windows-x64.exe
+          subject-path: release-assets/Pluto-${{ github.ref_name }}-windows-x64.zip
           sbom-path: release-assets/Pluto-ui-sbom.cdx.json
 
   publish:

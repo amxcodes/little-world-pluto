@@ -1219,8 +1219,8 @@ function SettingsToggle({ label, value, onChange, disabled = false }) {
   return <div className="settings-line"><span>{label}</span><button type="button" role="switch" aria-label={label} aria-checked={!!value} disabled={disabled} className={'settings-switch ' + (value ? 'on' : '')} onClick={onChange}><i /></button></div>;
 }
 
-function SettingsSegments({ value, options, onChange, className = '' }) {
-  return <div className={'settings-segments ' + className}>{options.map(([option, label]) => <button key={option} type="button" className={value === option ? 'selected' : ''} aria-pressed={value === option} onClick={() => onChange(option)}>{label}</button>)}</div>;
+function SettingsSegments({ value, options, onChange, className = '', disabled = false }) {
+  return <div className={'settings-segments ' + className}>{options.map(([option, label]) => <button key={option} type="button" disabled={disabled} className={value === option ? 'selected' : ''} aria-pressed={value === option} onClick={() => onChange(option)}>{label}</button>)}</div>;
 }
 
 function SettingsCard({ icon, title, detail, children, className = '' }) {
@@ -1456,6 +1456,11 @@ function SettingsPanel({ material, updateMaterial, state, batteryView, setBatter
         </SettingsCard>}
         {section === 'voice' && <SettingsCard icon="Mic" title="Voice wake">
           <SettingsToggle label="Listen for wake phrase" value={wakeOn} disabled={!wakeOn && !speech.configured} onChange={() => { const phrase = wakePhrase.trim() || 'Hey Island'; saveAgentPreferences({ ...readAgentPreferences(), wakePhrase: phrase }); send('wakeWordSet', { enabled: !wakeOn, phrase }); }}/>
+          <div className="settings-choice"><span>Wake-word engine</span><SettingsSegments value={voicePreferences.wakeEngine} disabled={wakeOn} options={ [['windows', 'Windows'], ['sherpa', 'Sherpa ONNX']] } onChange={wakeEngine => changeVoicePreference({ wakeEngine })}/></div>
+          {voicePreferences.wakeEngine === 'sherpa' && <div className="settings-model-control">
+            <p className="settings-note">Sherpa-ONNX runs English wake phrases locally. Its small model downloads separately and model updates ship with Pluto releases.</p>
+            <div className="settings-meeting-actions"><span className="settings-note">{wake.modelStatus === 'installing' ? 'Downloading and verifying the wake model…' : wake.modelReady ? `Model ${wake.modelVersion || ''} is ready` : wake.modelError || (wake.modelVersion ? `Model update ${wake.modelVersion} → ${wake.requiredModelVersion} is available.` : 'Wake model is not installed.')}</span><button type="button" className="settings-inline-action" disabled={wakeOn || wake.modelStatus === 'installing'} onClick={() => send('wakeModelInstall')}>{wake.modelStatus === 'installing' ? 'Installing…' : wake.modelReady ? 'Repair model' : wake.modelVersion ? 'Update model' : 'Install model'}</button></div>
+          </div>}
           <div className="settings-choice"><span>Wake sensitivity</span><SettingsSegments value={voicePreferences.wakeSensitivity} options={ [['low', 'Low'], ['balanced', 'Balanced'], ['high', 'High']] } onChange={wakeSensitivity => changeVoicePreference({ wakeSensitivity })}/></div>
           <p className="settings-note">Lower sensitivity reduces false triggers. Higher sensitivity accepts less certain phrase matches.</p>
           <label className="settings-voice-phrase">Wake phrase<input value={wakePhrase} maxLength={64} disabled={wakeOn} onChange={e => setWakePhrase(e.target.value)} onBlur={() => saveAgentPreferences({ ...readAgentPreferences(), wakePhrase: wakePhrase.trim() || 'Hey Island' })}/></label>
@@ -3026,7 +3031,7 @@ function App() {
       visible: !state.expanded && !state.compactFaded,
     });
   }, [compactStatus.id, compactStatus.payload?.feedback?.id, state.expanded, state.compactFaded]);
-  return <div style={glassStyle(material)} data-material={material.enabled ? "glass" : "standard"} data-glass-motion={material.enabled && material.motion} data-reduced-motion={!!(state.shellSettings?.reducedMotion || state.shellSettings?.systemReducedMotion)} className={'island accent-' + accentGradient + ' ' + (state.dark ? 'dark' : 'light') + (state.expanded ? ' expanded' : ' compact') + ((state.shellSettings?.shape || 'notch') === 'capsule' ? ' capsule-shape' : ' notch-shape') + ' ' + shellPhase + (state.compactFaded ? ' compact-faded' : '') + (fileDragOver ? ' file-dragging' : '') + (state.wakeWord?.surface ? ' voice-surface-open' : '') + (settingsOpen ? ' settings-open' : '') + (settingsClosing ? ' settings-closing' : '') + (settingsReturning ? ' settings-returning' : '')}
+  return <div style={{ ...glassStyle(material), '--compact-row-width': `${Number(state.compactRowWidth) || 10000}px` }} data-material={material.enabled ? "glass" : "standard"} data-glass-motion={material.enabled && material.motion} data-reduced-motion={!!(state.shellSettings?.reducedMotion || state.shellSettings?.systemReducedMotion)} className={'island accent-' + accentGradient + ' ' + (state.dark ? 'dark' : 'light') + (state.expanded ? ' expanded' : ' compact') + ((state.shellSettings?.shape || 'notch') === 'capsule' ? ' capsule-shape' : ' notch-shape') + ' ' + shellPhase + (state.compactFaded ? ' compact-faded' : '') + (fileDragOver ? ' file-dragging' : '') + (state.wakeWord?.surface ? ' voice-surface-open' : '') + (settingsOpen ? ' settings-open' : '') + (settingsClosing ? ' settings-closing' : '') + (settingsReturning ? ' settings-returning' : '')}
     onFocusCapture={event => { if (isEditor(event.target)) send('textFocus'); }}
     onBlurCapture={event => { if (isEditor(event.target)) queueMicrotask(() => { if (!isEditor(document.activeElement)) send('textBlur'); }); }}>
     {!state.expanded ? <CompactTransition state={state} compactStatus={compactStatus} batteryView={batteryView} screenRecordingAt={screenRecordingAt} screenRecordingElapsed={screenRecordingElapsed} screenRecordingStopping={screenRecordingStopping} contextTools={contextTools} onRunContextTool={runContextAction} /> : <>

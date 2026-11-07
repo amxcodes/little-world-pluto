@@ -130,6 +130,10 @@ pub enum PresentationElement {
         label: String,
         parts: Vec<AssemblyPart>,
     },
+    ConstructionScene {
+        label: String,
+        ops: Vec<ConstructionOp>,
+    },
     SystemMap {
         label: String,
         nodes: Vec<MapNode>,
@@ -333,6 +337,34 @@ pub enum AssemblyShape {
     Truss,
     Module,
     Radiator,
+}
+
+// A small, ordered construction graph. References can only point backward,
+// so a provider cannot create cycles or unbounded recursive geometry.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ConstructionOp {
+    Box {
+        id: String,
+        label: String,
+        detail: String,
+        position: [f64; 3],
+        size: [f64; 3],
+    },
+    Mirror {
+        id: String,
+        label: String,
+        detail: String,
+        source: String,
+        axis: MirrorAxis,
+    },
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MirrorAxis {
+    X,
+    Y,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -610,6 +642,8 @@ impl VisualPolicy {
                 "sketch",
                 "illustrate",
                 "visually",
+                "3d",
+                "model",
             ]),
             whiteboard,
         }
@@ -628,6 +662,19 @@ pub fn apply_visual_policy(
                 parts
                     .iter()
                     .map(|part| format!("{}: {}", part.label, part.detail))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            ),
+            PresentationElement::ConstructionScene { label, ops } => format!(
+                "{}\n{}",
+                label,
+                ops.iter()
+                    .map(|op| match op {
+                        ConstructionOp::Box { label, detail, .. }
+                        | ConstructionOp::Mirror { label, detail, .. } => {
+                            format!("{label}: {detail}")
+                        }
+                    })
                     .collect::<Vec<_>>()
                     .join("\n")
             ),
@@ -701,6 +748,7 @@ pub fn apply_visual_policy(
             let graphical = matches!(
                 element,
                 PresentationElement::Assembly { .. }
+                    | PresentationElement::ConstructionScene { .. }
                     | PresentationElement::SpaceStation { .. }
                     | PresentationElement::BlackHole { .. }
                     | PresentationElement::SystemMap { .. }
@@ -718,6 +766,7 @@ pub fn apply_visual_policy(
                     && matches!(
                         element,
                         PresentationElement::Assembly { .. }
+                            | PresentationElement::ConstructionScene { .. }
                             | PresentationElement::VisualScene { .. }
                             | PresentationElement::WhiteboardSketch { .. }
                             | PresentationElement::SpaceStation { .. }
@@ -728,6 +777,8 @@ pub fn apply_visual_policy(
                         PresentationElement::Assembly { .. }
                             | PresentationElement::SpaceStation { .. }
                     ))
+                || (matches!(element, PresentationElement::ConstructionScene { .. })
+                    && (policy.organic_subject || !policy.explicit_visual))
                 || (policy.organic_subject
                     && matches!(
                         element,
@@ -1102,6 +1153,46 @@ fn valid_element(element: &PresentationElement, depth: usize, nodes: &mut usize)
                                 .all(|v| v.is_finite() && (0.15..=8.0).contains(v))
                         })
                 })
+        }
+        PresentationElement::ConstructionScene { label, ops } => {
+            if !text_ok(label, 100) || !(1..=12).contains(&ops.len()) {
+                return false;
+            }
+            let mut seen = std::collections::HashSet::new();
+            ops.iter().all(|op| match op {
+                ConstructionOp::Box {
+                    id,
+                    label,
+                    detail,
+                    position,
+                    size,
+                } => {
+                    text_ok(id, 32)
+                        && seen.insert(id.as_str())
+                        && text_ok(label, 60)
+                        && text_ok(detail, 400)
+                        && position
+                            .iter()
+                            .all(|v| v.is_finite() && (-8.0..=8.0).contains(v))
+                        && size
+                            .iter()
+                            .all(|v| v.is_finite() && (0.15..=8.0).contains(v))
+                }
+                ConstructionOp::Mirror {
+                    id,
+                    label,
+                    detail,
+                    source,
+                    ..
+                } => {
+                    text_ok(id, 32)
+                        && text_ok(source, 32)
+                        && seen.contains(source.as_str())
+                        && seen.insert(id.as_str())
+                        && text_ok(label, 60)
+                        && text_ok(detail, 400)
+                }
+            })
         }
         PresentationElement::SystemMap {
             label,

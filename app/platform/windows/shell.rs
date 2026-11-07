@@ -101,6 +101,13 @@ fn wake_sensitivity() -> crate::platform::windows::wake_word::Sensitivity {
     )
 }
 
+fn wake_engine() -> crate::platform::windows::wake_word::Engine {
+    let preferences = load_agent_preferences().unwrap_or_default();
+    crate::platform::windows::wake_word::Engine::from_name(
+        preferences["wakeEngine"].as_str().unwrap_or("windows"),
+    )
+}
+
 fn agent_preferences_path() -> Option<std::path::PathBuf> {
     std::env::var_os("LOCALAPPDATA").map(|root| {
         std::path::PathBuf::from(root)
@@ -2465,6 +2472,7 @@ pub struct EdgeShell {
     speech_receiver: Receiver<(u64, Result<String, String>)>,
     speech_pending: bool,
     wake_word: crate::platform::windows::wake_word::WakeWordService,
+    wake_model: crate::platform::windows::wake_word_model::WakeModelManager,
     wake_word_status: String,
     wake_word_phrase: String,
     wake_word_error: Option<String>,
@@ -3087,6 +3095,7 @@ impl EdgeShell {
             speech_receiver,
             speech_pending: false,
             wake_word,
+            wake_model: crate::platform::windows::wake_word_model::WakeModelManager::new(),
             wake_word_status: "off".into(),
             wake_word_phrase: "Hey Pluto".into(),
             wake_word_error: None,
@@ -3638,6 +3647,11 @@ impl EdgeShell {
             "weatherError": self.weather_error,
             "speechSettings": self.speech_settings.public_state(),
         });
+        // Keep the compact row at its settled width while the persistent
+        // WebView viewport changes size during the shell handoff.
+        state["compactRowWidth"] = serde_json::json!(
+            (self.folded_target_width() - if self.glass_material { 16.0 } else { 8.0 }).max(1.0)
+        );
         state["wakeWord"] = serde_json::json!({
             "status": self.wake_word_status,
             "phrase": self.wake_word_phrase,
@@ -3645,6 +3659,12 @@ impl EdgeShell {
             "revision": self.wake_word_revision,
             "surface": self.wake_surface || self.wake_closing,
             "local": true,
+            "engine": wake_engine().as_name(),
+            "modelStatus": self.wake_model.state().status,
+            "modelReady": self.wake_model.ready(),
+            "modelVersion": self.wake_model.state().installed_version,
+            "modelError": self.wake_model.state().error,
+            "requiredModelVersion": crate::platform::windows::wake_word_model::MODEL_VERSION,
         });
         state["foregroundApp"] = serde_json::json!(self.foreground_app);
         state["conversion"] = serde_json::json!(self.converter.state);
@@ -4173,6 +4193,11 @@ impl EdgeShell {
                 "meetingEngineRemove" => self.meetings.remove_runtime(),
                 "meetingModelInstall" => self.meetings.install_model(),
                 "meetingModelRemove" => self.meetings.remove_model(),
+                "wakeModelInstall" => {
+                    self.wake_model.install();
+                    self.push_react_state();
+                    redraw = false;
+                }
                 "meetingSourceSet" => self
                     .meetings
                     .set_source(value["source"].as_str().unwrap_or("microphone")),
@@ -4440,10 +4465,11 @@ impl EdgeShell {
                     if previous_sensitivity != wake_sensitivity()
                         && matches!(self.wake_word_status.as_str(), "arming" | "listening")
                     {
-                        match self
-                            .wake_word
-                            .arm(&self.wake_word_phrase, wake_sensitivity())
-                        {
+                        match self.wake_word.arm(
+                            &self.wake_word_phrase,
+                            wake_sensitivity(),
+                            wake_engine(),
+                        ) {
                             Ok(_) => {
                                 self.wake_word_status = "arming".into();
                                 self.wake_word_error = None;
@@ -4496,7 +4522,10 @@ impl EdgeShell {
                 "wakeWordSet" => {
                     if value["enabled"].as_bool().unwrap_or(false) {
                         let phrase = value["phrase"].as_str().unwrap_or("Hey Pluto");
-                        match self.wake_word.arm(phrase, wake_sensitivity()) {
+                        match self
+                            .wake_word
+                            .arm(phrase, wake_sensitivity(), wake_engine())
+                        {
                             Ok(phrase) => {
                                 self.wake_word_status = "arming".into();
                                 self.wake_word_phrase = phrase;
@@ -4525,7 +4554,10 @@ impl EdgeShell {
                         return;
                     }
                     let phrase = value["phrase"].as_str().unwrap_or(&self.wake_word_phrase);
-                    match self.wake_word.arm(phrase, wake_sensitivity()) {
+                    match self
+                        .wake_word
+                        .arm(phrase, wake_sensitivity(), wake_engine())
+                    {
                         Ok(phrase) => {
                             self.wake_word_status = "arming".into();
                             self.wake_word_phrase = phrase;
@@ -7627,10 +7659,11 @@ impl EdgeShell {
                             self.wake_mic_clear_samples =
                                 self.wake_mic_clear_samples.saturating_add(1);
                             if self.wake_mic_clear_samples >= 2 {
-                                match self
-                                    .wake_word
-                                    .arm(&self.wake_word_phrase, wake_sensitivity())
-                                {
+                                match self.wake_word.arm(
+                                    &self.wake_word_phrase,
+                                    wake_sensitivity(),
+                                    wake_engine(),
+                                ) {
                                     Ok(_) => {
                                         self.wake_word_status = "arming".into();
                                         self.wake_word_error = None;
@@ -7911,6 +7944,9 @@ impl EdgeShell {
             self.push_react_state();
         }
         if self.meetings.poll() {
+            self.push_react_state();
+        }
+        if self.wake_model.poll() {
             self.push_react_state();
         }
         let conversion_paths = {
@@ -9573,11 +9609,13 @@ impl EdgeShell {
             return Err(last_error("could not update the shell surface"));
         }
         self.sync_drop_catcher();
+        self.sync_react_view(body_width, body_height);
+        // Include WebView bounds/state reconciliation in the frame budget;
+        // it can dominate the DIB upload during compact/expanded handoffs.
         self.render_cost_estimate =
             smoothed_render_cost(self.render_cost_estimate, render_started.elapsed());
         self.frame_interval =
             animation_frame_interval(self.refresh_period, self.render_cost_estimate);
-        self.sync_react_view(body_width, body_height);
         Ok(())
     }
 
@@ -10338,10 +10376,11 @@ fn animation_frame_interval(
     render_cost: std::time::Duration,
 ) -> std::time::Duration {
     let refresh_ns = refresh_period.as_nanos().max(1);
-    // Present on a whole number of display refreshes. Leave headroom for the
-    // CPU DIB upload; a fixed 60 Hz timer judders on 75/90/120/144 Hz screens.
+    // Present on a whole number of display refreshes. The measured cost
+    // already includes the DIB upload; a cost-proportional margin needlessly
+    // drops a 15 ms frame to 30 fps on a 60 Hz display.
     let cost_ns = render_cost.as_nanos();
-    let required_ns = cost_ns.saturating_add((cost_ns / 8).max(1_000_000));
+    let required_ns = cost_ns.saturating_add((refresh_ns / 16).max(500_000));
     let periods = required_ns.div_ceil(refresh_ns).max(1);
     std::time::Duration::from_nanos(
         refresh_ns.saturating_mul(periods).min(u128::from(u64::MAX)) as u64
@@ -10370,10 +10409,11 @@ fn smoothed_render_cost(
             .saturating_mul(3)
             .max(std::time::Duration::from_millis(1)),
     );
-    if sample >= previous {
-        return sample;
-    }
-    let nanos = (previous.as_nanos() * 7 + sample.as_nanos()) / 8;
+    let nanos = if sample >= previous {
+        (previous.as_nanos() * 3 + sample.as_nanos()) / 4
+    } else {
+        (previous.as_nanos() * 7 + sample.as_nanos()) / 8
+    };
     std::time::Duration::from_nanos(nanos.min(u128::from(u64::MAX)) as u64)
 }
 
@@ -12406,6 +12446,15 @@ mod tests {
             refresh_period_for_rate(60_000, 1_001),
             Duration::from_nanos(16_683_334)
         );
+        let sixty_hz = refresh_period_for_rate(60, 1);
+        assert_eq!(
+            animation_frame_interval(sixty_hz, Duration::from_millis(15)),
+            sixty_hz
+        );
+        assert_eq!(
+            animation_frame_interval(sixty_hz, Duration::from_millis(16)),
+            sixty_hz * 2
+        );
     }
 
     #[test]
@@ -12414,8 +12463,12 @@ mod tests {
         assert_eq!(refresh_period_for_rate(60, 0), FALLBACK_FRAME_INTERVAL);
         assert_eq!(refresh_period_for_rate(1, 1), FALLBACK_FRAME_INTERVAL);
         let refresh = refresh_period_for_rate(120, 1);
-        let slow_cost = smoothed_render_cost(Duration::from_millis(9), Duration::from_millis(20));
-        assert_eq!(slow_cost, Duration::from_millis(20));
+        let spike = smoothed_render_cost(Duration::from_millis(9), Duration::from_millis(20));
+        assert!(spike > Duration::from_millis(9));
+        assert!(spike < Duration::from_millis(20));
+        let slow_cost = (0..6).fold(spike, |cost, _| {
+            smoothed_render_cost(cost, Duration::from_millis(20))
+        });
         assert_eq!(
             animation_frame_interval(refresh, slow_cost).as_nanos(),
             refresh.as_nanos() * 3
