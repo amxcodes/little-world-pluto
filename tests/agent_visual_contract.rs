@@ -102,6 +102,49 @@ fn assemblies_reject_unbounded_or_mixed_geometry() {
 }
 
 #[test]
+fn construction_scene_is_promptable_bounded_and_keeps_text_fallback() {
+    let scene = serde_json::json!({"type":"construction_scene","label":"Router · schematic","ops":[
+        {"op":"box","id":"body","label":"Housing","detail":"Encloses the electronics.","position":[-2,-1,0],"size":[4,2,0.5]},
+        {"op":"box","id":"left","label":"Antenna","detail":"Wireless antenna.","position":[-1.7,0.5,0.4],"size":[0.2,0.2,2]},
+        {"op":"mirror","id":"right","label":"Second antenna","detail":"Mirrors the first antenna.","source":"left","axis":"x"}
+    ]});
+    let (presentation, prose) = parse(serde_json::json!([scene.clone()])).unwrap();
+    assert_eq!(prose, "Answer");
+    assert_eq!(presentation.elements.len(), 1);
+    let visual = agent_presentation::apply_visual_policy(
+        presentation,
+        &agent_presentation::VisualPolicy::for_request("Show a 3D router", false),
+    )
+    .unwrap();
+    assert!(matches!(
+        visual.elements[0],
+        agent_presentation::PresentationElement::ConstructionScene { .. }
+    ));
+    let text_only = agent_presentation::apply_visual_policy(
+        parse(serde_json::json!([scene.clone()])).unwrap().0,
+        &agent_presentation::VisualPolicy::for_request("Show a 3D router, text only", false),
+    )
+    .unwrap();
+    assert!(matches!(
+        text_only.elements[0],
+        agent_presentation::PresentationElement::Text { .. }
+    ));
+
+    for (field, value) in [
+        ("source", serde_json::json!("missing")),
+        ("axis", serde_json::json!("z")),
+        ("id", serde_json::json!("left")),
+    ] {
+        let mut invalid = scene.clone();
+        invalid["ops"][2][field] = value;
+        assert!(parse(serde_json::json!([invalid])).is_none());
+    }
+    let mut invalid = scene;
+    invalid["ops"][0]["size"] = serde_json::json!([1000, 2, 1]);
+    assert!(parse(serde_json::json!([invalid])).is_none());
+}
+
+#[test]
 fn unknown_fields_cannot_smuggle_markup_into_registered_shapes() {
     assert!(parse(serde_json::json!([{"type":"assembly","label":"Parts","parts":[{"shape":"block","label":"A","detail":"A","html":"<script>alert(1)</script>"}]}])).is_none());
 }

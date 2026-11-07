@@ -1,0 +1,16 @@
+Third-party runtime notices
+
+Sherpa ONNX 1.13.8
+Copyright the sherpa-onnx project authors.
+Source: https://github.com/k2-fsa/sherpa-onnx
+License: Apache License 2.0 (full text in licenses/Apache-2.0-Sherpa-ONNX.txt)
+
+ONNX Runtime 1.28.2
+Copyright Microsoft Corporation.
+Source: https://github.com/microsoft/onnxruntime
+License: MIT License (full text in licenses/MIT-ONNX-Runtime.txt)
+
+The bundled sherpa-onnx-c-api.dll, sherpa-onnx-cxx-api.dll, onnxruntime.dll,
+and onnxruntime_providers_shared.dll are unmodified upstream runtime binaries.
+Sherpa ONNX and ONNX Runtime are separate projects. Littleworld Pluto is not
+endorsed by or affiliated with either project.

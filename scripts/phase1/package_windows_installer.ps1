@@ -20,6 +20,15 @@ $versionLine = Select-String -LiteralPath (Join-Path $root 'Cargo.toml') -Patter
 if (-not $versionLine) { throw 'Cargo.toml needs a three-part numeric version.' }
 $version = $versionLine.Matches[0].Groups[1].Value
 $setup = Join-Path $out "Pluto-Setup-v$version-windows-x64.exe"
+$portableBundle = Join-Path $out "Pluto-v$version-windows-x64.zip"
+$portableStage = Join-Path $out ".portable-stage-v$version"
+$runtimeDirectory = Split-Path -Parent $binary
+$requiredRuntimeDlls = @(
+    'onnxruntime.dll',
+    'onnxruntime_providers_shared.dll',
+    'sherpa-onnx-c-api.dll',
+    'sherpa-onnx-cxx-api.dll'
+)
 $thumbprint = $SigningCertificateThumbprint -replace '\s', ''
 if (-not $thumbprint) { throw 'A code-signing certificate thumbprint is required.' }
 $certPath = "Cert:\CurrentUser\My\$thumbprint"
@@ -32,6 +41,7 @@ $previousRequiredResource = $env:PLUTO_REQUIRE_WINDOWS_VERSION_RESOURCE
 $previousSignTool = $env:PLUTO_SIGNTOOL_PATH
 $previousTimestampTool = $env:PLUTO_OSSLSIGNCODE_PATH
 $previousTimestampUrl = $env:PLUTO_TIMESTAMP_URL
+$previousRuntimeDirectory = $env:PLUTO_RUNTIME_DIRECTORY
 try {
     if (-not $cert.HasPrivateKey) { throw 'Signing certificate has no private key.' }
     $now = [DateTime]::UtcNow
@@ -79,6 +89,20 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "Cargo release build failed ($LASTEXITCODE)." }
     }
     if (-not (Test-Path -LiteralPath $binary -PathType Leaf)) { throw "Missing Pluto executable: $binary" }
+    $runtimeDlls = @(Get-ChildItem -LiteralPath $runtimeDirectory -Filter '*.dll' -File | Sort-Object Name)
+    $runtimeNames = @($runtimeDlls | ForEach-Object Name)
+    $missingRuntimeDlls = @($requiredRuntimeDlls | Where-Object { $_ -notin $runtimeNames })
+    if ($missingRuntimeDlls.Count -gt 0) {
+        throw "Sherpa ONNX runtime is incomplete in $runtimeDirectory; missing: $($missingRuntimeDlls -join ', ')."
+    }
+    foreach ($file in @(
+        (Join-Path $root 'packaging\windows\PORTABLE-README.txt'),
+        (Join-Path $root 'packaging\windows\THIRD_PARTY_NOTICES.txt'),
+        (Join-Path $root 'packaging\windows\licenses\Apache-2.0-Sherpa-ONNX.txt'),
+        (Join-Path $root 'packaging\windows\licenses\MIT-ONNX-Runtime.txt')
+    )) {
+        if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "Required portable release file is missing: $file" }
+    }
     $info = (Get-Item -LiteralPath $binary).VersionInfo
     if ($info.ProductName -ne 'Littleworld Pluto' -or $info.CompanyName -cne $company -or
         $info.OriginalFilename -ne 'pluto.exe' -or $info.FileVersion -ne "$version.0" -or
@@ -88,8 +112,15 @@ try {
     $binarySignature = Get-AuthenticodeSignature -LiteralPath $binary
     if ($null -eq $binarySignature.SignerCertificate -or $null -eq $binarySignature.TimeStamperCertificate -or
         $binarySignature.SignerCertificate.Thumbprint -ine $thumbprint) { throw 'Pluto.exe signature verification failed.' }
+    foreach ($dll in $runtimeDlls) {
+        & (Join-Path $PSScriptRoot 'sign_windows_file.ps1') -FilePath $dll.FullName
+        $signature = Get-AuthenticodeSignature -LiteralPath $dll.FullName
+        if ($null -eq $signature.SignerCertificate -or $null -eq $signature.TimeStamperCertificate -or
+            $signature.SignerCertificate.Thumbprint -ine $thumbprint) { throw "Runtime DLL signature verification failed: $($dll.Name)" }
+    }
     $env:PLUTO_VERSION = $version
     $env:PLUTO_BINARY = $binary
+    $env:PLUTO_RUNTIME_DIRECTORY = $runtimeDirectory
     try {
         $sign = '-spluto=$q{0}$q -NoProfile -NonInteractive -File $q{1}$q -FilePath $f' -f (Get-Command pwsh.exe).Source, (Join-Path $PSScriptRoot 'sign_windows_file.ps1')
         & $iscc $sign "-o$out" (Join-Path $root 'packaging\windows\Pluto.iss')
@@ -98,12 +129,24 @@ try {
     finally {
         Remove-Item Env:PLUTO_VERSION -ErrorAction SilentlyContinue
         Remove-Item Env:PLUTO_BINARY -ErrorAction SilentlyContinue
+        Remove-Item Env:PLUTO_RUNTIME_DIRECTORY -ErrorAction SilentlyContinue
     }
     if (-not (Test-Path -LiteralPath $setup -PathType Leaf)) { throw "Installer not produced: $setup" }
     $setupSignature = Get-AuthenticodeSignature -LiteralPath $setup
     if ($null -eq $setupSignature.SignerCertificate -or $null -eq $setupSignature.TimeStamperCertificate -or
         $setupSignature.SignerCertificate.Thumbprint -ine $thumbprint) { throw 'Installer signature verification failed.' }
-    Write-Output "PASS signed Pluto.exe and installer: $setup"
+    if (Test-Path -LiteralPath $portableStage) { Remove-Item -LiteralPath $portableStage -Recurse -Force }
+    New-Item -ItemType Directory -Path (Join-Path $portableStage 'licenses') -Force | Out-Null
+    Copy-Item -LiteralPath $binary -Destination (Join-Path $portableStage 'Pluto.exe')
+    foreach ($dll in $runtimeDlls) { Copy-Item -LiteralPath $dll.FullName -Destination (Join-Path $portableStage $dll.Name) }
+    Copy-Item -LiteralPath (Join-Path $root 'packaging\windows\PORTABLE-README.txt') -Destination (Join-Path $portableStage 'README.txt')
+    Copy-Item -LiteralPath (Join-Path $root 'packaging\windows\THIRD_PARTY_NOTICES.txt') -Destination $portableStage
+    Copy-Item -Path (Join-Path $root 'packaging\windows\licenses\*') -Destination (Join-Path $portableStage 'licenses')
+    if (Test-Path -LiteralPath $portableBundle) { Remove-Item -LiteralPath $portableBundle -Force }
+    Compress-Archive -Path (Join-Path $portableStage '*') -DestinationPath $portableBundle -CompressionLevel Optimal
+    if (-not (Test-Path -LiteralPath $portableBundle -PathType Leaf)) { throw "Portable bundle not produced: $portableBundle" }
+    Remove-Item -LiteralPath $portableStage -Recurse -Force
+    Write-Output "PASS signed Pluto.exe, Sherpa ONNX runtime DLLs, installer, and portable bundle: $setup; $portableBundle"
     Write-Output "SHA-256: $((Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash)"
 }
 finally {
@@ -114,5 +157,6 @@ finally {
     $env:PLUTO_SIGNTOOL_PATH = $previousSignTool
     $env:PLUTO_OSSLSIGNCODE_PATH = $previousTimestampTool
     $env:PLUTO_TIMESTAMP_URL = $previousTimestampUrl
+    $env:PLUTO_RUNTIME_DIRECTORY = $previousRuntimeDirectory
     $cert.Dispose()
 }

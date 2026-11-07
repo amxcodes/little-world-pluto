@@ -1,11 +1,15 @@
 #define PlutoVersion GetEnv('PLUTO_VERSION')
 #define PlutoBinary GetEnv('PLUTO_BINARY')
+#define PlutoRuntimeDir GetEnv('PLUTO_RUNTIME_DIRECTORY')
 #define PlutoPublisher GetEnv('PLUTO_SIGNING_COMPANY_NAME')
 #if PlutoVersion == ""
   #error PLUTO_VERSION must be set by package_windows_installer.ps1
 #endif
 #if PlutoBinary == ""
   #error PLUTO_BINARY must be set by package_windows_installer.ps1
+#endif
+#if PlutoRuntimeDir == ""
+  #error PLUTO_RUNTIME_DIRECTORY must be set by package_windows_installer.ps1
 #endif
 #if PlutoPublisher == ""
   #error PLUTO_SIGNING_COMPANY_NAME must match the release certificate
@@ -45,6 +49,9 @@ VersionInfoDescription=Pluto installer
 
 [Files]
 Source: "{#PlutoBinary}"; DestDir: "{app}"; DestName: "Pluto.exe"; Flags: ignoreversion
+Source: "{#PlutoRuntimeDir}\*.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "THIRD_PARTY_NOTICES.txt"; DestDir: "{app}"; Flags: ignoreversion
+Source: "licenses\*.txt"; DestDir: "{app}\licenses"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\Pluto"; Filename: "{app}\Pluto.exe"; IconFilename: "{app}\Pluto.exe"

@@ -32,6 +32,26 @@ pub enum Sensitivity {
     Balanced,
     High,
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Engine {
+    Windows,
+    Sherpa,
+}
+impl Engine {
+    pub fn from_name(value: &str) -> Self {
+        if value == "sherpa" {
+            Self::Sherpa
+        } else {
+            Self::Windows
+        }
+    }
+    pub fn as_name(self) -> &'static str {
+        match self {
+            Self::Windows => "windows",
+            Self::Sherpa => "sherpa",
+        }
+    }
+}
 impl Sensitivity {
     pub fn from_name(value: &str) -> Self {
         match value {
@@ -42,7 +62,7 @@ impl Sensitivity {
     }
 }
 enum Command {
-    Arm(u64, String, Sensitivity),
+    Arm(u64, String, Sensitivity, Engine),
     Off(u64),
     Matched(u64),
     Ended(u64, String),
@@ -72,11 +92,16 @@ impl WakeWordService {
             worker,
         }
     }
-    pub fn arm(&self, phrase: &str, sensitivity: Sensitivity) -> Result<String, String> {
+    pub fn arm(
+        &self,
+        phrase: &str,
+        sensitivity: Sensitivity,
+        engine: Engine,
+    ) -> Result<String, String> {
         let phrase = validate_phrase(phrase)?;
         let id = self.revision.fetch_add(1, Ordering::AcqRel) + 1;
         self.commands
-            .send(Command::Arm(id, phrase.clone(), sensitivity))
+            .send(Command::Arm(id, phrase.clone(), sensitivity, engine))
             .map_err(|_| "The local listener is unavailable. Restart the app.".to_owned())?;
         Ok(phrase)
     }
@@ -129,19 +154,25 @@ fn run(
     let mut initialized = false;
     let mut active: Option<SpeechRecognizer> = None;
     let mut desktop: Option<DesktopListener> = None;
+    let mut sherpa: Option<super::wake_word_sherpa::SherpaListener> = None;
     let mut active_id = 0;
     let mut phrase = String::new();
     let mut sensitivity = Sensitivity::Balanced;
     loop {
-        let command = if desktop.is_some() {
+        let command = if desktop.is_some() || sherpa.is_some() {
             match commands.recv_timeout(std::time::Duration::from_millis(80)) {
                 Ok(command) => command,
                 Err(mpsc::RecvTimeoutError::Disconnected) => break,
                 Err(mpsc::RecvTimeoutError::Timeout) => {
-                    let result = desktop.as_ref().unwrap().matched(&phrase, sensitivity);
+                    let result = if let Some(listener) = desktop.as_ref() {
+                        listener.matched(&phrase, sensitivity)
+                    } else {
+                        sherpa.as_mut().unwrap().matched()
+                    };
                     match result {
                         Ok(true) => {
                             desktop.take();
+                            sherpa.take();
                             publish(
                                 &events,
                                 &notify,
@@ -153,6 +184,7 @@ fn run(
                         }
                         Err(message) => {
                             desktop.take();
+                            sherpa.take();
                             publish(
                                 &events,
                                 &notify,
@@ -178,17 +210,48 @@ fn run(
             Command::Shutdown => break,
             Command::Off(id) => {
                 desktop.take();
+                sherpa.take();
                 close_recognizer(&mut active);
                 publish(&events, &notify, id, Event::Off);
             }
-            Command::Arm(id, next, next_sensitivity) => {
+            Command::Arm(id, next, next_sensitivity, engine) => {
                 if id != revision.load(Ordering::Acquire) {
                     continue;
                 }
                 desktop.take();
+                sherpa.take();
                 close_recognizer(&mut active);
                 phrase = next;
                 sensitivity = next_sensitivity;
+                if engine == Engine::Sherpa {
+                    match super::wake_word_sherpa::SherpaListener::new(&phrase, sensitivity) {
+                        Ok(listener) => {
+                            if id != revision.load(Ordering::Acquire) {
+                                continue;
+                            }
+                            sherpa = Some(listener);
+                            active_id = id;
+                            publish(
+                                &events,
+                                &notify,
+                                id,
+                                Event::Listening {
+                                    phrase: phrase.clone(),
+                                },
+                            );
+                        }
+                        Err(message) => publish(
+                            &events,
+                            &notify,
+                            id,
+                            Event::Error {
+                                phrase: phrase.clone(),
+                                message,
+                            },
+                        ),
+                    }
+                    continue;
+                }
                 if !initialized {
                     if let Err(error) = unsafe { RoInitialize(RO_INIT_MULTITHREADED) } {
                         publish(
@@ -262,8 +325,13 @@ fn run(
                     ),
                 }
             }
-            Command::Matched(id) if id == revision.load(Ordering::Acquire) && active.is_some() => {
+            Command::Matched(id)
+                if id == revision.load(Ordering::Acquire)
+                    && (active.is_some() || desktop.is_some() || sherpa.is_some()) =>
+            {
                 close_recognizer(&mut active);
+                desktop.take();
+                sherpa.take();
                 publish(
                     &events,
                     &notify,
@@ -274,9 +342,12 @@ fn run(
                 );
             }
             Command::Ended(id, message)
-                if id == revision.load(Ordering::Acquire) && active.is_some() =>
+                if id == revision.load(Ordering::Acquire)
+                    && (active.is_some() || desktop.is_some() || sherpa.is_some()) =>
             {
                 close_recognizer(&mut active);
+                desktop.take();
+                sherpa.take();
                 publish(
                     &events,
                     &notify,
@@ -291,6 +362,7 @@ fn run(
         }
     }
     desktop.take();
+    sherpa.take();
     close_recognizer(&mut active);
     if initialized {
         unsafe { RoUninitialize() };

@@ -12,6 +12,8 @@ pub mod startup;
 pub mod text_expander;
 pub mod tray;
 pub mod wake_word;
+pub mod wake_word_model;
+mod wake_word_sherpa;
 
 use crate::diagnostics::DiagnosticCode;
 use windows_sys::Win32::System::Diagnostics::Debug::OutputDebugStringW;
