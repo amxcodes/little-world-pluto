@@ -1,6 +1,6 @@
 Third-party runtime notices
 
-Sherpa ONNX 1.13.8
+Sherpa ONNX 2.0.1
 Copyright the sherpa-onnx project authors.
 Source: https://github.com/k2-fsa/sherpa-onnx
 License: Apache License 2.0 (full text in licenses/Apache-2.0-Sherpa-ONNX.txt)
