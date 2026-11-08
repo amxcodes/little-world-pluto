@@ -229,10 +229,20 @@ jobs:
           $setupName = "Pluto-Setup-v$version-windows-x64.exe"
           Copy-Item -LiteralPath (Join-Path 'target\windows-package' $portableName) -Destination (Join-Path $root $portableName)
           Copy-Item -LiteralPath (Join-Path 'target\windows-package' $setupName) -Destination (Join-Path $root $setupName)
-          # The UI bundle is generated and checked against the committed copy after npm build.
-          # Do not treat that generated output as a source-tree change during asset assembly.
-          $dirty = @(git status --porcelain --untracked-files=all | Where-Object { $_ -ne ' M island-ui/dist/index.html' })
-          if ($dirty.Count -ne 0) { throw "Build changed the tagged source checkout:`n$($dirty -join "`n")" }
+          # status can report an EOL/stat-only change for the committed UI bundles
+          # on Windows. Compare Git's normalized content to the tag, then reject
+          # every real tracked or untracked source change without a bundle whitelist.
+          git diff --quiet HEAD --
+          $trackedDiffExit = $LASTEXITCODE
+          if ($trackedDiffExit -eq 1) {
+            $changed = @(git diff --name-only HEAD --)
+            throw "Build changed tracked source:`n$($changed -join "`n")"
+          }
+          if ($trackedDiffExit -ne 0) { throw "Could not verify tracked source (git diff exit $trackedDiffExit)." }
+          $untracked = @(git ls-files --others --exclude-standard)
+          $untrackedExit = $LASTEXITCODE
+          if ($untrackedExit -ne 0) { throw "Could not verify untracked source (git ls-files exit $untrackedExit)." }
+          if ($untracked.Count -ne 0) { throw "Build created untracked source:`n$($untracked -join "`n")" }
           $releaseManifest = [ordered]@{
             product = 'Littleworld Pluto'
             version = $version
