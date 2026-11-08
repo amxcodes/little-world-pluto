@@ -1,14 +1,17 @@
+import { AskActivity } from './ask-activity.jsx';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AgentPresentationView } from './agent-presentation.jsx';
 import { AgentOptions } from './agent-options.jsx';
 import { WakeEyes } from './wake-eyes.jsx';
+import { cleanAgentText, cleanAgentTitle } from './agent-title.js';
+import { supports3DVisualization } from './visualization-models.js';
 
 export const defaultAskInstructions = 'Write a short, natural spoken answer that the user can read aloud from a small teleprompter. Lead directly with the answer. Usually use 2–5 short sentences, with one sentence per line and a blank line between ideas. Use familiar words and natural contractions. Avoid em dashes, headings, bullet lists, markdown decoration, emojis, tables, diagrams, and introductory filler. Keep the wording human and conversational, not like an essay. Give more detail only when the question requires it. Do not invent personal experiences or facts about the user. State uncertainty plainly when needed.';
 
 const defaults = {
   defaultProvider: 'opencode', providerSetupComplete: false, activityDetail: 'current', showChildCount: true,
   systemPrompt: 'For this compact workspace, lead with the result and keep routine updates concise. Include fuller detail when it helps complete the task. Be explicit about uncertainty and failures; never claim an action succeeded without confirmation. Follow the user\'s request, project instructions, and the provider\'s safety and approval rules.',
-  answerView: 'preview', showComposerDuringRun: true, hybridWhiteboard: false,
+  answerView: 'preview', showComposerDuringRun: true,
   askInstructions: defaultAskInstructions,
   wakeSensitivity: 'balanced',
   transcriptionSensitivity: 'balanced',
@@ -27,9 +30,10 @@ const workspaceMemory = {
   submitted: {},
   provider: '',
   lastWakeRevision: 0,
-  wakeTarget: null,
-  wakeSessions: {},
   wakeTranscript: null,
+  optionCatalogs: {},
+  pendingCatalog: {},
+  preparedContexts: {},
 };
 
 export function readAgentPreferences() {
@@ -37,12 +41,12 @@ export function readAgentPreferences() {
     const native = window.islandAgentPreferenceBootstrap;
     const saved = native && typeof native === 'object' && !Array.isArray(native)
       ? native : JSON.parse(localStorage.getItem('island.agent-preferences') || '{}');
+    delete saved.wakeEngine;
     const hasExistingPreferences = Object.keys(saved).length > 0;
     return {
       ...defaults,
       ...saved,
       systemPrompt: typeof saved.systemPrompt === 'string' ? saved.systemPrompt.slice(0, 6000) : defaults.systemPrompt,
-      hybridWhiteboard: saved.hybridWhiteboard === true,
       askInstructions: typeof saved.askInstructions === 'string' ? saved.askInstructions.slice(0, 6000) : defaultAskInstructions,
       wakeSensitivity: ['low', 'balanced', 'high'].includes(saved.wakeSensitivity) ? saved.wakeSensitivity : 'balanced',
       transcriptionSensitivity: ['low', 'balanced', 'high'].includes(saved.transcriptionSensitivity) ? saved.transcriptionSensitivity : 'balanced',
@@ -63,6 +67,8 @@ export function readAgentPreferences() {
 }
 
 export function saveAgentPreferences(next) {
+  next = { ...next };
+  delete next.wakeEngine;
   try { localStorage.setItem('island.agent-preferences', JSON.stringify(next)); } catch {}
   window.islandAgentPreferenceBootstrap = next;
   try { window.ipc?.postMessage(JSON.stringify({ kind: 'agentPreferencesSave', preferences: next })); } catch {}
@@ -399,6 +405,8 @@ export function AgentSettings({ state, Icon, send, onDetailChange }) {
         const updateAvailable = id === 'codex' ? agent.updateAvailable : opencode.updateAvailable;
         const latestVersion = id === 'codex' ? agent.latestVersion : opencode.latestVersion;
         const installedVersion = id === 'codex' ? agent.adapterVersion : opencode.installedVersion || agent.version;
+        const installError = id === 'opencode' ? opencode.installError : '';
+        const needsRepair = !agent.connected && !!agent.error;
         return <div className="agent-settings-provider" key={id}>
           <span className="agent-settings-provider-mark"><Icon name={id === 'codex' ? 'Agents' : 'Terminal'} size={17} /></span>
           <div className="agent-settings-provider-info">
@@ -413,10 +421,11 @@ export function AgentSettings({ state, Icon, send, onDetailChange }) {
           <div className="agent-settings-provider-actions">
             {(agent.authMethods || []).map(method => <button type="button" className="settings-inline-action" key={method.id} disabled={agent.authenticating || installing} onClick={() => sendAgent(send, id, 'login', { methodId: method.id })}>{agent.authenticating ? 'Signing in…' : method.name || 'Sign in'}</button>)}
             {agent.capabilities?.auth?.logout != null && <button type="button" className="settings-inline-action" disabled={activeCount > 0 || installing} onClick={() => sendAgent(send, id, 'logout')}>Sign out</button>}
-            {(agent.missing || updateAvailable) && <button type="button" className="settings-inline-action" disabled={installing || activeCount > 0} onClick={() => id === 'opencode' && updateAvailable && !agent.missing ? send('opencodeUpdate') : sendAgent(send, id, 'install')}>{installing ? 'Updating…' : agent.missing ? 'Install' : 'Update'}</button>}
+            {(agent.missing || updateAvailable || needsRepair || installError) && <button type="button" className="settings-inline-action" disabled={installing || activeCount > 0} onClick={() => id === 'opencode' && updateAvailable && !agent.missing ? send('opencodeUpdate') : sendAgent(send, id, 'install')}>{installing ? (agent.missing ? 'Installing…' : 'Updating…') : agent.missing ? 'Install' : updateAvailable ? 'Update' : 'Repair'}</button>}
             <button type="button" className="settings-inline-action" disabled={checking || installing} onClick={() => sendAgent(send, id, 'checkUpdate')}>{checking ? 'Checking…' : 'Check updates'}</button>
             <button type="button" className="settings-inline-action" disabled={agent.authenticating || installing || activeCount > 0} onClick={() => sendAgent(send, id, 'connect')}>Reconnect</button>
           </div>
+          {installError && <p className="agent-provider-error" role="alert">{installError}</p>}
         </div>;
       })}</div>
       <p className="settings-note">Sign-in stays with the selected provider. Updates use each provider’s stable channel.</p>
@@ -435,22 +444,29 @@ export function AgentSettings({ state, Icon, send, onDetailChange }) {
       <div className="settings-choice"><span>Answer</span><div className="settings-segments">{[['preview', 'Preview'], ['full', 'Full']].map(([id, label]) => <button type="button" key={id} className={preferences.answerView === id ? 'selected' : ''} onClick={() => setPreferences({ answerView: id })}>{label}</button>)}</div></div>
       <AgentSwitch label="Show child-agent count" value={!!preferences.showChildCount} onChange={() => setPreferences({ showChildCount: !preferences.showChildCount })} />
       <AgentSwitch label="Keep follow-up visible while running" value={!!preferences.showComposerDuringRun} onChange={() => setPreferences({ showComposerDuringRun: !preferences.showComposerDuringRun })} />
-      <AgentSwitch label="Whiteboard explainers" value={!!preferences.hybridWhiteboard} onChange={() => setPreferences({ hybridWhiteboard: !preferences.hybridWhiteboard })} />
       <p className="settings-note">Simple diagrams with shapes, connected arrows and sketches. Detailed human figures are not supported.</p>
     </section>
   </div>;
 }
 
 export function AgentsWorkspace({ state, Icon, send, renderAnswer, openCodeProfiles, onDictate, dictateActive, dictateSlotRef, dictatedText, dictatedAutoSubmit = false, onDictatedTextConsumed, voiceSurface = false, askMode = false }) {
+  const [availableHeight, setAvailableHeight] = useState(() => window.screen?.availHeight || 900);
+  useEffect(() => {
+    const update = () => setAvailableHeight(window.screen?.availHeight || 900);
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, []);
   const [preferences, setPreferences] = useAgentPreferences();
   const [askContext, setAskContext] = useState(() => {
     try { return localStorage.getItem('island.ask.context') || ''; } catch { return ''; }
   });
   const [contextOpen, setContextOpen] = useState(false);
-  const [pendingVoice, setPendingVoice] = useState(() => workspaceMemory.wakeTranscript);
+  const [sessionOpen, setSessionOpen] = useState(false);
+  const [requestedSession, setRequestedSession] = useState(null);
+  const [pendingVoice, setPendingVoice] = useState(() => workspaceMemory.wakeTranscript?.mode === (askMode ? 'ask' : voiceSurface ? 'wake' : 'agent') ? workspaceMemory.wakeTranscript : null);
   const [voiceAnswerRevision, setVoiceAnswerRevision] = useState(0);
   const voiceLoadRequest = useRef('');
-  const [provider, setProvider] = useState(() => window.islandAgentFocus?.provider || workspaceMemory.provider || readAgentPreferences().defaultProvider);
+  const [provider, setProvider] = useState(() => (askMode || voiceSurface) ? readAgentPreferences().defaultProvider : window.islandAgentFocus?.provider || workspaceMemory.provider || readAgentPreferences().defaultProvider);
   const lastDefaultProvider = useRef(preferences.defaultProvider);
   const [setupStep, setSetupStep] = useState('provider');
   const [focusSessionId, setFocusSessionId] = useState(() => window.islandAgentFocus?.sessionId || '');
@@ -469,7 +485,12 @@ export function AgentsWorkspace({ state, Icon, send, renderAnswer, openCodeProfi
   const [sending, setSending] = useState({ opencode: false, codex: false });
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [answerExpanded, setAnswerExpanded] = useState(false);
+  const [visualizeContext, setVisualizeContext] = useState('');
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyTurns, setHistoryTurns] = useState([]);
+  const [historySeq, setHistorySeq] = useState(null);
   const [armedDelete, setArmedDelete] = useState('');
+  const [armedHandoff, setArmedHandoff] = useState('');
 
   const pendingRevision = useRef(workspaceMemory.pendingRevision);
   const submitted = useRef(workspaceMemory.submitted);
@@ -480,13 +501,15 @@ export function AgentsWorkspace({ state, Icon, send, renderAnswer, openCodeProfi
 
 
   const folderPurpose = useRef('project');
-  const preparedFor = useRef('');
+  const preparedFor = useRef(workspaceMemory.preparedContexts);
   providerRef.current = provider;
   useEffect(() => {
     const text = dictatedText?.trim();
     if (!text) return;
     if (dictatedAutoSubmit) {
-      const pending = { text, mode: askMode ? 'ask' : voiceSurface ? 'wake' : 'agent', revision: state.wakeWord?.revision, ...((!askMode && workspaceMemory.wakeTarget) || { provider, sessionId: state.agents?.[provider]?.selectedId || '' }) };
+      const mode = askMode ? 'ask' : voiceSurface ? 'wake' : 'agent';
+      const selectedKey = mode === 'ask' ? 'askSelectedId' : mode === 'wake' ? 'wakeSelectedId' : 'selectedId';
+      const pending = { text, mode, revision: state.wakeWord?.revision, provider, sessionId: (requestedSession?.provider === provider && requestedSession.surface === mode ? requestedSession.id : state.agents?.[provider]?.[selectedKey]) || '' };
       workspaceMemory.wakeTranscript = pending;
       setPendingVoice(pending);
       voiceLoadRequest.current = '';
@@ -508,13 +531,12 @@ export function AgentsWorkspace({ state, Icon, send, renderAnswer, openCodeProfi
   const wakeCapturePending = voiceSurface && wakeWord.status === 'triggered'
     && !!wakeWord.revision && wakeWord.revision !== workspaceMemory.lastWakeRevision;
   useEffect(() => {
+    if (!voiceSurface || askMode) return;
     if (!wakeWord.revision || wakeWord.revision === workspaceMemory.lastWakeRevision || wakeWord.status !== 'triggered') return;
     workspaceMemory.lastWakeRevision = wakeWord.revision;
     workspaceMemory.wakeAwaitingAnswer = null;
     workspaceMemory.wakeTranscript = null;
     setPendingVoice(null);
-    const savedWake = workspaceMemory.wakeSessions?.[provider];
-    workspaceMemory.wakeTarget = { provider, sessionId: state.agents?.[provider]?.sessions?.some(item => item.id === savedWake) ? savedWake : '' };
     setView('task');
     setAnswerExpanded(false);
     setDetailsOpen(false);
@@ -531,21 +553,84 @@ export function AgentsWorkspace({ state, Icon, send, renderAnswer, openCodeProfi
     return () => window.removeEventListener('island:voice-dismiss', dismiss);
   }, [wakeWord.revision]);
   const sessions = agent.sessions || [];
-  const session = sessions.find(item => item.id === agent.selectedId);
-  const response = agent.response?.sessionId === session?.id ? agent.response : null;
+  const surface = askMode ? 'ask' : voiceSurface ? 'wake' : 'agent';
+  const nativeSelectedId = surface === 'ask' ? agent.askSelectedId : surface === 'wake' ? agent.wakeSelectedId : agent.selectedId;
+  const selectedId = requestedSession?.provider === provider && requestedSession.surface === surface ? requestedSession.id : nativeSelectedId;
+  useEffect(() => { if (requestedSession?.provider === provider && requestedSession.surface === surface && requestedSession.id === nativeSelectedId) setRequestedSession(null); }, [requestedSession, provider, surface, nativeSelectedId]);
+  const selectedResponse = surface === 'ask' ? agent.askResponse : surface === 'wake' ? agent.wakeResponse : agent.response;
+  const session = sessions.find(item => item.id === selectedId && item.surface === surface);
+  const response = selectedResponse?.sessionId === session?.id ? selectedResponse : null;
+  const answerText = cleanAgentText(response?.text);
+  const historyTurn = historyTurns.find(turn => turn.seq === historySeq);
+  const shownPresentation = historyTurn ? historyTurn.presentation : response?.presentation;
+  const shownAnswerText = historyTurn ? cleanAgentText(historyTurn.answer) : answerText;
+  useEffect(() => {
+    window.islandAgentSessionTurns = payload => {
+      if (payload?.provider === provider && payload?.sessionId === session?.id)
+        setHistoryTurns(Array.isArray(payload.turns) ? payload.turns : []);
+    };
+    return () => { delete window.islandAgentSessionTurns; };
+  }, [provider, session?.id]);
+  useEffect(() => {
+    setHistoryOpen(false);
+    setHistoryTurns([]);
+    setHistorySeq(null);
+  }, [provider, session?.id]);
+  useEffect(() => {
+    if (historyOpen && session && !session.active)
+      send('agentSessionTurns', { provider, sessionId: session.id });
+  }, [historyOpen, session?.id, session?.active, provider, response?.waiting, send]);
+  useEffect(() => {
+    if (!answerExpanded || view !== 'task' || !session || !response) return undefined;
+    const answer = {
+      sessionId: session.id,
+      title: cleanAgentTitle(session.title),
+      text: answerText,
+      presentation: response.presentation,
+      dark: state.dark,
+      accentGradient: state.accentGradient,
+    };
+    // Coalesce streaming scene refinements before forwarding them to the
+    // detached viewer, rather than flooding the UI thread on every token.
+    const timer = setTimeout(() => send('updateDetachedAnswer', { sessionId: session.id, answer }), 45);
+    return () => clearTimeout(timer);
+  }, [answerExpanded, view, session?.id, session?.title, answerText, response?.presentation, state.dark, state.accentGradient, send]);
   const permissions = (agent.permissions || []).filter(item => item.ownerSessionId === session?.id);
   const remainingPermissions = (agent.permissions || []).filter(item => item.ownerSessionId !== session?.id);
   const questions = (agent.questions || []).filter(item => item.ownerSessionId === session?.id);
   const remainingQuestions = (agent.questions || []).filter(item => item.ownerSessionId !== session?.id);
   const decisions = [...permissions.map(item => ({ kind: 'approval', item })), ...questions.map(item => ({ kind: 'question', item }))].sort((left, right) => left.item.raisedAt - right.item.raisedAt);
-  const candidateOptions = session?.configOptions || [];
+  const projectRoot = session?.directory || directory[provider] || '';
+  const catalogContext = JSON.stringify([provider, projectRoot, session?.additionalDirectories || additionalDirectories[provider] || []]);
+  const cachedCatalog = workspaceMemory.optionCatalogs[catalogContext];
+  const candidateOptions = session ? session.configOptions || [] : cachedCatalog?.options || [];
   const options = cleanOptions(candidateOptions);
   const activeConfig = session ? Object.fromEntries(options.map(option => [option.id, option.currentValue])) : config[provider];
   const commandQuery = (drafts[provider] || '').match(/^\/([^\s]*)$/)?.[1]?.toLowerCase();
   const matchingCommands = commandQuery == null ? [] : (session?.commands || []).filter(item => item.name?.toLowerCase().includes(commandQuery)).slice(0, 6);
   const modelOption = options.find(option => /model/i.test(`${option.id} ${option.name || ''}`));
-  const modelValue = modelOption ? optionChoices(modelOption).find(choice => choice.value === activeConfig[modelOption.id])?.name || activeConfig[modelOption.id] : '';
-  const projectRoot = session?.directory || directory[provider] || '';
+  const savedModel = Object.entries(activeConfig || {}).find(([id]) => /model/i.test(id))?.[1];
+  const currentModel = modelOption ? activeConfig[modelOption.id] ?? modelOption.currentValue : savedModel;
+  const modelValue = modelOption ? optionChoices(modelOption).find(choice => choice.value === currentModel)?.name || currentModel : String(savedModel || '');
+  const selectedModelId = modelOption ? String(activeConfig[modelOption.id] ?? modelOption.currentValue ?? '') : String(savedModel ?? '');
+  const selectedModelChoice = modelOption && modelOption.options.flatMap(group => Array.isArray(group.options)
+    ? group.options.map(choice => ({ ...choice, group: group.name || group.id || '' })) : [group]).find(choice => choice.value === selectedModelId);
+  const visualizationContext = `${provider}:${session?.id || 'new'}:${selectedModelId}`;
+  const canVisualize = view === 'task' && !askMode && !voiceSurface && supports3DVisualization(selectedModelId, selectedModelChoice?.name, selectedModelChoice?.group);
+  const visualizationEnabled = canVisualize && visualizeContext === visualizationContext;
+  useEffect(() => { setVisualizeContext(''); }, [provider, session?.id, selectedModelId, askMode, voiceSurface]);
+  useEffect(() => {
+    if (askMode || voiceSurface || !session?.ready || !session.configOptions?.length) return;
+    const entry = { options: session.configOptions, at: Date.now() };
+    workspaceMemory.optionCatalogs[catalogContext] = entry;
+    delete preparedFor.current[catalogContext];
+    const pending = workspaceMemory.pendingCatalog[provider];
+    if (pending && session.id === agent.lastCreatedId) {
+      workspaceMemory.optionCatalogs[pending] = entry;
+      delete preparedFor.current[pending];
+      delete workspaceMemory.pendingCatalog[provider];
+    }
+  }, [provider, catalogContext, session?.id, session?.ready, session?.configOptions, agent.lastCreatedId, askMode, voiceSurface]);
   const mentionItems = useMemo(() => {
     if (!mention) return [];
     const queryText = mention.query.toLocaleLowerCase();
@@ -569,9 +654,9 @@ export function AgentsWorkspace({ state, Icon, send, renderAnswer, openCodeProfi
     if (queryText.startsWith('app:')) return apps.slice(0, 32);
     return entries.slice(0, 100);
   }, [mention, projectEntries, library, state.commandApps, projectRoot]);
-  const orderedSessions = useMemo(() => sessions.filter(item => `${item.title} ${item.directory}`.toLowerCase().includes(query.toLowerCase())), [sessions, query]);
+  const orderedSessions = useMemo(() => (state.agentSessions || []).filter(item => (!item.surface || item.surface === 'agent') && `${item.title} ${item.directory} ${item.provider}`.toLowerCase().includes(query.toLowerCase())), [state.agentSessions, query]);
 
-  useEffect(() => { workspaceMemory.drafts = drafts; workspaceMemory.files = files; workspaceMemory.view = view; workspaceMemory.query = query; workspaceMemory.provider = provider; }, [drafts, files, view, query, provider]);
+  useEffect(() => { if (!voiceSurface && !askMode) { workspaceMemory.drafts = drafts; workspaceMemory.files = files; workspaceMemory.view = view; workspaceMemory.query = query; workspaceMemory.provider = provider; } }, [drafts, files, view, query, provider, voiceSurface, askMode]);
   useEffect(() => {
     const receive = result => {
       if (Array.isArray(result?.skills)) setLibrary(current => ({ ...current, skills: result.skills }));
@@ -631,13 +716,15 @@ export function AgentsWorkspace({ state, Icon, send, renderAnswer, openCodeProfi
     }
   }, [response?.steps]);
   useEffect(() => {
-    if (view !== 'options') { preparedFor.current = ''; return; }
-    if (session || !agent.connected || agent.installing) return;
-    const key = `${provider}:${projectRoot}`;
-    if (preparedFor.current === key) return;
-    preparedFor.current = key;
+    if (!agent.connected) { delete preparedFor.current[catalogContext]; return; }
+    if (askMode || voiceSurface || !['task', 'options'].includes(view)) return;
+    if (session || !agent.connected || agent.installing || !preferences.providerSetupComplete) return;
+    if (cachedCatalog?.at && Date.now() - cachedCatalog.at < 5 * 60 * 1000) return;
+    if (preparedFor.current[catalogContext]) return;
+    preparedFor.current[catalogContext] = true;
+    workspaceMemory.pendingCatalog[provider] = catalogContext;
     sendAgent(send, provider, 'prepare', { directory: projectRoot, additionalDirectories: additionalDirectories[provider], config: Object.entries(config[provider]).map(([id, value]) => ({ id, value })) });
-  }, [view, provider, projectRoot, session?.id, agent.connected, agent.installing]);
+  }, [view, provider, projectRoot, catalogContext, session?.id, agent.connected, agent.installing, askMode, voiceSurface, preferences.providerSetupComplete]);
   useEffect(() => setAnswerExpanded(preferences.answerView === 'full'), [provider, session?.id, preferences.answerView]);
   useEffect(() => {
     const receive = event => {
@@ -716,7 +803,8 @@ export function AgentsWorkspace({ state, Icon, send, renderAnswer, openCodeProfi
     }
   }, [state.agents]);
 
-  const chooseSession = item => { sendAgent(send, provider, 'select', { sessionId: item.id }); setView('task'); setDetailsOpen(false); };
+  const chooseSession = item => { setProvider(item.provider); sendAgent(send, item.provider, 'select', { sessionId: item.runtimeId }); setView('task'); setDetailsOpen(false); };
+  const chooseVoiceSession = id => { setRequestedSession({ provider, surface, id }); voiceLoadRequest.current = `${provider}:${surface}:${id}`; sendAgent(send, provider, 'select', { sessionId: id, surface }); setSessionOpen(false); setVoiceAnswerRevision(value => value + 1); };
   const chooseConfig = (id, value) => {
     setConfig(current => ({ ...current, [provider]: { ...current[provider], [id]: value } }));
     if (session) sendAgent(send, provider, 'configure', { sessionId: session.id, configId: id, configValue: value });
@@ -726,6 +814,7 @@ export function AgentsWorkspace({ state, Icon, send, renderAnswer, openCodeProfi
   const submitText = (value, attachedFiles = files[provider] || [], preserveDraft = false, responseMode = askMode ? 'ask' : voiceSurface ? 'wake' : 'agent') => {
     const text = value.trim();
     if ((!text && !attachedFiles.length) || sending[provider] || !agent.connected || agent.installing || (session && (!session.ready || session.active)) || (!session && agent.activeCount > 0)) return false;
+    const promptText = responseMode === 'agent' && visualizationEnabled && text ? `Visualize this in 3D: ${text}` : text;
     pendingRevision.current[provider] = { revision: agent.operationRevision || 0, preserveDraft };
     submitted.current[provider] = { revision: agent.operationRevision || 0, text, files: [...attachedFiles] };
     setSending(current => ({ ...current, [provider]: true }));
@@ -735,8 +824,8 @@ export function AgentsWorkspace({ state, Icon, send, renderAnswer, openCodeProfi
       : responseMode === 'wake'
         ? 'Island response mode: wake-answer\n' + (preferences.askInstructions ?? defaultAskInstructions)
       : preferences.systemPrompt || '';
-    if (session) sendAgent(send, provider, 'prompt', { sessionId: session.id, text, files: attachedFiles, systemPrompt, hybridWhiteboard: preferences.hybridWhiteboard === true });
-    else sendAgent(send, provider, 'start', { directory: directory[provider] || '', additionalDirectories: additionalDirectories[provider], text, files: attachedFiles, config: Object.entries(config[provider]).map(([id, value]) => ({ id, value })), systemPrompt, hybridWhiteboard: preferences.hybridWhiteboard === true });
+    if (session) sendAgent(send, provider, 'prompt', { sessionId: session.id, text: promptText, files: attachedFiles, systemPrompt, hybridWhiteboard: preferences.hybridWhiteboard === true });
+    else sendAgent(send, provider, 'start', { directory: directory[provider] || '', additionalDirectories: additionalDirectories[provider], text: promptText, files: attachedFiles, config: Object.entries(config[provider]).map(([id, value]) => ({ id, value })), systemPrompt, hybridWhiteboard: preferences.hybridWhiteboard === true });
     return true;
   };
   const submit = event => { event.preventDefault(); submitText(drafts[provider] || '', files[provider] || []); };
@@ -748,10 +837,10 @@ export function AgentsWorkspace({ state, Icon, send, renderAnswer, openCodeProfi
     // Session history entries are not ready until ACP has loaded them. Voice
     // must perform the same load as clicking a session before sending a prompt.
     const targetId = pending.sessionId || '';
-    if (targetId !== (agent.selectedId || '') || (session && !session.ready)) {
-      if (voiceLoadRequest.current !== `${provider}:${targetId}`) {
-        voiceLoadRequest.current = `${provider}:${targetId}`;
-        sendAgent(send, provider, 'select', { sessionId: targetId });
+    if (targetId !== (selectedId || '') || (session && !session.ready)) {
+      if (voiceLoadRequest.current !== `${provider}:${pending.mode}:${targetId}`) {
+        voiceLoadRequest.current = `${provider}:${pending.mode}:${targetId}`;
+        sendAgent(send, provider, 'select', { sessionId: targetId, surface: pending.mode });
       }
       return;
     }
@@ -759,14 +848,12 @@ export function AgentsWorkspace({ state, Icon, send, renderAnswer, openCodeProfi
     workspaceMemory.wakeTranscript = null;
     setPendingVoice(null);
     workspaceMemory.wakeAwaitingAnswer = pending.mode === 'wake' ? { provider, revision: pending.revision, operationRevision: agent.operationRevision || 0 } : null;
-  }, [pendingVoice, agent.connected, agent.installing, agent.activeCount, agent.selectedId, session?.id, session?.active, session?.ready, sending[provider], provider, askContext]);
+  }, [pendingVoice, agent.connected, agent.installing, agent.activeCount, selectedId, session?.id, session?.active, session?.ready, sending[provider], provider, askContext]);
   useEffect(() => {
+    if (!voiceSurface || askMode) return;
     const awaiting = workspaceMemory.wakeAwaitingAnswer;
     if (!awaiting || awaiting.provider !== provider || awaiting.revision !== wakeWord.revision || dictateActive || wakeCapturePending) return;
     if ((agent.operationRevision || 0) <= awaiting.operationRevision) return;
-    if (session?.id) {
-      workspaceMemory.wakeSessions ||= {}; workspaceMemory.wakeSessions[provider] = session.id;
-    }
     if (session?.active || sending[provider] || response?.waiting) return;
     if (!response?.text && !response?.presentation && !agent.error) return;
     workspaceMemory.wakeAwaitingAnswer = null;
@@ -822,6 +909,7 @@ export function AgentsWorkspace({ state, Icon, send, renderAnswer, openCodeProfi
 
   const voiceThinking = !!(dictatedText?.trim() || pendingVoice || sending[provider] || response?.waiting || session?.active);
   const voiceAwaitingText = !!(dictatedText?.trim() || pendingVoice || sending[provider] || (voiceThinking && !response?.text));
+  const askBusy = askMode && (dictateActive || voiceThinking);
   const wakeCompact = voiceSurface && !askMode && ((dictateActive || wakeCapturePending)
     || (!agent.error && decisions.length === 0 && (voiceAwaitingText || (!response?.text && !response?.presentation))));
   const thinkingIndicator = <div className="voice-thinking" role="status"><span aria-hidden="true"><i/><i/><i/></span>Thinking…</div>;
@@ -830,17 +918,26 @@ export function AgentsWorkspace({ state, Icon, send, renderAnswer, openCodeProfi
     <label className="ask-context">Background and preferences<textarea autoFocus value={askContext} onChange={e => { setAskContext(e.target.value); try { localStorage.setItem('island.ask.context', e.target.value); } catch {} }} placeholder="What is this conversation about? What should the answers take into account?" /></label>
     <footer><button type="button" onClick={() => setContextOpen(false)}><Icon name="PreviousMonth" size={15}/>Back to Ask</button></footer>
   </section>;
-  if (voiceSurface || askMode) return <section className={'voice-answer-surface ' + (askMode ? 'is-ask' : 'is-wake')} data-wake-phase={wakeCompact ? "compact" : "answer"} data-layout-height={wakeCompact ? 34 : 330}>
+  if ((askMode || voiceSurface) && sessionOpen) return <section className={'voice-answer-surface ask-session-page ' + (askMode ? 'is-ask' : 'is-wake')} data-layout-height={330}>
+    <header><strong>{askMode ? 'Ask' : 'Wake'} conversations</strong></header>
+    <div className="ask-session-list"><button type="button" className="ask-session-choice choice-row" onClick={() => chooseVoiceSession('')}><span className="media-session-option-icon"><Icon name="Add" size={16}/></span><span className="media-session-option-copy"><strong>New conversation</strong></span></button>
+      {sessions.filter(item => item.surface === surface).map(item => <button type="button" className="ask-session-choice choice-row" key={item.id} aria-current={item.id === selectedId ? 'true' : undefined} onClick={() => chooseVoiceSession(item.id)}><span className="media-session-option-icon"><Icon name="History" size={16}/></span><span className="media-session-option-copy"><strong>{item.title || `${askMode ? 'Ask' : 'Wake'} conversation`}</strong></span>{item.id === selectedId && <Icon name="Check" size={15}/>}</button>)}
+    </div>
+    <footer><button type="button" className="agent-browser-back" onClick={() => setSessionOpen(false)}><Icon name="PreviousMonth" size={15}/>Back to {askMode ? 'Ask' : 'Wake'}</button></footer>
+  </section>;
+  if (voiceSurface || askMode) return <section className={'voice-answer-surface ' + (askMode ? 'is-ask' : 'is-wake')} data-capturing={askBusy ? 'true' : 'false'} data-wake-phase={wakeCompact ? "compact" : "answer"} data-layout-height={wakeCompact ? 34 : 330}>
     {(!voiceSurface || askMode) && <header><strong>{askMode ? 'Ask' : 'Voice'}</strong><span>{dictateActive ? 'Microphone' : voiceThinking ? 'Thinking' : 'Ready'}</span>
-      {askMode && <button onClick={() => setContextOpen(!contextOpen)} aria-expanded={contextOpen}>Context</button>}
-      <button onClick={() => { send('voiceSurface', { open: false }); send('page', { page: 'Agents' }); }}>Session</button>
+      {askMode && <button onClick={() => setContextOpen(!contextOpen)} disabled={askBusy} aria-expanded={contextOpen}>Context</button>}
+      {askMode && <button disabled={askBusy} onClick={() => setSessionOpen(true)}>Session</button>}
       {voiceSurface && <button aria-label="Dismiss voice answer" onClick={() => { if (dictateActive) window.dispatchEvent(new Event('island:voice-dismiss')); send('voiceSurface', { open: false, dismiss: true }); }}><Icon name="Cancel" size={15}/></button>}
     </header>}
     {contextOpen && <label className="ask-context">Background and preferences<textarea value={askContext} onChange={e => { setAskContext(e.target.value); try { localStorage.setItem('island.ask.context', e.target.value); } catch {} }} placeholder="What is this conversation about?" /></label>}
     {wakeCompact ? <div key="capture" className="voice-capture">{(dictateActive || wakeCapturePending) ? <div ref={dictateSlotRef}/> : <div className="wake-listening-surface" data-layout-height={34} role="status" aria-label="Thinking"><WakeEyes phase="thinking" /></div>}</div> : <>
       {decisions.map(decision => decision.kind === 'approval' ? <ApprovalCard key={decision.item.id} permission={decision.item} provider={provider} send={send} Icon={Icon}/> : <QuestionCard key={decision.item.id} question={decision.item} provider={provider} send={send} Icon={Icon}/>)}
-      <div key={`${provider}:${voiceAnswerRevision}`} className="voice-answer-text" aria-busy={voiceThinking} aria-live="polite">{agent.error ? <p role="alert">{agent.error}</p> : voiceAwaitingText ? thinkingIndicator : response?.text || (!voiceSurface && response?.presentation) ? <>{!voiceSurface && response?.presentation && <AgentPresentationView presentation={response.presentation}/>} {(askMode || voiceSurface) ? (voiceSurface ? plainVoiceText(response.text) : response.text || '').split(/\n+/).filter(Boolean).map((line, index) => <div className="ask-answer-line" key={`${voiceAnswerRevision}:${index}`} style={{ '--line-delay': `${Math.min(index, 6) * 45}ms` }}>{voiceSurface ? line : renderAnswer(line)}</div>) : renderAnswer(response.text || '')}</> : voiceThinking ? thinkingIndicator : voiceSurface && response?.presentation ? 'This response has no text summary. Its details are available in Agents → Sessions.' : 'Ask a question to begin.'}</div>
-      {askMode && <button className="ask-hold" disabled={!state.speechSettings?.configured || !agent.connected || session?.active} onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); onDictate?.({ autoSubmit: true, hold: true }); }} onPointerUp={() => { window.islandHoldReleased = true; window.dispatchEvent(new Event('island:hold-release')); }} onPointerCancel={() => { window.islandHoldReleased = true; window.dispatchEvent(new Event('island:hold-release')); }} onKeyDown={e => { if (e.key === "Enter") onDictate?.({ autoSubmit: true, hold: true }); }}>Hold Space to ask · microphone</button>}
+      <div className="voice-answer-clip"><div key={`${provider}:${voiceAnswerRevision}`} className="voice-answer-text" inert={askBusy} aria-hidden={askBusy} aria-busy={voiceThinking} aria-live="polite">{agent.error ? <p role="alert">{agent.error}</p> : voiceAwaitingText ? thinkingIndicator : answerText || (!voiceSurface && response?.presentation) ? <>{!voiceSurface && response?.presentation && <AgentPresentationView live={session.active} presentation={response.presentation} visualRequest={response.visualRequest || ''}/>} {(askMode || voiceSurface) ? (voiceSurface ? plainVoiceText(answerText) : answerText || '').split(/\n+/).filter(Boolean).map((line, index) => <div className="ask-answer-line" key={`${voiceAnswerRevision}:${index}`} style={{ '--line-delay': `${Math.min(index, 6) * 45}ms` }}>{voiceSurface ? line : renderAnswer(line)}</div>) : renderAnswer(answerText || '')}</> : voiceThinking ? thinkingIndicator : voiceSurface && response?.presentation ? 'This response has no text summary. Its details are available in Agents → Sessions.' : 'Ask a question to begin.'}</div></div>
+      {askMode && <div className="ask-capture-slot" inert={!askBusy} aria-hidden={!askBusy}><div className="ask-capture-target" ref={dictateSlotRef}/>{!dictateActive && voiceThinking && <AskActivity label="Thinking…" />}</div>}
+      {askMode && <button className="ask-hold" disabled={!state.speechSettings?.configured || !agent.connected || voiceThinking} onPointerDown={e => { if (dictateActive) return; e.currentTarget.setPointerCapture(e.pointerId); onDictate?.({ autoSubmit: true, hold: true }); }} onPointerUp={() => { window.islandHoldReleased = true; window.dispatchEvent(new Event('island:hold-release')); }} onPointerCancel={() => { window.islandHoldReleased = true; window.dispatchEvent(new Event('island:hold-release')); }} onKeyDown={e => { if (e.key === "Enter") onDictate?.({ autoSubmit: true, hold: true }); }}>Hold Space to ask · microphone</button>}
+      {voiceSurface && !wakeCompact && <button type="button" className="wake-new-conversation" disabled={!!session?.active} onClick={() => setSessionOpen(true)}>Session</button>}
     </>}
   </section>;
   if (!preferences.providerSetupComplete && !window.islandAgentFocus?.provider) {
@@ -868,26 +965,47 @@ export function AgentsWorkspace({ state, Icon, send, renderAnswer, openCodeProfi
     </section>;
   }
 
-  const layoutHeight = !session && view === 'task' ? (mention ? 350 : 260) : 400;
+  const hasFigure = shownPresentation?.elements?.some(element => element.type === 'figure_scene');
+  const figureHeight = Math.min(680, Math.max(360, availableHeight - 145));
+  const figureCanvasHeight = Math.min(360, Math.max(200, figureHeight - 320));
+  const layoutHeight = !session && view === 'task' ? (mention ? 350 : 260)
+    : session && view === 'task' ? (hasFigure ? figureHeight : 400) : 400;
   const showComposer = !session?.active || preferences.showComposerDuringRun || !!drafts[provider]?.trim() || !!files[provider]?.length;
   const steps = response?.steps || [];
   const activeStep = [...steps].reverse().find(step => agentStepState(step.status) === 'running');
   const attentionStepCount = steps.filter(step => ['failed', 'denied'].includes(agentStepState(step.status))).length;
   const fullAnswer = answerExpanded && view === 'task' && !!session;
-  return <section className={'agent-workspace ' + ((session && view === 'task') || view !== 'task' ? 'has-session' : '') + (fullAnswer ? ' is-answer-full' : '')} data-layout-height={layoutHeight} style={{ '--agent-height': `${layoutHeight}px` }} aria-label="Agents workspace">
+  return <section className={'agent-workspace ' + ((session && view === 'task') || view !== 'task' ? 'has-session' : '') + (fullAnswer ? ' is-answer-full' : '')} data-layout-height={layoutHeight} style={{ '--agent-height': `${layoutHeight}px`, '--agent-figure-canvas-height': `${figureCanvasHeight}px` }} aria-label="Agents workspace">
 
     <div className={'agent-tabs ' + (fullAnswer ? 'is-answer-toolbar' : '')} role={fullAnswer ? undefined : 'tablist'} aria-label={fullAnswer ? undefined : 'Agent work'}>
       {fullAnswer ? <div className="agent-full-toolbar"><button type="button" className="agent-new-task" onClick={() => { sendAgent(send, provider, 'select', { sessionId: '' }); setView('task'); setAnswerExpanded(false); }}>New task</button></div> : <><button type="button" role="tab" aria-selected={view === 'task'} className={view === 'task' ? 'selected' : ''} onClick={() => setView('task')}><Icon name="Add" size={14} />Task</button><button type="button" role="tab" aria-selected={view === 'options'} className={view === 'options' ? 'selected' : ''} onClick={() => { setOptionId(''); setView('options'); }}><Icon name="Settings" size={14} />Options</button><button type="button" role="tab" aria-selected={view === 'sessions'} className={view === 'sessions' ? 'selected' : ''} onClick={() => { setView('sessions'); sendAgent(send, provider, 'refresh'); }}><Icon name="History" size={14} />Sessions</button><button type="button" role="tab" aria-selected={view === 'profiles'} className={view === 'profiles' ? 'selected' : ''} onClick={() => setView('profiles')}><Icon name="Bot" size={14} />Profiles</button><span className="agent-tab-spacer" />{session && <button type="button" className="agent-new-task" onClick={() => { sendAgent(send, provider, 'select', { sessionId: '' }); setView('task'); }}>New task</button>}</>}
     </div>
-    {!agent.connected ? <div className="agent-empty"><span><Icon name={provider === 'codex' ? 'Agents' : 'Terminal'} size={22} /></span><strong>{agent.missing ? `Add ${providerName(provider)} ACP` : `Connecting to ${providerName(provider)}`}</strong>{agent.error ? <AgentFeedback error={agent.error} operationKind={agent.operationKind} authRequired={agent.authRequired} provider={provider} embedded Icon={Icon} /> : <p>{provider === 'codex' ? 'Install the codex-acp adapter to use your Codex sign-in.' : 'Start the OpenCode CLI to continue.'}</p>}<div className="agent-empty-actions"><button type="button" onClick={() => sendAgent(send, provider, 'connect')}><Icon name="Refresh" size={15} />Reconnect</button>{agent.missing && <button type="button" disabled={agent.installing} onClick={() => sendAgent(send, provider, 'install')}><Icon name="Add" size={15} />{agent.installing ? 'Installing…' : 'Install'}</button>}{agent.authMethods?.map(method => <button type="button" key={method.id} onClick={() => sendAgent(send, provider, 'login', { methodId: method.id })}>{method.name || 'Sign in'}</button>)}</div></div> : <>
-      {view === 'sessions' && <div className="agent-sessions-view"><div className="agent-list-header"><div className="agent-list-title"><strong>Sessions</strong>{agent.capabilities?.sessionCapabilities?.list != null && <span className="agent-session-count">{orderedSessions.length}</span>}</div><button type="button" className="agent-list-refresh" onClick={() => sendAgent(send, provider, 'refresh')} aria-label="Refresh sessions"><Icon name="Refresh" size={15} /></button></div>{agent.capabilities?.sessionCapabilities?.list != null ? <><label className="agent-search"><Icon name="Search" size={15} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Find a task" aria-label="Find agent session" /></label><div className="agent-session-list">{orderedSessions.map(item => <div className="agent-session-row" key={item.id}><button type="button" className="agent-session-main" onClick={() => chooseSession(item)}><span className="agent-session-copy"><strong>{item.title || 'Untitled task'}</strong><small title={item.directory || 'No folder'}>{item.directory || 'No folder'}</small></span>{item.active && <span className="agent-session-state"><i className="agent-live-dot" />Active</span>}</button><div className="agent-session-actions">
-        {agent.capabilities?.sessionCapabilities?.fork != null && !item.active && <button type="button" title="Fork session" aria-label={`Fork ${item.title || 'session'}`} onClick={() => { sendAgent(send, provider, 'fork', { sessionId: item.id }); setView('task'); }}><Icon name="Copy" size={14} /></button>}
-        {agent.capabilities?.sessionCapabilities?.close != null && item.active && <button type="button" title="Close session" aria-label={`Close ${item.title || 'session'}`} onClick={() => sendAgent(send, provider, 'close', { sessionId: item.id })}><Icon name="Cancel" size={14} /></button>}
-        {agent.capabilities?.sessionCapabilities?.delete != null && !item.active && <button type="button" title={armedDelete === item.id ? 'Confirm removal' : 'Remove session'} aria-label={`${armedDelete === item.id ? 'Confirm removal of' : 'Remove'} ${item.title || 'session'}`} onClick={() => { if (armedDelete === item.id) { sendAgent(send, provider, 'delete', { sessionId: item.id }); setArmedDelete(''); } else setArmedDelete(item.id); }}>{armedDelete === item.id ? 'Delete?' : <Icon name="Trash" size={14} />}</button>}
-      </div></div>)}{!orderedSessions.length && <div className="agent-list-empty">{query ? 'No matching sessions' : 'No sessions yet'}</div>}</div>{agent.nextCursor && <button type="button" className="agent-more" onClick={() => sendAgent(send, provider, 'more')}>More sessions</button>}</> : <div className="agent-list-empty">This provider does not advertise session listing.</div>}</div>}
+    {!agent.connected && view !== 'sessions' && !(view === 'task' && session && response) ? <div className="agent-empty"><span><Icon name={provider === 'codex' ? 'Agents' : 'Terminal'} size={22} /></span><strong>{agent.missing ? `Add ${providerName(provider)} ACP` : `Connecting to ${providerName(provider)}`}</strong>{agent.error ? <AgentFeedback error={agent.error} operationKind={agent.operationKind} authRequired={agent.authRequired} provider={provider} embedded Icon={Icon} /> : <p>{provider === 'codex' ? 'Install the codex-acp adapter to use your Codex sign-in.' : 'Start the OpenCode CLI to continue.'}</p>}<div className="agent-empty-actions"><button type="button" onClick={() => sendAgent(send, provider, 'connect')}><Icon name="Refresh" size={15} />Reconnect</button>{agent.missing && <button type="button" disabled={agent.installing} onClick={() => sendAgent(send, provider, 'install')}><Icon name="Add" size={15} />{agent.installing ? 'Installing…' : 'Install'}</button>}{agent.authMethods?.map(method => <button type="button" key={method.id} onClick={() => sendAgent(send, provider, 'login', { methodId: method.id })}>{method.name || 'Sign in'}</button>)}</div></div> : <>
+      {view === 'sessions' && <div className="agent-sessions-view">
+        <div className="agent-list-header"><div className="agent-list-title"><strong>Pluto sessions</strong><span className="agent-session-count">{orderedSessions.length}</span></div></div>
+        {state.agentSessionsError && <div className="agent-list-empty" role="alert">{state.agentSessionsError}</div>}
+        <label className="agent-search"><Icon name="Search" size={15} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Find a conversation" aria-label="Find Pluto session" /></label>
+        <div className="agent-session-list">{orderedSessions.map(item => {
+          const runtime = state.agents?.[item.provider]?.sessions?.find(entry => entry.id === item.runtimeId);
+          return <div className="agent-session-row" key={item.id}>
+            <button type="button" className="agent-session-main" onClick={() => chooseSession(item)}>
+              <span className="agent-session-copy"><strong>{item.title || 'Untitled task'}</strong><small title={item.directory || 'No folder'}>{providerName(item.provider)} · {item.directory || 'No folder'}</small></span>
+              {runtime?.active && <span className="agent-session-state"><i className="agent-live-dot" />Active</span>}
+            </button>
+            <div className="agent-session-actions">{!runtime?.active && <><button type="button" className="agent-session-handoff" title="Continue this Pluto conversation in the other provider using a bounded local recap" onClick={() => {
+              const target = item.provider === 'codex' ? 'opencode' : 'codex';
+              if (!state.agents?.[target]?.connected) { sendAgent(send, target, 'connect'); return; }
+              if (armedHandoff !== item.id) { setArmedHandoff(item.id); setArmedDelete(''); return; }
+              sendAgent(send, target, 'select', { sessionId: '' });
+              send('agentSessionHandoff', { id: item.id, provider: target, config: Object.entries(config[target]).map(([id, value]) => ({ id, value })) });
+              setProvider(target); setView('task'); setArmedHandoff('');
+            }}>{armedHandoff === item.id ? `Send recap to ${providerName(item.provider === 'codex' ? 'opencode' : 'codex')}?` : `To ${providerName(item.provider === 'codex' ? 'opencode' : 'codex')}`}</button><button type="button" className={armedDelete === item.id ? "is-delete-armed" : ""} title={armedDelete === item.id ? 'Confirm removal' : 'Remove session'} aria-label={(armedDelete === item.id ? 'Confirm removal of ' : 'Remove ') + (item.title || 'session')} onClick={() => { if (armedDelete === item.id) { send('agentSessionDelete', { id: item.id }); setArmedDelete(''); } else { setArmedDelete(item.id); setArmedHandoff(''); } }}><Icon name="Trash" size={14} /></button></>}</div>
+          </div>;
+        })}{!orderedSessions.length && <div className="agent-list-empty">{query ? 'No matching conversations' : 'No Pluto conversations yet'}</div>}</div>
+      </div>}
       {view === 'profiles' && <div className="agent-profiles-view">{provider === 'opencode' ? openCodeProfiles : <div className="agent-provider-profile"><span><Icon name="Agents" size={19} /></span><div><strong>Codex</strong><small>Uses your Codex account and session choices</small></div></div>}</div>}
       {view === 'options' && <div className="agent-config-view">
-        <div className="agent-config-heading"><div><span className="eyebrow">TASK OPTIONS</span><strong>{session ? session.title || 'Current task' : 'New task'}</strong></div>{session && <small>{session.directory?.split(/[\\/]/).at(-1) || 'No project folder'}</small>}</div>
+        <div className="agent-config-heading"><div><span className="eyebrow">TASK OPTIONS</span><strong>{session ? cleanAgentTitle(session.title, 'Current task') : 'New task'}</strong></div>{session && <small>{session.directory?.split(/[\\/]/).at(-1) || 'No project folder'}</small>}</div>
         {!session && <div className="agent-project"><button type="button" onClick={chooseFolder}><Icon name="FolderAdd" size={16} /><span>{directory[provider] ? directory[provider].split(/[\\/]/).at(-1) : 'Choose project'}</span></button>{directory[provider] && <small title={directory[provider]}>{directory[provider]}</small>}</div>}
         {session && <>
           {options.length ? <AgentOptions key={provider + session.id} options={options} values={activeConfig} onChange={chooseConfig} Icon={Icon} selectedId={optionId} onSelectId={setOptionId} /> : <div className="agent-list-empty">This session has no provider-specific options.</div>}
@@ -895,18 +1013,24 @@ export function AgentsWorkspace({ state, Icon, send, renderAnswer, openCodeProfi
         </>}
         {!session && <>
           {agent.capabilities?.sessionCapabilities?.additionalDirectories != null && <div className="agent-extra-folders"><button type="button" onClick={chooseAdditionalFolder}><Icon name="Add" size={13} />More folders</button>{additionalDirectories[provider]?.map(folder => <span key={folder} title={folder}>{folder.split(/[\\/]/).at(-1)}<button type="button" aria-label={`Remove ${folder}`} onClick={() => removeAdditionalFolder(folder)}><Icon name="Cancel" size={11} /></button></span>)}</div>}
-          <button type="button" className="agent-prepare" disabled={!agent.connected || agent.installing} onClick={() => sendAgent(send, provider, 'prepare', { directory: directory[provider] || '', additionalDirectories: additionalDirectories[provider], config: Object.entries(config[provider]).map(([id, value]) => ({ id, value })) })}>Reload choices</button>
-          <small className="agent-config-note">Loading provider choices…</small>
+          {!!options.length && <AgentOptions key={catalogContext} options={options} values={activeConfig} onChange={chooseConfig} Icon={Icon} selectedId={optionId} onSelectId={setOptionId} />}
+          <button type="button" className="agent-prepare" disabled={!agent.connected || agent.installing} onClick={() => { workspaceMemory.pendingCatalog[provider] = catalogContext; sendAgent(send, provider, 'prepare', { directory: directory[provider] || '', additionalDirectories: additionalDirectories[provider], config: Object.entries(config[provider]).map(([id, value]) => ({ id, value })) }); }}>Reload choices</button>
+          {!options.length && <small className="agent-config-note">{agent.error ? 'Could not load provider choices. Reload to retry.' : 'Loading provider choices…'}</small>}
         </>}
       </div>}
       {view === 'task' && <div className="agent-task-view">
-        {session ? <div className="agent-result"><div className="agent-result-head">{answerExpanded && <button type="button" className="agent-answer-back" onClick={() => setAnswerExpanded(false)} aria-label="Back to task">Back</button>}<div><small>{providerName(provider)} · {session.active ? 'Running' : session.ready ? 'Ready' : 'Loading'}</small><strong>{session.title || 'Untitled task'}</strong></div>{!dictateActive && !answerExpanded && (response?.text || response?.presentation) && <button type="button" className="agent-answer-open" onClick={() => setAnswerExpanded(true)} aria-label="Open full answer">Full view</button>}{session.active && <button type="button" aria-label="Stop agent task" title="Stop task" className="agent-stop" onClick={() => sendAgent(send, provider, 'cancel', { sessionId: session.id })}><i /></button>}</div>
+        {session ? <div className="agent-result"><div className="agent-result-head">{answerExpanded && <button type="button" className="agent-answer-back" onClick={() => setAnswerExpanded(false)} aria-label="Back to task">Back</button>}<div><small>{providerName(provider)} · {session.active ? 'Running' : session.ready ? 'Ready' : 'Loading'}</small><strong>{cleanAgentTitle(session.title)}</strong></div>{!dictateActive && <button type="button" className="agent-answer-open" aria-label="View session turns" aria-expanded={historyOpen} onClick={() => setHistoryOpen(value => !value)}><Icon name="History" size={15} /><span>{historySeq == null ? "Turns" : `Turn ${historySeq}`}</span></button>}{session.active && <button type="button" aria-label="Stop agent task" title="Stop task" className="agent-stop" onClick={() => sendAgent(send, provider, 'cancel', { sessionId: session.id })}><i /></button>}</div>
           {decisions[0]?.kind === 'approval' && <ApprovalCard key={decisions[0].item.id} permission={decisions[0].item} provider={provider} send={send} Icon={Icon} />}
           {decisions[0]?.kind === 'question' && <QuestionCard key={decisions[0].item.id} question={decisions[0].item} provider={provider} send={send} Icon={Icon} />}
-          <div className="agent-result-scroll" tabIndex={0} aria-label="Agent response and activity">
+          {historyOpen && <nav className="agent-turn-history" aria-label="Prompts in this session">
+            <div className="agent-turn-history-title">Session turns</div>
+            <button type="button" className="agent-turn-row" aria-current={historySeq == null ? "true" : undefined} onClick={() => { setHistorySeq(null); setHistoryOpen(false); }}><span className="agent-turn-index"><Icon name="Enter" size={15} /></span><span className="agent-turn-copy"><strong>Current result</strong><small>Return to the newest model</small></span></button>
+            {[...historyTurns].reverse().map(turn => <button type="button" className="agent-turn-row" key={turn.seq} aria-current={historySeq === turn.seq ? "true" : undefined} title={turn.prompt} onClick={() => { setHistorySeq(turn.seq); setHistoryOpen(false); }}><span className="agent-turn-index">{turn.seq}</span><span className="agent-turn-copy"><strong>{turn.prompt || `Turn ${turn.seq}`}</strong><small>{turn.presentation ? "Model and response" : "Response"}</small></span></button>)}
+          </nav>}          <div className="agent-result-scroll" tabIndex={0} aria-label="Agent response and activity">
             {decisions.slice(1).map(decision => decision.kind === 'approval' ? <ApprovalCard key={decision.item.id} permission={decision.item} provider={provider} send={send} Icon={Icon} /> : <QuestionCard key={decision.item.id} question={decision.item} provider={provider} send={send} Icon={Icon} />)}
-            {response?.presentation && <AgentPresentationView presentation={response.presentation} />}
-            {response?.text ? <><div className={'opencode-response-text agent-answer ' + (response.text.length > 1800 && !answerExpanded ? 'is-preview' : '')}>{renderAnswer(response.text)}</div>{response.text.length > 1800 && !answerExpanded && !dictateActive && <button type="button" className="agent-answer-toggle" onClick={() => setAnswerExpanded(true)}>Open full answer</button>}</> : !response?.presentation && <div className="agent-result-placeholder">{session.active || response?.waiting ? 'The response will appear here.' : 'No response loaded for this session.'}</div>}
+            {shownPresentation && <AgentPresentationView live={!historyTurn && (response.visualComplete === false || (session.active && response.visualComplete !== true))} presentation={shownPresentation} visualRequest={historyTurn?.prompt || response.visualRequest || ''} visualRevision={historyTurn ? 0 : response.visualRevision} visualStatus={historyTurn ? "" : response.visualStatus} onVisualPreview={!historyTurn && agent.capabilities?.promptCapabilities?.image === true ? (revision, image) => sendAgent(send, provider, 'visualPreview', { sessionId: session.id, revision, image }) : null} onVisualOutcome={(revision, error, inspection = '') => sendAgent(send, provider, 'visualOutcome', { sessionId: session.id, revision, error, inspection })} />}
+            {!historyTurn && response?.visualStatus && <small className="agent-visual-status" role="status">{response.visualStatus}</small>}
+            {shownAnswerText ? <><div className={'opencode-response-text agent-answer ' + (shownAnswerText.length > 1800 && !answerExpanded ? 'is-preview' : '')}>{renderAnswer(shownAnswerText)}</div></> : !shownPresentation && !response?.visualStatus && <div className="agent-result-placeholder">{session.active || response?.waiting ? 'The response will appear here.' : 'No response loaded for this session.'}</div>}
             {response?.truncated && <small className="agent-limit-note">The response reached the display limit.</small>}
             {!!steps.length && <div className="agent-activity"><button type="button" className="agent-activity-trigger" onClick={() => setDetailsOpen(value => !value)} aria-expanded={detailsOpen}><Icon name="Terminal" size={14} /><span>{activeStep?.title || `${steps.length} tool actions`}{attentionStepCount > 0 && <small>{attentionStepCount} need review</small>}</span><Icon name="ChevronDown" size={13} /></button>{detailsOpen && <ol aria-label="Tool activity">{steps.map(step => {
               const state = agentStepState(step.status);
@@ -940,7 +1064,7 @@ export function AgentsWorkspace({ state, Icon, send, renderAnswer, openCodeProfi
             if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); submit(event); }
           }} maxLength={100000} />
           {!!files[provider]?.length && <div className="agent-files" aria-label="Attached files">{files[provider].map(path => <span className="agent-file-chip" key={path} title={path}><span className="agent-file-kind"><Icon name={attachmentIcon(path)} size={14} /></span><span className="agent-file-name">{path.split(/[\\/]/).at(-1)}</span><button type="button" className="agent-file-remove" aria-label={`Remove ${path}`} onClick={() => setFiles(current => ({ ...current, [provider]: current[provider].filter(file => file !== path) }))}><Icon name="Cancel" size={12} /></button></span>)}</div>}
-          <div className="agent-composer-footer"><button type="button" className="agent-attach" onClick={attach} title="Attach files" aria-label="Attach files"><Icon name="Add" size={18} /></button><button type="button" className="agent-config-chip" onClick={() => { setOptionId(modelOption?.id || ''); setView('options'); }} title="Choose model and task options"><span>{modelValue || 'Model & options'}</span></button><span className="agent-composer-spacer" /><button type="button" className="agent-dictate" onClick={() => { setView('task'); setAnswerExpanded(false); onDictate(); }} title="Dictate into task" aria-label="Dictate into task"><Icon name="Mic" size={17} /></button><button type="submit" className="agent-submit" disabled={sending[provider] || agent.installing || (session && (!session.ready || session.active)) || (!drafts[provider]?.trim() && !files[provider]?.length)} aria-label={sending[provider] ? 'Sending task' : session ? 'Send follow-up' : 'Start task'}><Icon name={sending[provider] ? 'Loading' : 'AgentSend'} size={17} /></button></div>
+          <div className="agent-composer-footer"><button type="button" className="agent-attach" onClick={attach} title="Attach files" aria-label="Attach files"><Icon name="Add" size={18} /></button><button type="button" className="agent-config-chip" onClick={() => { setOptionId(modelOption?.id || ''); setView('options'); }} title="Choose model and task options"><span>{modelValue || 'Model & options'}</span></button>{canVisualize && <button type="button" className="agent-config-chip agent-visualize-toggle" aria-label="Toggle 3D visualization mode" aria-pressed={visualizationEnabled} onClick={() => setVisualizeContext(visualizationEnabled ? '' : visualizationContext)} title="Use the 3D visualization mode for this model"><span>3D</span><span>Visualize</span></button>}<span className="agent-composer-spacer" />{session && !session.ready && <button type="button" className="agent-dictate" onClick={() => sendAgent(send, provider, 'select', { sessionId: session.id })} title="Retry loading session" aria-label="Retry loading session"><Icon name="Refresh" size={17} /></button>}<button type="button" className="agent-dictate" onClick={() => { setVisualizeContext(''); setView('task'); setAnswerExpanded(false); onDictate(); }} title="Dictate into task" aria-label="Dictate into task"><Icon name="Mic" size={17} /></button><button type="submit" className="agent-submit" disabled={sending[provider] || agent.installing || (session && (!session.ready || session.active)) || (!drafts[provider]?.trim() && !files[provider]?.length)} aria-label={sending[provider] ? 'Sending task' : session ? 'Send follow-up' : 'Start task'}><Icon name={sending[provider] ? 'Loading' : 'AgentSend'} size={17} /></button></div>
         </form>}</div>}
         {agent.error && <AgentFeedback error={agent.error} operationKind={agent.operationKind} authRequired={agent.authRequired} authMethods={agent.authMethods} provider={provider} send={send} authenticating={agent.authenticating} Icon={Icon} />}
       </div>}

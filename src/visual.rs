@@ -321,6 +321,32 @@ fn signed_distance_rect(point: (f64, f64), bounds: (f64, f64, f64, f64)) -> f64 
 mod tests {
     use super::*;
 
+    #[test]
+    fn compact_curve_coverage_preserves_smooth_edges_at_fractional_dpi() {
+        for scale in [1.0, 1.25, 1.5, 1.75, 2.0] {
+            let layout =
+                ShellLayout::new(ShapeMode::Notch, (202.0_f64 * scale).round() / scale, scale)
+                    .unwrap();
+            let (width, height) = layout.physical_size();
+            let (mut coarse_error, mut fine_error) = (0u64, 0u64);
+            for y in 0..height {
+                for x in 0..width {
+                    let reference = layout.pixel_alpha(x, y, 64);
+                    coarse_error += u64::from(reference.abs_diff(layout.pixel_alpha(x, y, 4)));
+                    fine_error += u64::from(reference.abs_diff(layout.pixel_alpha(x, y, 16)));
+                    assert_eq!(
+                        layout.pixel_alpha(x, y, 16),
+                        layout.pixel_alpha(width - x - 1, y, 16)
+                    );
+                }
+            }
+            assert!(
+                fine_error < coarse_error,
+                "edge coverage must improve at {scale}x DPI"
+            );
+        }
+    }
+
     fn reference_pixel_alpha(layout: ShellLayout, x: u32, y: u32, samples: usize) -> u8 {
         let mut coverage = 0.0;
         for sample_y in 0..samples {

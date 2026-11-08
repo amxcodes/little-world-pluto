@@ -1,0 +1,76 @@
+```island-figure
+{"duration":5.0,"label":"Optimus Prime, classic red-and-blue Autobot leader transforming from a heroic robot into a forward-facing semi truck","program":true,"steps":[{"label":"Classic Optimus Prime robot","marks":[]},{"label":"Classic Optimus Prime semi truck","marks":[]}],"labels":[{"text":"Cab windshield","part":"left_window"},{"text":"Helmet","part":"helmet"},{"text":"Shoulder fender","part":"left_pauldron"},{"text":"Exhaust stack","part":"left_exhaust"},{"text":"Rear wheel","part":"left_rear_wheel"}]}
+{"op":"group","id":"torso","transform":{"position":[0,3.6,0]}}
+{"op":"part","id":"torso_shell","label":"Red chest armor","detail":"Beveled red cab-front shell retained from robot form","shape":{"kind":"box","size":[2.5,1.8,1.35],"bevel":0.16},"transform":{"position":[0,0.25,0]},"color":"#C8322B","material":"paint"}
+{"op":"part","id":"left_window","label":"Left windshield","detail":"Inset blue truck cab glass pane","shape":{"kind":"box","size":[0.82,0.68,0.06],"bevel":0.027},"transform":{"position":[-0.58,0.58,0.69]},"color":"#237BB5","material":"glass"}
+{"op":"part","id":"right_window","label":"Right windshield","detail":"Inset blue truck cab glass pane","shape":{"kind":"box","size":[0.82,0.68,0.06],"bevel":0.027},"transform":{"position":[0.58,0.58,0.69]},"color":"#237BB5","material":"glass"}
+{"op":"part","id":"chest_grille","label":"Chest grille","detail":"Dark radiator grille below cab windows","shape":{"kind":"box","size":[0.92,0.38,0.08]},"transform":{"position":[0,-0.42,0.7]},"color":"#303942","material":"metal"}
+{"op":"part","id":"grille_slats","label":"Grille slats","detail":"Horizontal silver radiator bars","shape":{"kind":"box","size":[0.82,0.035,0.025]},"transform":{"position":[0,-0.53,0.75]},"repeat":{"count":4,"offset":[0,0.07,0]},"color":"#ADB8BF","material":"metal"}
+{"op":"part","id":"waist","label":"Blue waist plate","detail":"Blue belt armor carried beneath the cab","shape":{"kind":"box","size":[1.65,0.65,1.05],"bevel":0.1},"transform":{"position":[0,-1.12,0]},"color":"#174A9A","material":"paint"}
+{"op":"part","id":"belt_buckle","label":"Belt center","detail":"Raised silver rectangular belt center","shape":{"kind":"box","size":[0.38,0.3,0.08],"bevel":0.03},"transform":{"position":[0,-1.1,0.55]},"color":"#B9C1C6","material":"metal"}
+{"op":"group","id":"head","transform":{"position":[0,1.48,0.02]}}
+{"op":"part","id":"helmet","label":"Blue helmet","detail":"Angular helmet shell with raised brow","shape":{"kind":"box","size":[0.92,0.82,0.78],"bevel":0.16},"transform":{"position":[0,0.1,0]},"color":"#174A9A","material":"paint"}
+{"op":"part","id":"faceplate","label":"Silver faceplate","detail":"Lower face guard","shape":{"kind":"box","size":[0.46,0.39,0.1],"bevel":0.04},"transform":{"position":[0,-0.08,0.41]},"color":"#BBC3C8","material":"metal"}
+{"op":"part","id":"eye_band","label":"Cyan visor","detail":"Narrow luminous eye band beneath brow","shape":{"kind":"box","size":[0.55,0.1,0.035]},"transform":{"position":[0,0.16,0.405]},"color":"#48E8F4","material":"glass"}
+{"op":"part","id":"left_ear_fin","label":"Left helmet fin","detail":"Tapered blue helmet fin","shape":{"kind":"box","size":[0.18,0.53,0.22],"bevel":0.05},"transform":{"position":[-0.48,0.32,0]},"color":"#174A9A","material":"paint"}
+{"op":"part","id":"right_ear_fin","label":"Right helmet fin","detail":"Tapered blue helmet fin","shape":{"kind":"box","size":[0.18,0.53,0.22],"bevel":0.05},"transform":{"position":[0.48,0.32,0]},"color":"#174A9A","material":"paint"}
+{"op":"end"}
+{"op":"group","id":"left_shoulder","transform":{"position":[-1.48,0.85,0]}}
+{"op":"part","id":"left_pauldron","label":"Left shoulder armor","detail":"Blue angular shoulder cap that forms cab-side fender","shape":{"kind":"box","size":[0.82,0.78,0.92],"bevel":0.16},"transform":{"position":[-0.08,0,0]},"color":"#174A9A","material":"paint"}
+{"op":"part","id":"left_socket","label":"Left shoulder socket","detail":"Exposed dark shoulder axle","shape":{"kind":"cylinder","radius":0.24,"height":0.34},"transform":{"position":[0.34,-0.12,0],"rotation":[0,0,90]},"color":"#343B42","material":"metal"}
+{"op":"group","id":"left_arm","transform":{"position":[-0.02,-0.56,0]}}
+{"op":"part","id":"left_upper_arm","label":"Left upper arm","detail":"Blue tapered upper arm shell","shape":{"kind":"box","size":[0.62,0.8,0.7],"bevel":0.1},"transform":{"position":[0,-0.35,0]},"color":"#174A9A","material":"paint"}
+{"op":"part","id":"left_elbow","label":"Left elbow","detail":"Dark steel elbow spindle","shape":{"kind":"cylinder","radius":0.19,"height":0.38},"transform":{"position":[0,-0.79,0],"rotation":[0,0,90]},"color":"#343B42","material":"metal"}
+{"op":"part","id":"left_forearm","label":"Left forearm","detail":"Blue faceted forearm shell","shape":{"kind":"box","size":[0.76,0.78,0.8],"bevel":0.08},"transform":{"position":[0,-1.17,0]},"color":"#174A9A","material":"paint"}
+{"op":"part","id":"left_fist","label":"Left fist","detail":"Closed blue robot fist","shape":{"kind":"box","size":[0.5,0.42,0.48],"bevel":0.08},"transform":{"position":[0,-1.68,0.08]},"color":"#174A9A","material":"paint"}
+{"op":"end"}
+{"op":"group","id":"left_stack","transform":{"position":[-0.12,0.55,-0.38]}}
+{"op":"part","id":"left_exhaust","label":"Left exhaust stack","detail":"Blue rectangular exhaust stack with dark top","shape":{"kind":"box","size":[0.25,1.28,0.27],"bevel":0.04},"color":"#174A9A","material":"paint"}
+{"op":"part","id":"left_stack_top","label":"Left stack opening","detail":"Dark inset stack mouth","shape":{"kind":"box","size":[0.19,0.06,0.21]},"transform":{"position":[0,0.63,0]},"color":"#252A30","material":"metal"}
+{"op":"end"}
+{"op":"end"}
+{"op":"group","id":"right_shoulder","transform":{"position":[1.48,0.85,0]}}
+{"op":"part","id":"right_pauldron","label":"Right shoulder armor","detail":"Blue angular shoulder cap that forms cab-side fender","shape":{"kind":"box","size":[0.82,0.78,0.92],"bevel":0.16},"transform":{"position":[0.08,0,0]},"color":"#174A9A","material":"paint"}
+{"op":"part","id":"right_socket","label":"Right shoulder socket","detail":"Exposed dark shoulder axle","shape":{"kind":"cylinder","radius":0.24,"height":0.34},"transform":{"position":[-0.34,-0.12,0],"rotation":[0,0,90]},"color":"#343B42","material":"metal"}
+{"op":"group","id":"right_arm","transform":{"position":[0.02,-0.56,0]}}
+{"op":"part","id":"right_upper_arm","label":"Right upper arm","detail":"Blue tapered upper arm shell","shape":{"kind":"box","size":[0.62,0.8,0.7],"bevel":0.1},"transform":{"position":[0,-0.35,0]},"color":"#174A9A","material":"paint"}
+{"op":"part","id":"right_elbow","label":"Right elbow","detail":"Dark steel elbow spindle","shape":{"kind":"cylinder","radius":0.19,"height":0.38},"transform":{"position":[0,-0.79,0],"rotation":[0,0,90]},"color":"#343B42","material":"metal"}
+{"op":"part","id":"right_forearm","label":"Right forearm","detail":"Blue faceted forearm shell","shape":{"kind":"box","size":[0.76,0.78,0.8],"bevel":0.08},"transform":{"position":[0,-1.17,0]},"color":"#174A9A","material":"paint"}
+{"op":"part","id":"right_fist","label":"Right fist","detail":"Closed blue robot fist","shape":{"kind":"box","size":[0.5,0.42,0.48],"bevel":0.08},"transform":{"position":[0,-1.68,0.08]},"color":"#174A9A","material":"paint"}
+{"op":"end"}
+{"op":"group","id":"right_stack","transform":{"position":[0.12,0.55,-0.38]}}
+{"op":"part","id":"right_exhaust","label":"Right exhaust stack","detail":"Blue rectangular exhaust stack with dark top","shape":{"kind":"box","size":[0.25,1.28,0.27],"bevel":0.04},"color":"#174A9A","material":"paint"}
+{"op":"part","id":"right_stack_top","label":"Right stack opening","detail":"Dark inset stack mouth","shape":{"kind":"box","size":[0.19,0.06,0.21]},"transform":{"position":[0,0.63,0]},"color":"#252A30","material":"metal"}
+{"op":"end"}
+{"op":"end"}
+{"op":"group","id":"left_leg","transform":{"position":[-0.72,-1.45,0]}}
+{"op":"part","id":"left_thigh","label":"Left thigh","detail":"Blue faceted upper thigh shell","shape":{"kind":"box","size":[0.86,0.88,0.86],"bevel":0.1},"transform":{"position":[0,-0.37,0]},"color":"#174A9A","material":"paint"}
+{"op":"part","id":"left_knee","label":"Left knee hub","detail":"Silver circular front knee hub","shape":{"kind":"cylinder","radius":0.22,"height":0.16},"transform":{"position":[0,-0.88,0.48],"rotation":[90,0,0]},"color":"#BAC2C7","material":"metal"}
+{"op":"part","id":"left_shin","label":"Left shin","detail":"Broad blue lower leg armor","shape":{"kind":"box","size":[1.02,1.22,1.08],"bevel":0.1},"transform":{"position":[0,-1.48,0]},"color":"#174A9A","material":"paint"}
+{"op":"part","id":"left_foot","label":"Left boot","detail":"Forward blue boot shell","shape":{"kind":"box","size":[1.08,0.48,1.38],"bevel":0.08},"transform":{"position":[0,-2.12,0.32]},"color":"#174A9A","material":"paint"}
+{"op":"part","id":"left_sole","label":"Left sole","detail":"Black rubber boot sole","shape":{"kind":"box","size":[1.02,0.12,1.28]},"transform":{"position":[0,-2.4,0.32]},"color":"#20252A","material":"rubber"}
+{"op":"part","id":"left_rear_wheel","label":"Left rear wheel","detail":"Black rubber truck wheel with steel hub, mounted on the outer chassis side","shape":{"kind":"cylinder","radius":0.48,"height":0.28},"transform":{"position":[-0.58,-1.45,-0.34],"rotation":[0,0,90]},"color":"#20252A","material":"rubber"}
+{"op":"part","id":"left_rear_hub","label":"Left rear hub","detail":"Silver wheel center on outer face","shape":{"kind":"cylinder","radius":0.2,"height":0.04},"transform":{"position":[-0.74,-1.45,-0.34],"rotation":[0,0,90]},"color":"#B9C1C6","material":"metal"}
+{"op":"end"}
+{"op":"group","id":"right_leg","transform":{"position":[0.72,-1.45,0]}}
+{"op":"part","id":"right_thigh","label":"Right thigh","detail":"Blue faceted upper thigh shell","shape":{"kind":"box","size":[0.86,0.88,0.86],"bevel":0.1},"transform":{"position":[0,-0.37,0]},"color":"#174A9A","material":"paint"}
+{"op":"part","id":"right_knee","label":"Right knee hub","detail":"Silver circular front knee hub","shape":{"kind":"cylinder","radius":0.22,"height":0.16},"transform":{"position":[0,-0.88,0.48],"rotation":[90,0,0]},"color":"#BAC2C7","material":"metal"}
+{"op":"part","id":"right_shin","label":"Right shin","detail":"Broad blue lower leg armor","shape":{"kind":"box","size":[1.02,1.22,1.08],"bevel":0.1},"transform":{"position":[0,-1.48,0]},"color":"#174A9A","material":"paint"}
+{"op":"part","id":"right_foot","label":"Right boot","detail":"Forward blue boot shell","shape":{"kind":"box","size":[1.08,0.48,1.38],"bevel":0.08},"transform":{"position":[0,-2.12,0.32]},"color":"#174A9A","material":"paint"}
+{"op":"part","id":"right_sole","label":"Right sole","detail":"Black rubber boot sole","shape":{"kind":"box","size":[1.02,0.12,1.28]},"transform":{"position":[0,-2.4,0.32]},"color":"#20252A","material":"rubber"}
+{"op":"part","id":"right_rear_wheel","label":"Right rear wheel","detail":"Black rubber truck wheel with steel hub, mounted on the outer chassis side","shape":{"kind":"cylinder","radius":0.48,"height":0.28},"transform":{"position":[0.58,-1.45,-0.34],"rotation":[0,0,90]},"color":"#20252A","material":"rubber"}
+{"op":"part","id":"right_rear_hub","label":"Right rear hub","detail":"Silver wheel center on outer face","shape":{"kind":"cylinder","radius":0.2,"height":0.04},"transform":{"position":[0.74,-1.45,-0.34],"rotation":[0,0,90]},"color":"#B9C1C6","material":"metal"}
+{"op":"end"}
+{"op":"part","id":"front_bumper","label":"Front bumper","detail":"Silver bumper across the lower forward cab face","shape":{"kind":"box","size":[2.2,0.18,0.24],"bevel":0.04},"transform":{"position":[0,2.78,0.78]},"color":"#AEB7BC","material":"metal"}
+{"op":"part","id":"rear_chassis","label":"Rear chassis deck","detail":"Blue truck bed behind the red cab","shape":{"kind":"box","size":[2.8,0.72,2.2],"bevel":0.12},"transform":{"position":[0,1.2,-0.75]},"color":"#174A9A","material":"paint"}
+{"op":"part","id":"left_front_wheel","label":"Left front wheel","detail":"Black rubber cab-side wheel with silver hub","shape":{"kind":"cylinder","radius":0.42,"height":0.24},"transform":{"position":[-1.48,2.05,0],"rotation":[0,0,90]},"color":"#20252A","material":"rubber"}
+{"op":"part","id":"left_front_hub","label":"Left front hub","detail":"Silver center cap on left front wheel","shape":{"kind":"cylinder","radius":0.17,"height":0.04},"transform":{"position":[-1.63,2.05,0],"rotation":[0,0,90]},"color":"#B9C1C6","material":"metal"}
+{"op":"part","id":"right_front_wheel","label":"Right front wheel","detail":"Black rubber cab-side wheel with silver hub","shape":{"kind":"cylinder","radius":0.42,"height":0.24},"transform":{"position":[1.48,2.05,0],"rotation":[0,0,90]},"color":"#20252A","material":"rubber"}
+{"op":"part","id":"right_front_hub","label":"Right front hub","detail":"Silver center cap on right front wheel","shape":{"kind":"cylinder","radius":0.17,"height":0.04},"transform":{"position":[1.63,2.05,0],"rotation":[0,0,90]},"color":"#B9C1C6","material":"metal"}
+{"op":"end"}
+{"op":"channel","target":"head","channel":"translate.y","start":0,"end":2,"from":0,"to":-1.2}
+{"op":"channel","target":"left_arm","channel":"rotate.z","start":1,"end":4,"from":0,"to":90}
+{"op":"channel","target":"right_arm","channel":"rotate.z","start":1,"end":4,"from":0,"to":-90}
+{"op":"channel","target":"left_leg","channel":"rotate.x","start":2,"end":5,"from":0,"to":90}
+{"op":"channel","target":"right_leg","channel":"rotate.x","start":2,"end":5,"from":0,"to":90}
+```

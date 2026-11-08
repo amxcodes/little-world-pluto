@@ -237,7 +237,9 @@ fn run(
                 capture,
                 cursor: POINT::default(),
                 color_patch: None,
-                color_sampled_at: Instant::now() - Duration::from_secs(1),
+                color_sampled_at: Instant::now()
+                    .checked_sub(Duration::from_secs(1))
+                    .unwrap_or_else(Instant::now),
                 selection,
                 drag_start: None,
                 record_stop: None,

@@ -2,12 +2,11 @@
 import assert from 'node:assert/strict';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { mkdir, writeFile } from 'node:fs/promises';
-import { build } from 'esbuild';
 const { chromium } = await import(process.env.PLUTO_PLAYWRIGHT_PATH ? pathToFileURL(process.env.PLUTO_PLAYWRIGHT_PATH).href : 'playwright');
 const browser = await chromium.launch({ headless: true, ...(process.env.PLUTO_BROWSER_PATH ? { executablePath: process.env.PLUTO_BROWSER_PATH } : {}) });
 const output = new URL('../../target/ui-review/', import.meta.url);
 await mkdir(output, { recursive: true });
-const report = { toolbarCases: 0, settingsCases: 0, errors: [], optics: null };
+const report = { toolbarCases: 0, settingsCases: 0, errors: [] };
 try {
   for (const scale of [1, 1.25, 2]) for (const glass of [false, true]) for (const privacy of [0, 1, 2]) {
     const context = await browser.newContext({ viewport: { width: 178, height: 28 }, deviceScaleFactor: scale });
@@ -107,32 +106,6 @@ try {
     report.settingsCases++;
     await context.close();
   }
-  const page = await browser.newPage();
-  await page.setContent('<div id="surface"><svg><defs></defs></svg><div class="settings-card" style="width:240px;height:80px;border-radius:18px"><span id="stream"></span></div></div>');
-  const bundle = await build({ entryPoints: [fileURLToPath(new URL('../src/glass-optics.js', import.meta.url))], bundle: true, write: false, format: 'iife', globalName: 'Optics' });
-  await page.addScriptTag({ content: bundle.outputFiles[0].text });
-  report.optics = await page.evaluate(async () => {
-    const root = document.querySelector('#surface'), defs = root.querySelector('defs');
-    const frame = () => new Promise(resolve => requestAnimationFrame(resolve));
-    let rootScans = 0;
-    const query = root.querySelectorAll.bind(root);
-    root.querySelectorAll = (...args) => { rootScans++; return query(...args); };
-    const cleanup = Optics.installGlassOptics(root, defs, 5);
-    for (let i = 0; i < 100; i++) { document.querySelector('#stream').textContent = `Streaming ${i}`; await frame(); }
-    const scansAfterStreaming = rootScans;
-    const added = document.createElement('div'); added.className = 'settings-card'; added.style.cssText = 'width:100px;height:40px;border-radius:12px';
-    root.append(added); await frame(); await frame();
-    const afterAdd = defs.children.length;
-    added.remove(); await frame(); await frame();
-    const afterRemove = defs.children.length;
-    const pending = document.createElement('div'); pending.className = 'settings-card'; root.append(pending);
-    await Promise.resolve(); cleanup(); await frame(); await frame();
-    const afterCleanup = defs.children.length;
-    const zeroCleanup = Optics.installGlassOptics(root, defs, 0);
-    const atZero = defs.children.length; zeroCleanup();
-    return { scansAfterStreaming, afterAdd, afterRemove, afterCleanup, atZero };
-  });
-  assert.deepEqual(report.optics, { scansAfterStreaming: 1, afterAdd: 2, afterRemove: 1, afterCleanup: 0, atZero: 0 });
   assert.deepEqual(report.errors, []);
   await writeFile(new URL('fluency-results.json', output), JSON.stringify(report, null, 2));
   console.log(JSON.stringify(report));

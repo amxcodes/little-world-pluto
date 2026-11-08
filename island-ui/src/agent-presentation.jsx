@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
-import { AssemblyVisual, SystemMap, LineChart } from './agent-visuals.jsx';
-import { WhiteboardSketch } from './agent-whiteboard.jsx';
+import { SystemMap, LineChart } from './agent-visuals.jsx';
+import { FigureScene, useStagePlayback } from './agent-figure-scene.jsx';
 
-const tones = new Set(['primary', 'neutral', 'info', 'success', 'warning', 'danger']);
+const tones = new Set(['primary', 'neutral', 'info', 'success', 'warning', 'danger', 'red', 'orange', 'yellow', 'green', 'blue', 'violet']);
 const toneName = (value, fallback = 'neutral') => tones.has(value) ? value : fallback;
 
-function ElementView({ element }) {
+function ElementView({ element, live, visualRevision, visualStatus, visualRequest, onVisualPreview, onVisualOutcome }) {
   if (!element || typeof element !== 'object') return null;
   switch (element.type) {
     case 'heading': {
@@ -41,18 +41,18 @@ function ElementView({ element }) {
     case 'phase_card': return <div className={'agent-ui-phase state-' + (element.state || 'todo')}><span className="agent-ui-phase-mark" aria-hidden="true" /><div><strong>{element.title}</strong>{element.detail && <small>{element.detail}</small>}</div></div>;
     case 'comparison': return <div className="agent-ui-comparison" aria-label="Comparison">{[element.left, element.right].map((side, index) => <div key={index} className={'tone-' + toneName(side.tone)}><span>{side.label}</span><p>{side.text}</p></div>)}</div>;
     case 'black_hole': return <BlackHoleVisual />;
-    case 'space_station': return <AssemblyVisual station />;
-    case 'human_scene': return <div className="agent-ui-text">{element.steps?.map((step, index) => <p key={index}><strong>{step.label}</strong> {step.detail}</p>)}</div>;
-    case 'assembly': return <AssemblyVisual label={element.label} parts={element.parts} />;
+    case 'figure_scene': return <FigureScene key={element.label} scene={element} visualRequest={visualRequest}
+      live={live} visualRevision={visualRevision} visualStatus={visualStatus} onVisualPreview={onVisualPreview}
+      onVisualOutcome={onVisualOutcome} drawStep={step => <VisualScene label={step.label} frames={[step]} />} />;
+    case 'procedural_scene':
     case 'system_map': return <SystemMap label={element.label} nodes={element.nodes} links={element.links} />;
     case 'line_chart': return <LineChart label={element.label} unit={element.unit} points={element.points} />;
     case 'waveform': return <WaveformVisual label={element.label} values={element.values} />;
     case 'heatmap': return <HeatmapVisual label={element.label} columns={element.columns} rows={element.rows} />;
     case 'cross_section': return <CrossSectionVisual label={element.label} layers={element.layers} />;
     case 'visual_scene': return <VisualScene label={element.label} frames={element.frames} />;
-    case 'whiteboard_sketch': return <WhiteboardSketch {...element} />;
-    case 'section': return <section className="agent-ui-section">{element.title && <h3>{element.title}</h3>}{element.elements.map((child, index) => <ElementView key={index} element={child} />)}</section>;
-    case 'columns': return <div className="agent-ui-columns">{element.columns.map((column, index) => <div key={index}>{column.map((child, childIndex) => <ElementView key={childIndex} element={child} />)}</div>)}</div>;
+    case 'section': return <section className="agent-ui-section">{element.title && <h3>{element.title}</h3>}{element.elements.map((child, index) => <ElementView key={index} element={child} live={live} visualRevision={visualRevision} visualStatus={visualStatus} visualRequest={visualRequest} onVisualPreview={onVisualPreview} onVisualOutcome={onVisualOutcome} />)}</section>;
+    case 'columns': return <div className="agent-ui-columns">{element.columns.map((column, index) => <div key={index}>{column.map((child, childIndex) => <ElementView key={childIndex} element={child} live={live} visualRevision={visualRevision} visualStatus={visualStatus} visualRequest={visualRequest} onVisualPreview={onVisualPreview} onVisualOutcome={onVisualOutcome} />)}</div>)}</div>;
     case 'divider': return <hr className="agent-ui-divider" />;
     default: return null;
   }
@@ -84,15 +84,22 @@ function BlackHoleVisual() {
 
 function VisualScene({ label, frames }) {
   const [active, setActive] = useState(0);
+  const [playing, setPlaying] = useState(false);
   const items = Array.isArray(frames) ? frames.slice(0, 4) : [];
+  useStagePlayback(active, items.length - 1, playing, setActive);
   if (!items.length) return null;
   const selected = Math.min(active, items.length - 1);
   const frame = items[selected];
   // Keep provider-authored labels readable, even in older saved scenes.
   const labels = [];
   for (const item of frame.marks.filter(mark => mark.kind === 'label')) {
-    const candidates = [[0,0],[0,-8],[0,8],[-8,0],[8,0],[0,-16],[0,16]].map(([dx,dy]) => ({ x: Math.max(4, Math.min(96,item.x+dx)), y: Math.max(4,Math.min(66,item.y+dy)) }));
-    const point = candidates.find(point => labels.every(other => Math.hypot(point.x-other.x,point.y-other.y) >= 6)) || candidates[0];
+    const offsets = [[0,-7],[7,0],[0,7],[-7,0],[8,-8],[-8,-8],[8,8],[-8,8],[0,-15],[0,15]];
+    const candidates = offsets.map(([dx,dy]) => ({
+      x: Math.max(2, Math.min(98, item.x + dx)),
+      y: Math.max(2, Math.min(68, item.y + dy)),
+    }));
+    const point = candidates.find(point => Math.hypot(point.x-item.x,point.y-item.y) >= 5 &&
+      labels.every(other => Math.hypot(point.x-other.x,point.y-other.y) >= 7)) || candidates[0];
     labels.push({ ...item, ...point, originalX: item.x, originalY: item.y });
   }
   const mark = (item, index) => {
@@ -103,6 +110,12 @@ function VisualScene({ label, frames }) {
       case 'ring': return <circle key={index} className={className} cx={item.x} cy={item.y} r={item.r} />;
       case 'ellipse': return <ellipse key={index} className={className} cx={item.x} cy={item.y} rx={item.rx} ry={item.ry} />;
       case 'line': return <line key={index} className={className} x1={item.x1} y1={item.y1} x2={item.x2} y2={item.y2} />;
+      case 'arrow': {
+        const angle = Math.atan2(item.y2 - item.y1, item.x2 - item.x1);
+        const size = Math.min(2.5, Math.hypot(item.x2-item.x1, item.y2-item.y1) / 3);
+        const wing = direction => `${item.x2-size*Math.cos(angle+direction)} ${item.y2-size*Math.sin(angle+direction)}`;
+        return <path key={index} className={className} d={`M ${item.x1} ${item.y1} L ${item.x2} ${item.y2} M ${wing(.5)} L ${item.x2} ${item.y2} L ${wing(-.5)}`} />;
+      }
       case 'curve': return <path key={index} className={className} d={`M ${item.x1} ${item.y1} Q ${item.cx} ${item.cy} ${item.x2} ${item.y2}`} />;
       case 'label': return null;
       default: return null;
@@ -110,12 +123,22 @@ function VisualScene({ label, frames }) {
   };
   return <figure className="agent-ui-visual agent-ui-scene">
     <figcaption>{label}</figcaption>
-    <svg key={selected} viewBox="0 0 100 70" preserveAspectRatio="xMidYMid meet" role="img" aria-label={`${label}: ${frame.label}${frame.caption ? '. ' + frame.caption : ''}`}>
-      {frame.marks.map(mark)}
+    <svg key={selected} viewBox="-4 -4 108 78" preserveAspectRatio="xMidYMid meet" role="img" aria-label={`${label}: ${frame.label}${frame.caption ? '. ' + frame.caption : ''}`}>
+      {frame.marks.map((item, index) => item.kind === 'label' ? null :
+        <g key={index} className="agent-scene-draw-mark" style={{ '--mark-delay': `${Math.min(index * 28, 300)}ms` }}>
+          {mark(item, index)}
+        </g>)}
       {labels.map((item,index) => <g key={index} className="agent-scene-pin"><line x1={item.originalX} y1={item.originalY} x2={item.x} y2={item.y} /><circle cx={item.x} cy={item.y} r="2.4" /><text x={item.x} y={item.y+1} textAnchor="middle">{index+1}</text></g>)}
     </svg>
     {!!labels.length && <ol className="agent-scene-legend">{labels.map((item,index) => <li key={index}><span>{index+1}</span>{item.text}</li>)}</ol>}
-    {items.length > 1 && <div className="agent-ui-visual-steps" aria-label="Visual explanation stages">{items.map((item, index) => <button type="button" key={index} aria-pressed={selected === index} onClick={() => setActive(index)}>{item.label}</button>)}</div>}
+    {items.length > 1 && <div className="agent-ui-visual-steps" aria-label="Visual explanation stages">
+      {items.map((item, index) => <button type="button" key={index} aria-pressed={selected === index}
+        onClick={() => { setActive(index); setPlaying(false); }}>{item.label}</button>)}
+      <button type="button" onClick={() => {
+        if (selected === items.length - 1) { setActive(0); setPlaying(true); }
+        else setPlaying(value => !value);
+      }}>{selected === items.length - 1 ? 'Replay' : playing ? 'Pause' : 'Play'}</button>
+    </div>}
     {frame.caption && <p className="agent-ui-scene-caption">{frame.caption}</p>}
   </figure>;
 }
@@ -146,7 +169,7 @@ function CrossSectionVisual({ label, layers }) {
   return <figure className="agent-ui-visual agent-ui-cross-section"><figcaption>{label}</figcaption><div>{entries.map((layer, index) => <section key={index}><span>{layer.label}</span>{layer.detail && <small>{layer.detail}</small>}</section>)}</div></figure>;
 }
 
-export function AgentPresentationView({ presentation }) {
+export function AgentPresentationView({ presentation, live, visualRevision, visualStatus, visualRequest = '', onVisualPreview, onVisualOutcome }) {
   if (!presentation || presentation.version !== 1 || !Array.isArray(presentation.elements)) return null;
-  return <div className="agent-presentation">{presentation.title && <h2>{presentation.title}</h2>}{presentation.elements.map((element, index) => <ElementView key={index} element={element} />)}</div>;
+  return <div className="agent-presentation">{presentation.title && <h2>{presentation.title}</h2>}{presentation.elements.map((element, index) => <ElementView key={index} element={element} live={live} visualRevision={visualRevision} visualStatus={visualStatus} visualRequest={visualRequest} onVisualPreview={onVisualPreview} onVisualOutcome={onVisualOutcome} />)}</div>;
 }

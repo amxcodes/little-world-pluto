@@ -1,4 +1,9 @@
 pub mod agent_library;
+mod answer_window;
+mod figure_clock;
+mod figure_labels;
+mod figure_overlay;
+mod figure_pose;
 pub mod meeting_audio;
 pub mod privacy;
 pub mod screen_ocr;
@@ -12,6 +17,34 @@ pub mod startup;
 pub mod text_expander;
 pub mod tray;
 pub mod wake_word;
+
+pub fn check_windows_wake_listener() -> Result<(), String> {
+    let listener = wake_word::WakeWordService::new(|| {});
+    listener.arm("Hey Pluto", wake_word::Sensitivity::Balanced)?;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    loop {
+        match listener.try_recv() {
+            Ok(wake_word::Event::Listening { .. }) => break,
+            Ok(wake_word::Event::Error { message, .. }) => return Err(message),
+            _ if std::time::Instant::now() >= deadline => {
+                return Err("Windows wake startup timed out.".into());
+            }
+            _ => std::thread::sleep(std::time::Duration::from_millis(30)),
+        }
+    }
+    listener.disarm();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        match listener.try_recv() {
+            Ok(wake_word::Event::Off) => return Ok(()),
+            Ok(wake_word::Event::Error { message, .. }) => return Err(message),
+            _ if std::time::Instant::now() >= deadline => {
+                return Err("Windows wake shutdown timed out.".into());
+            }
+            _ => std::thread::sleep(std::time::Duration::from_millis(30)),
+        }
+    }
+}
 
 use crate::diagnostics::DiagnosticCode;
 use windows_sys::Win32::System::Diagnostics::Debug::OutputDebugStringW;

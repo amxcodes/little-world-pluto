@@ -11,9 +11,21 @@ const result = await build({
   target: 'es2022',
   write: false,
 });
-const css = (await Promise.all(['src/style.css', 'src/conversion.css', 'src/settings.css', 'src/glass.css', 'src/meetings.css'].map(path => readFile(path, 'utf8')))).join('\n');
+await build({
+  entryPoints: ['src/figure-worker.js'],
+  outfile: 'dist/figure-worker.js',
+  bundle: true,
+  minify: true,
+  platform: 'browser',
+  format: 'esm',
+  target: 'es2022',
+});
+const css = (await Promise.all(['src/style.css', 'src/conversion.css', 'src/settings.css', 'src/glass.css', 'src/meetings.css', 'src/hyper-glass.css', 'src/control-polish.css'].map(path => readFile(path, 'utf8')))).join('\n');
 const notices = (await readFile('THIRD_PARTY_NOTICES.md', 'utf8')).replaceAll('--', '— —').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
-const js = result.outputFiles[0].text.replaceAll('</script', '<\\/script');
+const js = result.outputFiles[0].text
+  .replaceAll('</script', '<\\/script')
+  .replace(/[ \t]+(?=\r?$)/gm, '')
+  .replace(/^ +(?=\t)/gm, '');
 const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head><body><div id="root"></div><script>${js}</script><!-- THIRD-PARTY NOTICES\n${notices}\n-->\n</body></html>`;
 await writeFile('dist/index.html', html);
 console.log(`Built Pluto React UI (${Buffer.byteLength(html)} bytes)`);

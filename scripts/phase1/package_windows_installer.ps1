@@ -5,7 +5,8 @@ param(
     [string]$SigningCertificateThumbprint = $env:PLUTO_SIGNING_CERT_THUMBPRINT,
     [string]$TimestampUrl = 'https://rfc3161.ai.moda',
     [string]$TimestampToolPath = $env:PLUTO_OSSLSIGNCODE_PATH,
-    [switch]$SkipBuild
+    [switch]$SkipBuild,
+    [switch]$LocalOffline
 )
 $ErrorActionPreference = 'Stop'
 if ($env:OS -ne 'Windows_NT') { throw 'Pluto installer packaging requires Windows.' }
@@ -20,6 +21,8 @@ $versionLine = Select-String -LiteralPath (Join-Path $root 'Cargo.toml') -Patter
 if (-not $versionLine) { throw 'Cargo.toml needs a three-part numeric version.' }
 $version = $versionLine.Matches[0].Groups[1].Value
 $setup = Join-Path $out "Pluto-Setup-v$version-windows-x64.exe"
+$portableBundle = Join-Path $out "Pluto-v$version-windows-x64.zip"
+$portableStage = Join-Path $out ".portable-stage-v$version"
 $thumbprint = $SigningCertificateThumbprint -replace '\s', ''
 if (-not $thumbprint) { throw 'A code-signing certificate thumbprint is required.' }
 $certPath = "Cert:\CurrentUser\My\$thumbprint"
@@ -32,7 +35,9 @@ $previousRequiredResource = $env:PLUTO_REQUIRE_WINDOWS_VERSION_RESOURCE
 $previousSignTool = $env:PLUTO_SIGNTOOL_PATH
 $previousTimestampTool = $env:PLUTO_OSSLSIGNCODE_PATH
 $previousTimestampUrl = $env:PLUTO_TIMESTAMP_URL
+$previousOfflineSigning = $env:PLUTO_OFFLINE_SIGNING
 try {
+    if ($LocalOffline) { $env:PLUTO_OFFLINE_SIGNING = '1' } else { $env:PLUTO_OFFLINE_SIGNING = '0' }
     if (-not $cert.HasPrivateKey) { throw 'Signing certificate has no private key.' }
     $now = [DateTime]::UtcNow
     if ($now -lt $cert.NotBefore.ToUniversalTime() -or $now -ge $cert.NotAfter.ToUniversalTime()) { throw 'Signing certificate is not valid today.' }
@@ -62,9 +67,11 @@ try {
         Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
     if (-not $sdk) { throw 'Windows SDK x64 SignTool was not found.' }
     $timestampTool = if ($TimestampToolPath) { $TimestampToolPath } else { (Get-Command osslsigncode.exe -ErrorAction SilentlyContinue).Source }
-    if (-not $timestampTool -or -not (Test-Path -LiteralPath $timestampTool -PathType Leaf)) { throw 'HTTPS timestamp tool osslsigncode.exe was not found.' }
-    if (-not $env:PLUTO_HTTPS_CA_FILE -or -not (Test-Path -LiteralPath $env:PLUTO_HTTPS_CA_FILE -PathType Leaf)) { throw 'Trusted HTTPS CA bundle was not found.' }
-    if ($TimestampUrl -notmatch '^https://') { throw 'An HTTPS RFC 3161 timestamp URL is required.' }
+    if (-not $LocalOffline) {
+        if (-not $timestampTool -or -not (Test-Path -LiteralPath $timestampTool -PathType Leaf)) { throw 'HTTPS timestamp tool osslsigncode.exe was not found.' }
+        if (-not $env:PLUTO_HTTPS_CA_FILE -or -not (Test-Path -LiteralPath $env:PLUTO_HTTPS_CA_FILE -PathType Leaf)) { throw 'Trusted HTTPS CA bundle was not found.' }
+        if ($TimestampUrl -notmatch '^https://') { throw 'An HTTPS RFC 3161 timestamp URL is required.' }
+    }
     $env:PLUTO_SIGNTOOL_PATH = $sdk
     $env:PLUTO_OSSLSIGNCODE_PATH = $timestampTool
     $env:PLUTO_TIMESTAMP_URL = $TimestampUrl
@@ -79,6 +86,12 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "Cargo release build failed ($LASTEXITCODE)." }
     }
     if (-not (Test-Path -LiteralPath $binary -PathType Leaf)) { throw "Missing Pluto executable: $binary" }
+    foreach ($file in @(
+        (Join-Path $root 'packaging\windows\PORTABLE-README.txt'),
+        (Join-Path $root 'packaging\windows\THIRD_PARTY_NOTICES.txt')
+    )) {
+        if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "Required portable release file is missing: $file" }
+    }
     $info = (Get-Item -LiteralPath $binary).VersionInfo
     if ($info.ProductName -ne 'Littleworld Pluto' -or $info.CompanyName -cne $company -or
         $info.OriginalFilename -ne 'pluto.exe' -or $info.FileVersion -ne "$version.0" -or
@@ -86,7 +99,7 @@ try {
     New-Item -ItemType Directory -Path $out -Force | Out-Null
     & (Join-Path $PSScriptRoot 'sign_windows_file.ps1') -FilePath $binary
     $binarySignature = Get-AuthenticodeSignature -LiteralPath $binary
-    if ($null -eq $binarySignature.SignerCertificate -or $null -eq $binarySignature.TimeStamperCertificate -or
+    if ($null -eq $binarySignature.SignerCertificate -or (-not $LocalOffline -and $null -eq $binarySignature.TimeStamperCertificate) -or
         $binarySignature.SignerCertificate.Thumbprint -ine $thumbprint) { throw 'Pluto.exe signature verification failed.' }
     $env:PLUTO_VERSION = $version
     $env:PLUTO_BINARY = $binary
@@ -101,9 +114,18 @@ try {
     }
     if (-not (Test-Path -LiteralPath $setup -PathType Leaf)) { throw "Installer not produced: $setup" }
     $setupSignature = Get-AuthenticodeSignature -LiteralPath $setup
-    if ($null -eq $setupSignature.SignerCertificate -or $null -eq $setupSignature.TimeStamperCertificate -or
+    if ($null -eq $setupSignature.SignerCertificate -or (-not $LocalOffline -and $null -eq $setupSignature.TimeStamperCertificate) -or
         $setupSignature.SignerCertificate.Thumbprint -ine $thumbprint) { throw 'Installer signature verification failed.' }
-    Write-Output "PASS signed Pluto.exe and installer: $setup"
+    if (Test-Path -LiteralPath $portableStage) { Remove-Item -LiteralPath $portableStage -Recurse -Force }
+    New-Item -ItemType Directory -Path $portableStage -Force | Out-Null
+    Copy-Item -LiteralPath $binary -Destination (Join-Path $portableStage 'Pluto.exe')
+    Copy-Item -LiteralPath (Join-Path $root 'packaging\windows\PORTABLE-README.txt') -Destination (Join-Path $portableStage 'README.txt')
+    Copy-Item -LiteralPath (Join-Path $root 'packaging\windows\THIRD_PARTY_NOTICES.txt') -Destination $portableStage
+    if (Test-Path -LiteralPath $portableBundle) { Remove-Item -LiteralPath $portableBundle -Force }
+    Compress-Archive -Path (Join-Path $portableStage '*') -DestinationPath $portableBundle -CompressionLevel Optimal
+    if (-not (Test-Path -LiteralPath $portableBundle -PathType Leaf)) { throw "Portable bundle not produced: $portableBundle" }
+    Remove-Item -LiteralPath $portableStage -Recurse -Force
+    Write-Output "PASS signed Windows-only Pluto.exe, installer, and portable bundle: $setup; $portableBundle"
     Write-Output "SHA-256: $((Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash)"
 }
 finally {
@@ -114,5 +136,6 @@ finally {
     $env:PLUTO_SIGNTOOL_PATH = $previousSignTool
     $env:PLUTO_OSSLSIGNCODE_PATH = $previousTimestampTool
     $env:PLUTO_TIMESTAMP_URL = $previousTimestampUrl
+    $env:PLUTO_OFFLINE_SIGNING = $previousOfflineSigning
     $cert.Dispose()
 }

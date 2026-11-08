@@ -1,0 +1,60 @@
+```island-figure
+{"program":true,"label":"Optimus Prime","duration":5,"steps":[{"label":"Robot form"},{"label":"Truck form"}],"playback":{"hold_start":1,"hold_end":1,"return_seconds":5},"labels":[{"text":"Helmet and faceplate","part":"head"},{"text":"Windshield chest","part":"chest"},{"text":"Shoulder wheels","part":"wheelL"},{"text":"Forearm blasters","part":"blasterL"}]}
+{"op":"group","id":"body"}
+{"op":"part","id":"pelvis","label":"Pelvis","detail":"Red waist armor above the legs","shape":{"kind":"box","size":[0.9,0.42,0.48],"bevel":0.08},"transform":{"position":[0,1.05,0]},"color":"#C7352B","material":"paint"}
+{"op":"group","id":"chest"}
+{"op":"part","id":"chest","label":"Windshield chest","detail":"Broad blue chest with two inset cyan windshield panels","shape":{"kind":"box","size":[1.35,1.05,0.48],"bevel":0.1},"transform":{"position":[0,2.12,0.05]},"color":"#2458A6","material":"paint"}
+{"op":"part","id":"glassL","label":"Left windshield panel","detail":"Cyan glass inset on the chest","shape":{"kind":"box","size":[0.48,0.58,0.035],"bevel":0.04},"transform":{"position":[-0.34,2.22,0.31]},"color":"#54C8DF","material":"glass"}
+{"op":"part","id":"glassR","label":"Right windshield panel","detail":"Cyan glass inset on the chest","shape":{"kind":"box","size":[0.48,0.58,0.035],"bevel":0.04},"transform":{"position":[0.34,2.22,0.31]},"color":"#54C8DF","material":"glass"}
+{"op":"part","id":"abdomen","label":"Abdomen","detail":"Dark mechanical section beneath chest","shape":{"kind":"box","size":[0.66,0.58,0.4],"bevel":0.05},"transform":{"position":[0,1.38,0]},"color":"#384557","material":"metal"}
+{"op":"end"}
+{"op":"group","id":"head"}
+{"op":"part","id":"head","label":"Helmet","detail":"Blue helmet with squared crown","shape":{"kind":"box","size":[0.62,0.62,0.48],"bevel":0.11},"transform":{"position":[0,2.98,0]},"color":"#2458A6","material":"paint"}
+{"op":"part","id":"crest","label":"Crest","detail":"Red central helmet crest","shape":{"kind":"box","size":[0.16,0.28,0.14],"bevel":0.04},"transform":{"position":[0,3.39,0.1]},"color":"#C7352B","material":"paint"}
+{"op":"part","id":"face","label":"Faceplate","detail":"Silver rectangular faceplate","shape":{"kind":"box","size":[0.34,0.2,0.08],"bevel":0.03},"transform":{"position":[0,2.9,0.27]},"color":"#B9C3CC","material":"metal"}
+{"op":"part","id":"eyes","label":"Optics","detail":"Pair of blue optical lenses","shape":{"kind":"box","size":[0.39,0.06,0.035],"bevel":0.015},"transform":{"position":[0,3.04,0.252]},"color":"#43C8F0","material":"glass"}
+{"op":"end"}
+{"op":"group","id":"shoulderL","transform":{"position":[-0.96,2.52,0]}}
+{"op":"part","id":"shoulderL","label":"Left shoulder","detail":"Red armored shoulder block","shape":{"kind":"box","size":[0.56,0.58,0.55],"bevel":0.08},"color":"#C7352B","material":"paint"}
+{"op":"end"}
+{"op":"group","id":"shoulderR","transform":{"position":[0.96,2.52,0]}}
+{"op":"part","id":"shoulderR","label":"Right shoulder","detail":"Red armored shoulder block","shape":{"kind":"box","size":[0.56,0.58,0.55],"bevel":0.08},"color":"#C7352B","material":"paint"}
+{"op":"end"}
+{"op":"group","id":"wheelL","transform":{"position":[-1.03,2.52,-0.02]}}
+{"op":"part","id":"wheelL","label":"Left shoulder wheel","detail":"Black tire at outer shoulder","shape":{"kind":"torus","radius":0.27,"thickness":0.1},"transform":{"rotation":[90,0,0]},"color":"#20252B","material":"rubber"}
+{"op":"end"}
+{"op":"group","id":"wheelR","transform":{"position":[1.03,2.52,-0.02]}}
+{"op":"part","id":"wheelR","label":"Right shoulder wheel","detail":"Black tire at outer shoulder","shape":{"kind":"torus","radius":0.27,"thickness":0.1},"transform":{"rotation":[90,0,0]},"color":"#20252B","material":"rubber"}
+{"op":"end"}
+{"op":"group","id":"armL","transform":{"position":[-1.02,1.72,0]}}
+{"op":"part","id":"armL","label":"Left arm","detail":"Blue upper arm and forearm armor","shape":{"kind":"box","size":[0.48,0.95,0.48],"bevel":0.07},"color":"#2458A6","material":"paint"}
+{"op":"part","id":"blasterL","label":"Left forearm blaster","detail":"Silver cylindrical barrel mounted along the forearm","shape":{"kind":"cylinder","radius":0.1,"height":0.72},"transform":{"position":[0,0,0.25],"rotation":[90,0,0]},"color":"#AEB9C4","material":"metal"}
+{"op":"end"}
+{"op":"group","id":"armR","transform":{"position":[1.02,1.72,0]}}
+{"op":"part","id":"armR","label":"Right arm","detail":"Blue upper arm and forearm armor","shape":{"kind":"box","size":[0.48,0.95,0.48],"bevel":0.07},"color":"#2458A6","material":"paint"}
+{"op":"part","id":"blasterR","label":"Right forearm blaster","detail":"Silver cylindrical barrel mounted along the forearm","shape":{"kind":"cylinder","radius":0.1,"height":0.72},"transform":{"position":[0,0,0.25],"rotation":[90,0,0]},"color":"#AEB9C4","material":"metal"}
+{"op":"end"}
+{"op":"group","id":"legL","transform":{"position":[-0.44,0.3,0]}}
+{"op":"part","id":"legL","label":"Left leg","detail":"Red lower leg armor with blue thigh","shape":{"kind":"box","size":[0.62,1.18,0.56],"bevel":0.08},"transform":{"position":[0,0.48,0]},"color":"#C7352B","material":"paint"}
+{"op":"part","id":"thighL","label":"Left thigh","detail":"Blue upper leg armor","shape":{"kind":"box","size":[0.5,0.45,0.48],"bevel":0.06},"transform":{"position":[0,1.22,0]},"color":"#2458A6","material":"paint"}
+{"op":"part","id":"footL","label":"Left foot","detail":"Red forward-pointing foot","shape":{"kind":"box","size":[0.68,0.28,0.82],"bevel":0.06},"transform":{"position":[0,0.14,0.12]},"color":"#C7352B","material":"paint"}
+{"op":"end"}
+{"op":"group","id":"legR","transform":{"position":[0.44,0.3,0]}}
+{"op":"part","id":"legR","label":"Right leg","detail":"Red lower leg armor with blue thigh","shape":{"kind":"box","size":[0.62,1.18,0.56],"bevel":0.08},"transform":{"position":[0,0.48,0]},"color":"#C7352B","material":"paint"}
+{"op":"part","id":"thighR","label":"Right thigh","detail":"Blue upper leg armor","shape":{"kind":"box","size":[0.5,0.45,0.48],"bevel":0.06},"transform":{"position":[0,1.22,0]},"color":"#2458A6","material":"paint"}
+{"op":"part","id":"footR","label":"Right foot","detail":"Red forward-pointing foot","shape":{"kind":"box","size":[0.68,0.28,0.82],"bevel":0.06},"transform":{"position":[0,0.14,0.12]},"color":"#C7352B","material":"paint"}
+{"op":"end"}
+{"op":"end"}
+{"op":"move","target":"legL","start":0,"end":5,"rotate":[0,0,78]}
+{"op":"move","target":"legR","start":0,"end":5,"rotate":[0,0,-78]}
+{"op":"move","target":"armL","start":0,"end":5,"rotate":[0,0,72]}
+{"op":"move","target":"armR","start":0,"end":5,"rotate":[0,0,-72]}
+{"op":"move","target":"shoulderL","start":0,"end":5,"translate":[0.48,-0.4,0],"rotate":[0,0,90]}
+{"op":"move","target":"shoulderR","start":0,"end":5,"translate":[-0.48,-0.4,0],"rotate":[0,0,-90]}
+{"op":"move","target":"wheelL","start":0,"end":5,"translate":[0.55,-0.42,0]}
+{"op":"move","target":"wheelR","start":0,"end":5,"translate":[-0.55,-0.42,0]}
+{"op":"move","target":"head","start":0,"end":5,"translate":[0,-0.38,0]}
+{"op":"end"}
+```
+
+Optimus Prime’s blue, red, and silver robot silhouette folds toward a truck-like profile. The transformation is schematic.

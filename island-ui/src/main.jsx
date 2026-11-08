@@ -1,7 +1,11 @@
+import { AskActivity } from './ask-activity.jsx';
+import { AgentPresentationView } from './agent-presentation.jsx';
 import { GlassSettings, glassStyle, useGlassTheme } from './glass-theme.jsx';
+import { installHyperGlass } from './hyper-glass.js';
 import { PlaybackSymbol } from './playback-symbol.jsx';
 import { MediaDial } from './media-dial.jsx';
 import { installUiSounds, setUiSoundsEnabled, readUiSoundsEnabled } from './ui-sounds.js';
+import { cleanAgentText, cleanAgentTitle } from './agent-title.js';
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createPortal } from 'react-dom';
@@ -17,7 +21,7 @@ import { SettingsDisclosure, HomeActionSettings, PrioritySettings } from './sett
 import { ConversionWorkspace, readConversionDefaults, saveConversionDefaults } from './conversion-ui.jsx';
 import { MeetingCaptureController, MeetingsWorkspace } from './meetings-ui.jsx';
 import { Home01Icon, ClipboardIcon, InboxIcon, TextFontIcon, BotIcon, SlidersHorizontalIcon,
-  NotebookTextIcon, CloudIcon, Settings02Icon, PinIcon, VolumeHighIcon, PlayIcon,
+  NotebookTextIcon, CloudIcon, Settings02Icon, PinIcon, VolumeHighIcon, VolumeMuteIcon, PlayIcon,
   PauseIcon, NextIcon, PreviousIcon, Add01Icon, CopyIcon, TrashIcon, RefreshCwIcon,
   Wifi02Icon, BluetoothIcon, Moon01Icon, BatteryIcon, Mic01Icon, Camera01Icon,
   SpeakerIcon, FolderAddIcon, Search01Icon, NoteEditIcon,
@@ -65,7 +69,7 @@ const icons = {
   Controls: SlidersHorizontalIcon, Settings: Settings02Icon, Pin: PinIcon,
   Meetings: AudioWaveformIcon,
   Expand: ClipboardPasteIcon,
-  Volume: VolumeHighIcon, Play: PlayIcon, Pause: PauseIcon, Stop: StopIcon, Next: NextIcon,
+  Mute: VolumeMuteIcon, Volume: VolumeHighIcon, Play: PlayIcon, Pause: PauseIcon, Stop: StopIcon, Next: NextIcon,
   Previous: PreviousIcon, Add: Add01Icon, Copy: CopyIcon, Trash: TrashIcon,
   Refresh: RefreshCwIcon, Wifi: Wifi02Icon, Bluetooth: BluetoothIcon,
   Moon: Moon01Icon, Battery: BatteryIcon, Clock: Time01Icon, Mic: Mic01Icon, Camera: Camera01Icon,
@@ -617,7 +621,7 @@ function CompactPill({ state, compactStatus, screenRecordingAt, screenRecordingE
       : update ? <><span className="compact-update-mark"><Icon name="Refresh" size={14} /></span><span className="compact-update-name" title={`${update.label} ${update.version}`}><strong>{update.label} update</strong></span><span className="compact-update-action">{update.busy ? 'Later' : 'Update'}</span></>
       : media ? <><span className="compact-artwork">{media.artwork ? <img src={media.artwork} alt="" draggable="false" /> : <Icon name="Play" size={14} />}</span><span className="compact-media-name" title={media.title || media.artist || 'Playing'}>{media.title || media.artist || 'Playing'}</span><span className="compact-wave" aria-hidden="true">{[.48, .82, 1, .65, .94, .55].map((weight, index) => <i key={index} style={{ '--weight': weight }} />)}</span></>
       : activeRuns ? <><span className="compact-agent-mark"><Icon name={activeSession?.provider === 'codex' ? 'Agents' : 'Terminal'} size={14} /></span><span className="compact-agent-label" title={agentLabel}><strong>{agentLabel}</strong></span>{otherAgentCount + childAgentCount > 0 && <span className="compact-agent-children" aria-label={`${otherAgentCount} other tasks, ${childAgentCount} child agents`}>+{otherAgentCount + childAgentCount}</span>}<span className="compact-agent-bars" aria-hidden="true"><i /><i /><i /></span></>
-      : rain ? <><span className="compact-weather-mark">{weatherGlyph(61, 17)}</span><span className="compact-weather-copy"><strong>{rain.active ? 'Rain' : 'Rain soon'}</strong><small>{rain.active ? (rain.probability == null ? '' : `${rain.probability}%`) : forecastClock(rain.time)}</small></span></>
+      : rain ? <><span className="compact-weather-mark">{weatherGlyph(61, 17)}</span><span className="compact-weather-copy"><strong>{rain.active ? 'Rain' : 'Rain soon'}</strong><small>{rain.active ? 'Now' : forecastClock(rain.time)}</small></span>{rain.probability != null && <span className="compact-weather-chance">{rain.probability}<small>%</small></span>}</>
       : <><span className="compact-idle-leading">{batteryView.side === 'left' && battery}<strong className="compact-clock">{state.clockEnabled ? (state.clockLabel || state.status || 'Pluto') : state.status || 'Pluto'}</strong></span><span className="compact-idle-trailing">{batteryView.side !== 'left' && battery}</span></>}
   </div>;
 }
@@ -753,7 +757,7 @@ function OpenCodeSessionPicker({ open, sessions, selectedId, query, onQuery, onS
   return <div className="opencode-session-picker" inert={!open} aria-hidden={!open}>
     <div className="opencode-session-heading"><Icon name="History" size={16} /><strong>Recent sessions</strong><small>{sessions.length} loaded</small></div>
     <input aria-label="Find OpenCode session" placeholder="Find a session" value={query} onChange={event => onQuery(event.target.value)} />
-    <div className="opencode-sessions">{sessions.length ? sessions.map(session => <button key={session.id} className={'opencode-session ' + (session.id === selectedId ? 'selected' : '')} onClick={() => onSelect(session)} title={session.directory}><span className={'opencode-dot ' + (session.active ? 'active' : '')} /><span><strong>{session.title}</strong><small>{session.directory || 'No project'}</small></span><small className="opencode-session-state">{session.active ? 'Running' : ''}</small></button>) : <span className="opencode-picker-empty">No matching sessions</span>}{hasMore && <button className="opencode-more" onClick={onMore}><Icon name="ChevronDown" size={14} />Load more</button>}</div>
+    <div className="opencode-sessions">{sessions.length ? sessions.map(session => <button key={session.id} className={'opencode-session ' + (session.id === selectedId ? 'selected' : '')} onClick={() => onSelect(session)} title={session.directory}><span className={'opencode-dot ' + (session.active ? 'active' : '')} /><span><strong>{cleanAgentTitle(session.title)}</strong><small>{session.directory || 'No project'}</small></span><small className="opencode-session-state">{session.active ? 'Running' : ''}</small></button>) : <span className="opencode-picker-empty">No matching sessions</span>}{hasMore && <button className="opencode-more" onClick={onMore}><Icon name="ChevronDown" size={14} />Load more</button>}</div>
   </div>;
 }
 
@@ -1123,7 +1127,7 @@ function MediaSessionSwitcher({ sessions = [], selectedId, onSelect, reducedMoti
     {present && panelTarget && createPortal(<section className={`media-session-panel ${reducedMotion ? 'reduce-motion' : ''} ${!open ? 'is-closing' : ''}`} ref={panelRef} onAnimationEnd={event => { if (!open && event.target === event.currentTarget && event.animationName === 'media-picker-exit') setPresent(false); }} inert={!open} aria-hidden={!open} aria-label="Media source selection">
       <header className="media-session-panel-heading"><span className="media-session-panel-icon"><Icon name="MediaQueue" size={15} /></span><div><strong>Media sources</strong><small>{sessions.length} available</small></div><button className="media-session-close" type="button" aria-label="Close media source selection" title="Close" onClick={() => { setOpen(false); requestAnimationFrame(() => rootRef.current?.querySelector('button')?.focus()); }}><Icon name="Cancel" size={14} /></button></header>
       <div id="media-session-options" className="media-session-options" role="listbox" aria-label="Available media sources">
-        {sessions.map((session, index) => <button type="button" className={'media-session-option ' + (session.id === selectedId ? 'is-selected' : '')} role="option" aria-selected={session.id === selectedId} key={session.id}
+        {sessions.map((session, index) => <button type="button" className={'media-session-option choice-row ' + (session.id === selectedId ? 'is-selected' : '')} role="option" aria-selected={session.id === selectedId} key={session.id}
           tabIndex={activeIndex === index ? 0 : -1} ref={node => { optionRefs.current[index] = node; }} onClick={() => choose(session)}
           onKeyDown={event => {
             if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); focusOption(index + (event.key === 'ArrowUp' ? -1 : 1)); }
@@ -1219,8 +1223,8 @@ function SettingsToggle({ label, value, onChange, disabled = false }) {
   return <div className="settings-line"><span>{label}</span><button type="button" role="switch" aria-label={label} aria-checked={!!value} disabled={disabled} className={'settings-switch ' + (value ? 'on' : '')} onClick={onChange}><i /></button></div>;
 }
 
-function SettingsSegments({ value, options, onChange, className = '' }) {
-  return <div className={'settings-segments ' + className}>{options.map(([option, label]) => <button key={option} type="button" className={value === option ? 'selected' : ''} aria-pressed={value === option} onClick={() => onChange(option)}>{label}</button>)}</div>;
+function SettingsSegments({ value, options, onChange, className = '', disabled = false }) {
+  return <div className={'settings-segments ' + className}>{options.map(([option, label]) => <button key={option} type="button" disabled={disabled} className={value === option ? 'selected' : ''} aria-pressed={value === option} onClick={() => onChange(option)}>{label}</button>)}</div>;
 }
 
 function SettingsCard({ icon, title, detail, children, className = '' }) {
@@ -1825,10 +1829,7 @@ function DictatePanel({ captureSensitivity = 'balanced', pauseMs = 1500, noiseSu
     <WakeEyes levels={inputLevels} phase={transcriptionPending ? 'thinking' : dictating ? 'listening' : 'starting'} />
     {error && <p role="alert">{error}</p>}
   </div>;
-  if (compact && holdCapture) return <div className="ask-capture-surface" data-capture-state={dictating ? 'recording' : transcriptionPending ? 'processing' : starting ? 'starting' : 'idle'}>
-    <span role="status">{error || (dictating ? 'Listening · release to ask' : transcriptionPending ? 'Transcribing…' : starting ? 'Starting microphone…' : 'Hold Space to try again')}</span>
-    <DictateVisualizer inputLevels={inputLevels} dictating={dictating} transcriptionPending={transcriptionPending} averageLevel={averageLevel} compact />
-  </div>;
+  if (compact && holdCapture) return <AskActivity phase={dictating ? 'recording' : transcriptionPending ? 'processing' : starting ? 'starting' : 'idle'} levels={inputLevels} label={error || (dictating ? 'Listening · release to ask' : transcriptionPending ? 'Transcribing…' : starting ? 'Starting microphone…' : 'Hold Space to try again')} />;
   if (compact) return <div className="agent-voice-surface" aria-label="Dictating agent task">
     <div className="agent-voice-top"><span className="agent-voice-state"><Icon name="Mic" size={15} /><span key={dictationStatus} className="agent-voice-stage" aria-live="polite">{dictationStatus}</span></span><button type="button" onClick={onClose} aria-label="Close dictation"><Icon name="Cancel" size={14} /></button></div>
     <DictateVisualizer inputLevels={inputLevels} dictating={dictating} transcriptionPending={transcriptionPending} averageLevel={averageLevel} compact />
@@ -2051,11 +2052,19 @@ function App() {
   const [material, updateMaterial] = useGlassTheme();
   useEffect(() => {
     const accessibility = matchMedia('(prefers-reduced-transparency: reduce), (prefers-contrast: more), (forced-colors: active)');
-    const sync = () => send('glassMaterial', { enabled: material.enabled && !accessibility.matches, motion: material.motion });
+    const sync = () => {
+      send('glassMaterial', { enabled: material.enabled && !accessibility.matches, motion: material.motion });
+      send('hyperGlassMaterial', { enabled: material.mode === 'hyper-glass' && !accessibility.matches, motion: material.hyper.motion });
+    };
     sync();
     accessibility.addEventListener('change', sync);
     return () => accessibility.removeEventListener('change', sync);
-  }, [material.enabled, material.motion]);
+  }, [material.enabled, material.motion, material.mode, material.hyper.motion]);
+  useEffect(() => {
+    if (material.mode !== 'hyper-glass') return undefined;
+    const root = document.querySelector('.island');
+    return root ? installHyperGlass(root, material.hyper) : undefined;
+  }, [material.mode, material.hyper.motion, material.hyper.depth, material.hyper.quality]);
   useEffect(() => installUiSounds(), []);
   const [state, setState] = useState(initial);
   const appearanceMigrationDone = useRef(false);
@@ -2241,14 +2250,14 @@ function App() {
   useEffect(() => {
     if (displayPage !== 'Ask' || settingsOpen) return;
     let holding = false;
-    const ownsSpace = e => e.code === 'Space' && !isEditor(e.target) && !document.querySelector('.ask-context-page');
+    const ownsSpace = e => e.code === 'Space' && !isEditor(e.target) && !document.querySelector('.ask-context-page,.ask-session-page,.is-ask[data-capturing="true"]');
     const down = e => {
       if (!ownsSpace(e) || e.altKey || e.ctrlKey || e.metaKey) return;
       e.preventDefault(); e.stopImmediatePropagation();
       if (document.activeElement?.matches('button')) document.activeElement.blur();
       const { state, dictateOpen } = askCaptureState.current;
       const agent = state.agents?.[readAgentPreferences().defaultProvider];
-      if (e.repeat || dictateOpen || !state.speechSettings?.configured || !agent?.connected || agent.sessions?.some(session => session.id === agent.selectedId && session.active)) return;
+      if (e.repeat || dictateOpen || !state.speechSettings?.configured || !agent?.connected || agent.sessions?.some(session => session.id === agent.askSelectedId && session.active)) return;
       if (['arming', 'listening'].includes(state.wakeWord?.status)) send('wakeWordSet', { enabled: false });
       if (holding) return;
       holding = true;
@@ -2678,7 +2687,7 @@ function App() {
       if (Number.isFinite(preferredHeight) && preferredHeight > 0) {
         // The WebView2 share picker uses its parent HWND bounds. Meetings
         // temporarily asks for a taller host so its source list stays usable.
-        naturalHeight = Math.min(preferredHeight, displayPage === 'Meetings' ? 600 : 480);
+        naturalHeight = Math.min(preferredHeight, displayPage === 'Meetings' ? 600 : displayPage === 'Agents' ? 680 : 480);
       } else {
       const previousDisplay = content.style.display;
       const previousHeight = content.style.height;
@@ -2707,11 +2716,24 @@ function App() {
       if (force || Math.abs(height - last) >= 4 || lastWide !== wide || lastAllowLarge !== allowLarge || lastSettingsOpen !== settingsOpen) { last = height; lastWide = wide; lastAllowLarge = allowLarge; lastSettingsOpen = settingsOpen; layoutWideRef.current = wide; send('layout', { height, wide, allowLarge, settingsOpen: settingsOpen && !state.wakeWord?.surface, wakeSurface: !!state.wakeWord?.surface, wakeRevision: state.wakeWord?.revision ?? 0, page: displayPage, generation: state.compactRenderGeneration ?? 0 }); }
     };
     let frame = 0;
+    let settleTimer = 0;
+    let settleStarted = null;
     let forceNext = false;
-    const schedule = (force = false) => {
-      forceNext ||= force;
+    const flush = () => {
+      window.clearTimeout(settleTimer);
+      settleTimer = 0;
+      settleStarted = null;
       if (frame) return;
       frame = requestAnimationFrame(() => { frame = 0; const forced = forceNext; forceNext = false; report(forced); });
+    };
+    const schedule = (force = false) => {
+      forceNext ||= force;
+      if (forceNext) { flush(); return; }
+      // Coalesce font/content settling into one contour target. A bounded
+      // window still lets streaming pages grow without waiting indefinitely.
+      settleStarted ??= performance.now();
+      window.clearTimeout(settleTimer);
+      settleTimer = window.setTimeout(flush, Math.max(0, Math.min(72, 180 - (performance.now() - settleStarted))));
     };
     const observer = new ResizeObserver(() => schedule());
     let observedRoot = null;
@@ -2726,22 +2748,23 @@ function App() {
     // Fixed-height agent views change their preferred height without resizing
     // the viewport. Watch that contract, not every streamed agent snapshot.
     const mutations = new MutationObserver(records => {
-      if (!records.some(record => record.type === 'attributes' || record.target === content)) return;
+      if (displayPage !== 'Controls' && !records.some(record => record.type === 'attributes' || record.target === content)) return;
       observeRoot();
       schedule();
     });
     mutations.observe(content, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-layout-height'] });
     const requestLayout = () => schedule(true);
     window.islandRequestLayout = requestLayout;
+    window.addEventListener('resize', requestLayout);
     // The committed DOM is measurable in useLayoutEffect. Send the first
-    // target now; coalesce subsequent observer notifications into one frame.
+    // target now; settle subsequent content changes before the next report.
     report(true);
-    return () => { mutations.disconnect(); observer.disconnect(); cancelAnimationFrame(frame); if (window.islandRequestLayout === requestLayout) delete window.islandRequestLayout; };
+    return () => { mutations.disconnect(); observer.disconnect(); cancelAnimationFrame(frame); window.removeEventListener('resize', requestLayout); window.clearTimeout(settleTimer); if (window.islandRequestLayout === requestLayout) delete window.islandRequestLayout; };
   // Notes and Reminders can have different intrinsic heights while the
   // flex-sized workspace keeps the same observed outer size. Re-run the
   // existing measurement when its internal tab changes instead of trusting
   // ResizeObserver to notice a change hidden by the fixed viewport.
-  }, [displayPage, noteView, showReminderCalendar, signOpen, state.expanded, state.compactRenderGeneration, state.wakeWord?.surface, state.wakeWord?.revision, state.weatherData, state.noteFolders?.length, showFolderInput, folderEditing, dictateOpen, dictateMode, dictateTranscriptExpanded, screenSelection, screenResult, commandOpen, settingsOpen]);
+  }, [displayPage, noteView, showReminderCalendar, signOpen, state.expanded, state.compactRenderGeneration, state.wakeWord?.surface, state.wakeWord?.revision, displayPage === 'Weather' ? state.weatherData : null, displayPage === 'Note' ? state.noteFolders?.length : null, showFolderInput, folderEditing, dictateOpen, dictateMode, dictateTranscriptExpanded, screenSelection, screenResult, commandOpen, settingsOpen]);
   const clips = state.clipboard ?? [];
   const homeClips = (state.homeClipboard ?? clips).map(item => ({ item, index: clips.indexOf(item) })).filter(({ index }) => index >= 0);
   const filteredClips = useMemo(() => {
@@ -2910,7 +2933,17 @@ function App() {
   const daily = forecast?.daily;
   const weekLow = Math.min(...(daily?.temperature_2m_min ?? [0]));
   const weekHigh = Math.max(...(daily?.temperature_2m_max ?? [1]));
-  const outputVolume = volumeDraft ?? state.outputVolume ?? 0;
+  const outputMuted = !!state.outputMuted;
+  const outputVolume = outputMuted ? 0 : volumeDraft ?? state.outputVolume ?? 0;
+  const lastAudibleVolume = useRef({});
+  const volumeDevice = state.selectedOutputDeviceId || state.defaultOutputDeviceId || 'default';
+  if (state.outputVolume > 0) lastAudibleVolume.current[volumeDevice] = state.outputVolume;
+  const toggleOutputMute = () => {
+    const muted = !(outputMuted || outputVolume === 0);
+    if (!muted && !state.outputVolume) changeVolume(lastAudibleVolume.current[volumeDevice] || 50, true);
+    setState(previous => ({ ...previous, outputMuted: muted }));
+    send('outputMute', { muted });
+  };
   const outputDeviceLabel = state.selectedOutputDeviceId
     ? (state.outputDevices ?? []).find(device => device.id === state.selectedOutputDeviceId)?.name ?? 'Audio output'
     : 'System default';
@@ -2930,6 +2963,7 @@ function App() {
     const next = Math.max(0, Math.min(100, Math.round(value)));
     volumeDraftRef.current = next;
     setVolumeDraft(next);
+    if (next > 0 && state.outputMuted) setState(previous => ({ ...previous, outputMuted: false }));
     if (immediate) { flushVolume(); return; }
     if (volumeTimerRef.current == null) volumeTimerRef.current = setTimeout(flushVolume, 16);
   };
@@ -2939,6 +2973,7 @@ function App() {
     const selected = [...(nav?.querySelectorAll('.tab') ?? [])].find(button => button.dataset.page === page);
     if (!nav || !indicator || !selected) return;
     const spring = tabSpring.current;
+    if (material.mode === 'hyper-glass') { cancelAnimationFrame(spring.frame); spring.placed = false; return; }
     const targetX = selected.offsetLeft;
     const targetWidth = selected.offsetWidth;
     const paint = () => {
@@ -2978,7 +3013,7 @@ function App() {
     };
     spring.frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(spring.frame);
-  }, [page, visible.join('|'), state.expanded, settingsOpen, state.shellSettings?.reducedMotion, state.shellSettings?.systemReducedMotion, material.enabled, material.motion]);
+  }, [page, visible.join('|'), state.expanded, settingsOpen, state.shellSettings?.reducedMotion, state.shellSettings?.systemReducedMotion, material.enabled, material.motion, material.mode]);
   const rainCandidate = useMemo(() => upcomingRain(state.weatherData, weatherClockNow), [state.weatherData, weatherClockNow]);
   const updateCandidates = [
     state.opencode?.updateAvailable && !state.opencode?.installing && { id: 'opencode', label: 'OpenCode', version: state.opencode.latestVersion, busy: !!(state.opencode.activeCount || state.agents?.opencode?.activeCount) },
@@ -3026,14 +3061,14 @@ function App() {
       visible: !state.expanded && !state.compactFaded,
     });
   }, [compactStatus.id, compactStatus.payload?.feedback?.id, state.expanded, state.compactFaded]);
-  return <div style={glassStyle(material)} data-material={material.enabled ? "glass" : "standard"} data-glass-motion={material.enabled && material.motion} data-reduced-motion={!!(state.shellSettings?.reducedMotion || state.shellSettings?.systemReducedMotion)} className={'island accent-' + accentGradient + ' ' + (state.dark ? 'dark' : 'light') + (state.expanded ? ' expanded' : ' compact') + ((state.shellSettings?.shape || 'notch') === 'capsule' ? ' capsule-shape' : ' notch-shape') + ' ' + shellPhase + (state.compactFaded ? ' compact-faded' : '') + (fileDragOver ? ' file-dragging' : '') + (state.wakeWord?.surface ? ' voice-surface-open' : '') + (settingsOpen ? ' settings-open' : '') + (settingsClosing ? ' settings-closing' : '') + (settingsReturning ? ' settings-returning' : '')}
+  return <div style={{ ...glassStyle(material), '--compact-row-width': `${Number(state.compactRowWidth) || 10000}px` }} data-material={material.mode} data-glass-motion={material.enabled && material.motion} data-hyper-motion={material.mode === 'hyper-glass' && material.hyper.motion} data-reduced-motion={!!(state.shellSettings?.reducedMotion || state.shellSettings?.systemReducedMotion)} className={'island accent-' + accentGradient + ' ' + (state.dark ? 'dark' : 'light') + (state.expanded ? ' expanded' : ' compact') + ((state.shellSettings?.shape || 'notch') === 'capsule' ? ' capsule-shape' : ' notch-shape') + ' ' + shellPhase + (state.compactFaded ? ' compact-faded' : '') + (fileDragOver ? ' file-dragging' : '') + (state.wakeWord?.surface ? ' voice-surface-open' : '') + (settingsOpen ? ' settings-open' : '') + (settingsClosing ? ' settings-closing' : '') + (settingsReturning ? ' settings-returning' : '')}
     onFocusCapture={event => { if (isEditor(event.target)) send('textFocus'); }}
     onBlurCapture={event => { if (isEditor(event.target)) queueMicrotask(() => { if (!isEditor(document.activeElement)) send('textBlur'); }); }}>
     {!state.expanded ? <CompactTransition state={state} compactStatus={compactStatus} batteryView={batteryView} screenRecordingAt={screenRecordingAt} screenRecordingElapsed={screenRecordingElapsed} screenRecordingStopping={screenRecordingStopping} contextTools={contextTools} onRunContextTool={runContextAction} /> : <>
     <header className={'bar ' + (settingsOpen ? 'settings-bar' : '')}>
       {settingsOpen ? <div className="settings-topbar"><button type="button" aria-label="Back to app" title="Back to app" onClick={closeSettingsWithMotion}><Icon name="PreviousMonth" size={17} /></button><strong>Settings</strong><span>{({ general: 'General', compact: 'Status', priority: 'Priority', behavior: 'Motion', tools: 'Tools', 'quick-actions': 'Quick actions', agents: 'Agents', dictation: 'Dictation', voice: 'Voice', ask: 'Ask', conversion: 'Conversion', meetings: 'Meetings' })[settingsSection]}</span></div> : <nav ref={navRef} aria-label="Island pages"><span className="tab-indicator" aria-hidden="true" />{visible.map(name => <button key={name} data-page={name} className={'tab ' + (page === name ? 'active' : '')} title={name} aria-label={name} aria-current={page === name ? 'page' : undefined} onClick={() => nav(name)}><Icon name={name} /><span className="tab-label">{name}</span></button>)}</nav>}
       <button className={'icon-button wake-quick ' + (['arming', 'listening', 'triggered', 'paused'].includes(state.wakeWord?.status) ? 'pinned' : '')} title={state.wakeWord?.error || (!state.speechSettings?.configured ? "Configure transcription in Voice settings first" : state.wakeWord?.status === "paused" ? "Wake listening paused while microphone is in use · click to disable" : "Toggle wake listening")} aria-label="Toggle wake listening" aria-pressed={['arming', 'listening', 'triggered', 'paused'].includes(state.wakeWord?.status)} disabled={!state.speechSettings?.configured && !['arming', 'listening', 'triggered', 'paused'].includes(state.wakeWord?.status)} onClick={() => send('wakeWordSet', { enabled: !['arming', 'listening', 'triggered', 'paused'].includes(state.wakeWord?.status), phrase: state.wakeWord?.phrase || readAgentPreferences().wakePhrase || 'Hey Pluto' })}><Icon name="Mic" /></button>
-      <button className={'icon-button ' + (state.pinned ? 'pinned' : '')} title={state.pinned ? 'Unpin island' : 'Keep island open'} aria-label={state.pinned ? 'Unpin island' : 'Keep island open'} aria-pressed={!!state.pinned} onClick={() => send('pinToggle')}>
+      <button className={'icon-button pin-toggle ' + (state.pinned ? 'pinned' : '')} title={state.pinned ? 'Unpin island' : 'Keep island open'} aria-label={state.pinned ? 'Unpin island' : 'Keep island open'} aria-pressed={!!state.pinned} onClick={() => send('pinToggle')}>
         <Icon name="Pin" />
       </button>
       {!settingsOpen && <button className={'icon-button ' + (settingsOpen ? 'pinned' : '')} title="Island settings" aria-label="Island settings" aria-pressed={settingsOpen} onClick={() => { setSignOpen(false); setDictateOpen(false); setScreenSelection(null); setCommandOpen(false); setSettingsOpen(open => !open); }}><Icon name="Settings" /></button>}
@@ -3050,7 +3085,7 @@ function App() {
             {state.media ? <div className={'media-content ' + (mediaCardStyle === 'backdrop' ? 'media-content-backdrop' : '')}>
               <div className="media-identity">
                 <div className={'media-art ' + (mediaArtwork ? 'has-art' : '')}>
-                  {mediaArtwork ? <img src={mediaArtwork} alt="Album artwork" onError={() => setFailedMediaArtwork(mediaArtwork)} /> : <svg viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M7 13v6m6-12v18m6-15v12m6-8v4" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg>}
+                  {mediaArtwork ? <img src={mediaArtwork} alt="Album artwork" onError={() => setFailedMediaArtwork(mediaArtwork)} /> : <span className="media-art-placeholder" aria-label="No album artwork"><Icon name="Audio" size={25} /></span>}
                 </div>
                 <div className="media-title"><strong title={state.media.title || mediaSourceName(state.media.source)}>{state.media.title || mediaSourceName(state.media.source)}</strong>{state.media.artist && <span title={state.media.artist}>{state.media.artist}</span>}</div>
               </div>
@@ -3072,7 +3107,7 @@ function App() {
         </div>
         {!dictateOpen && !screenSelection && !signOpen && screenResult && <ScreenResultCard result={screenResult} colors={screenColors} onDismiss={() => setScreenResult(null)} />}
         {!(dictateOpen && dictateMode === 'home' && dictateTranscriptExpanded) && <div className="output-row">
-          <Icon name="Volume" size={17} />
+          <button type="button" className="volume-mute" data-muted={outputMuted || outputVolume === 0} disabled={state.outputVolume == null} aria-label={outputMuted || outputVolume === 0 ? 'Unmute output' : 'Mute output'} aria-pressed={outputMuted || outputVolume === 0} onClick={toggleOutputMute}><span className="volume-on"><Icon name="Volume" size={17}/></span><span className="volume-off"><Icon name="Mute" size={17}/></span></button>
           <SplitRange className="volume-range" label="VOLUME" value={outputVolume} disabled={state.outputVolume == null} onChange={event => changeVolume(Number(event.target.value))} onPointerDown={() => { volumeDraggingRef.current = true; }} onPointerUp={() => { volumeDraggingRef.current = false; flushVolume(); }} onPointerCancel={() => { volumeDraggingRef.current = false; flushVolume(); }} onKeyDown={() => { volumeDraggingRef.current = true; }} onKeyUp={() => { volumeDraggingRef.current = false; flushVolume(); }} onBlur={() => { volumeDraggingRef.current = false; flushVolume(); }} />
           <div className="device-picker">
             <button className="device-picker-trigger" type="button" aria-label="Select output device" aria-haspopup="listbox" aria-expanded={outputPickerOpen} title="Select the audio device whose volume Island controls" onClick={() => setOutputPickerOpen(open => !open)}>
@@ -3085,7 +3120,7 @@ function App() {
             </div>}
           </div>
         </div>}
-        <div className={'home-strip ' + (fileDragOver ? 'file-dragover' : '')} aria-label="Shelf dock"><button className="strip-heading" onClick={() => nav('Shelf')} title="Open Shelf"><Icon name="Shelf" size={18} /><strong>Shelf</strong><small>{shelf.length}</small></button><div className="strip-files">{fileDragOver ? <span className="strip-drop-message">Release to add to Shelf</span> : shelf.length ? shelf.slice(0, 4).map((item, index) => <button className="strip-file" key={index} title="Open saved item" aria-label={`Open shelf item ${index + 1}`} onClick={() => send('shelfOpen', { index })}><ShelfVisual kind={state.shelfKinds?.[index]} visual={state.shelfIcons?.[index]} compact /></button>) : <span className="strip-empty">Drag files or shortcuts onto the island</span>}</div></div>
+        <div className={'home-strip ' + (fileDragOver ? 'file-dragover' : '')} aria-label="Shelf dock"><button className="strip-heading" onClick={() => nav('Shelf')} title="Open Shelf" aria-label={`Open Shelf, ${shelf.length} items`}><Icon name="Shelf" size={18} /><strong>Shelf</strong><small>{shelf.length}</small></button><div className="strip-files">{fileDragOver ? <span className="strip-drop-message">Release to add to Shelf</span> : shelf.length ? shelf.slice(0, 4).map((item, index) => <button className="strip-file" key={index} title="Open saved item" aria-label={`Open shelf item ${index + 1}`} onClick={() => send('shelfOpen', { index })}><ShelfVisual kind={state.shelfKinds?.[index]} visual={state.shelfIcons?.[index]} compact /></button>) : <span className="strip-empty">Drag files or shortcuts onto the island</span>}</div></div>
       </div>)}
       {displayPage === 'Clipboard' && <section className="stack">
         <div className="list-toolbar clipboard-toolbar"><div className="clipboard-search"><Icon name="Search" size={16} /><input type="search" aria-label="Search clipboard history" placeholder="Search clipboard" value={clipboardQuery} onChange={event => setClipboardQuery(event.target.value)} /></div><span className="clipboard-count">{filteredClips.length + (state.clipboardMedia?.length || 0)}</span>{(clips.length > 0 || state.clipboardMedia?.length > 0) && <button className="subtle-action" onClick={() => send('clipboardClear')}>Clear</button>}</div>
@@ -3167,7 +3202,11 @@ function App() {
       </section>}
       {displayPage === 'Controls' && <section className="controls-page">
         <div className="controls-heading"><span>Quick controls</span>{state.radioBusy && <small>Checking radios…</small>}</div>
-        {privacyLines.length > 0 && <div className="privacy-activity" aria-label="Active camera and microphone use">{privacyLines.map(line => <span className={line.startsWith('Camera') ? 'is-camera' : 'is-mic'} key={line}><i />{line}</span>)}</div>}
+        {privacyLines.length > 0 && <div className="privacy-activity" aria-label="Active camera and microphone use">{privacyLines.map(line => {
+          const camera = line.startsWith('Camera');
+          const apps = line.split('·').slice(1).join('·').trim() || 'Application';
+          return <div className={'privacy-activity-item ' + (camera ? 'is-camera' : 'is-mic')} key={camera ? 'camera' : 'microphone'}><span className="privacy-activity-icon"><Icon name={camera ? 'Camera' : 'Mic'} size={16}/></span><span className="privacy-activity-copy"><strong>{camera ? 'Camera' : 'Microphone'}</strong><small title={apps}>{apps}</small></span><span className="privacy-activity-state"><i/>In use</span></div>;
+        })}</div>}
         <div className="control-grid">
           <button type="button" className={'control-tile ' + (state.radios?.wifi ? 'control-active' : '')} disabled={state.radioBusy} aria-pressed={state.radios?.wifi == null ? undefined : !!state.radios.wifi} onClick={() => send(state.radios?.wifi == null ? 'radioSettings' : 'radioToggle', { radio: 'wifi' })} title={state.radios?.wifi == null ? 'Open Wi-Fi settings' : 'Toggle Wi-Fi'}><span className="control-icon"><Icon name="Wifi" size={20} /></span><strong>Wi-Fi</strong><small>{state.radios?.wifi == null ? 'Open settings' : state.radios.wifi ? 'On' : 'Off'}</small></button>
           <button type="button" className={'control-tile ' + (state.radios?.bluetooth ? 'control-active' : '')} disabled={state.radioBusy} aria-pressed={state.radios?.bluetooth == null ? undefined : !!state.radios.bluetooth} onClick={() => send(state.radios?.bluetooth == null ? 'radioSettings' : 'radioToggle', { radio: 'bluetooth' })} title={state.radios?.bluetooth == null ? 'Open Bluetooth settings' : 'Toggle Bluetooth'}><span className="control-icon"><Icon name="Bluetooth" size={20} /></span><strong>Bluetooth</strong><small>{state.radios?.bluetooth == null ? 'Open settings' : state.radios.bluetooth ? 'On' : 'Off'}</small></button>
@@ -3197,4 +3236,47 @@ function App() {
   </div>;
 }
 
-createRoot(document.getElementById('root')).render(<App />);
+function DetachedAnswer({ answer: initialAnswer }) {
+  const [answer, setAnswer] = useState(initialAnswer);
+  const accents = ['lime', 'ice', 'violet', 'mint', 'honey', 'ruby', 'cobalt', 'slate'];
+  const accent = accents.includes(answer.accentGradient) ? answer.accentGradient : 'lime';
+  const text = cleanAgentText(answer.text);
+  const close = () => {
+    if (window.ipc?.postMessage) window.ipc.postMessage(JSON.stringify({ kind: 'closeDetachedAnswer' }));
+    else window.close();
+  };
+  useEffect(() => {
+    const sessionId = initialAnswer?.sessionId;
+    const syncLatest = next => {
+      if (!next || (sessionId && next.sessionId !== sessionId)) return;
+      setAnswer(next);
+    };
+    // A scene refinement can arrive while React is mounting. The native
+    // window keeps the latest snapshot on this global until the listener is live.
+    syncLatest(window.islandDetachedAnswer);
+    const onAnswerUpdate = event => syncLatest(event.detail);
+    window.addEventListener('pluto-answer-update', onAnswerUpdate);
+    const onKeyDown = event => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        close();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('pluto-answer-update', onAnswerUpdate);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [initialAnswer?.sessionId]);
+  return <article className={`island detached-answer ${answer.dark ? 'dark' : 'light'} accent-${accent}`} data-theme={answer.dark ? 'dark' : 'light'}>
+    <header className="detached-answer-header"><div><small>PLUTO · FULL VIEW</small><h1>{cleanAgentTitle(answer.title, 'Pluto answer')}</h1></div><button type="button" aria-label="Close full answer" title="Close window · Esc" onClick={close}>×</button></header>
+    <div className="detached-answer-content">
+      {answer.presentation && <AgentPresentationView presentation={answer.presentation} />}
+      {text && <div className="agent-answer">{renderOpenCodeReply(text)}</div>}
+      {!answer.presentation && !text && <p className="detached-answer-empty">No answer content was returned.</p>}
+    </div>
+  </article>;
+}
+
+const root = createRoot(document.getElementById('root'));
+root.render(window.islandDetachedAnswer ? <DetachedAnswer answer={window.islandDetachedAnswer} /> : <App />);

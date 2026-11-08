@@ -95,7 +95,8 @@ test('layout observer ignores streamed descendants but reports preferred-height 
   const start = source.indexOf('  useLayoutEffect(() => {\n    // The profile editor');
   const code = source.slice(start, source.indexOf('  const clips =', start));
   let effect, mutate;
-  const frames = new Map(), sends = [], root = { dataset: { layoutHeight: '330' }, style: {} };
+  const frames = new Map(), timers = new Map(), sends = [], root = { dataset: { layoutHeight: '330' }, style: {} };
+  let now = 0, nextTimer = 0;
   const content = { firstElementChild: root, style: {}, scrollHeight: 330 };
   const context = {
     useLayoutEffect: fn => { effect = fn; },
@@ -105,17 +106,30 @@ test('layout observer ignores streamed descendants but reports preferred-height 
     ResizeObserver: class { observe() {} unobserve() {} disconnect() {} },
     MutationObserver: class { constructor(fn) { mutate = fn; } observe() {} disconnect() {} },
     requestAnimationFrame: fn => { frames.set(1, fn); return 1; }, cancelAnimationFrame: id => frames.delete(id),
-    send: (kind, data) => sends.push({ kind, ...data }), window: {},
+    send: (kind, data) => sends.push({ kind, ...data }), performance: { now: () => now },
+    window: { addEventListener() {}, removeEventListener() {}, setTimeout: (fn, delay) => { const id = ++nextTimer; timers.set(id, { fn, delay }); return id; }, clearTimeout: id => timers.delete(id) },
   };
   for (const name of ['noteView', 'showReminderCalendar', 'signOpen', 'showFolderInput', 'folderEditing', 'dictateOpen', 'dictateMode', 'dictateTranscriptExpanded', 'screenSelection', 'screenResult', 'commandOpen']) context[name] = false;
   vm.runInNewContext(code, context); const cleanup = effect();
   const paint = () => { const callbacks = [...frames.values()]; frames.clear(); callbacks.forEach(fn => fn()); };
+  const settle = () => { const callbacks = [...timers.values()]; timers.clear(); callbacks.forEach(({ fn }) => fn()); paint(); };
   assert.equal(sends.length, 1, 'the first target arrives before the next animation frame');
   for (let i = 0; i < 100; i++) mutate([{ type: 'childList', target: root }]);
   assert.equal(frames.size, 0);
-  root.dataset.layoutHeight = '90'; mutate([{ type: 'attributes', target: root }]); paint();
+  root.dataset.layoutHeight = '120'; mutate([{ type: 'attributes', target: root }]);
+  now = 30; root.dataset.layoutHeight = '90'; mutate([{ type: 'attributes', target: root }]);
+  assert.equal(sends.length, 1, 'intermediate content sizes do not retarget the contour');
+  assert.equal(timers.size, 1, 'only one settling timer remains');
+  settle();
   assert.equal(sends.length, 2); assert.equal(sends[1].height, 157);
+  now = 100; mutate([{ type: 'attributes', target: root }]);
+  now = 270; mutate([{ type: 'attributes', target: root }]);
+  assert.equal([...timers.values()][0].delay, 10, 'continuous content changes flush within 180ms');
+  context.window.islandRequestLayout(); paint();
+  assert.equal(timers.size, 0, 'explicit native requests bypass settling');
+  mutate([{ type: 'attributes', target: root }]);
   cleanup(); assert.equal(context.window.islandRequestLayout, undefined);
+  assert.equal(timers.size, 0, 'unmount clears delayed layout work');
   context.state.wakeWord = { surface: true, revision: 8 };
   context.document.querySelector = () => ({ offsetHeight: 0 });
   root.dataset.layoutHeight = '34';
@@ -124,7 +138,7 @@ test('layout observer ignores streamed descendants but reports preferred-height 
   assert.equal(sends.at(-1).wakeSurface, true);
   assert.equal(sends.at(-1).wakeRevision, 8);
   root.querySelector = () => ({ dataset: { layoutHeight: '138' } });
-  mutate([{ type: 'attributes', target: root }]); paint();
+  mutate([{ type: 'attributes', target: root }]); settle();
   assert.equal(sends.at(-1).height + 32, 194); // Capture errors remain readable.
   cleanupWake();
 });

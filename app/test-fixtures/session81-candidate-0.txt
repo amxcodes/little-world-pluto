@@ -1,0 +1,58 @@
+```island-figure
+{"program":true,"label":"Optimus Prime: Truck to Robot","duration":4,"steps":[{"label":"Truck"},{"label":"Unfolding"},{"label":"Robot"}],"assembly_plan":{"source":"Recognizable blue-and-red semi-truck cab with grille, windshield, paired wheels, and trailerless rear chassis.","destination":"Upright red-and-blue humanoid robot with truck cab forming the chest, wheels at shoulders and calves, and grille forming the abdomen.","assemblies":[{"id":"cab","source":"front cab, windshield, and grille","destination":"chest and abdomen"},{"id":"left_leg","source":"left rear wheel and chassis side","destination":"left leg and foot"},{"id":"right_leg","source":"right rear wheel and chassis side","destination":"right leg and foot"},{"id":"left_arm","source":"left side cab panel and front wheel","destination":"left arm and shoulder wheel"},{"id":"right_arm","source":"right side cab panel and front wheel","destination":"right arm and shoulder wheel"},{"id":"head","source":"roof-mounted robot head folded into truck roof","destination":"robot head above chest"}]} 
+{"op":"group","id":"support","transform":{"position":[0,0,0]}}
+{"op":"group","id":"cab","transform":{"position":[0,1.1,0]}}
+{"op":"part","id":"cab_shell","label":"Cab shell","detail":"Red truck cab becomes the robot chest","shape":{"kind":"box","size":[2.1,1.7,1.15],"bevel":0.12},"color":"#C52D32","material":"paint"}
+{"op":"part","id":"windshield","label":"Windshield","detail":"Blue truck windshield remains on chest","shape":{"kind":"box","size":[1.55,0.48,0.08],"bevel":0.04},"transform":{"position":[0,0.47,0.59]},"color":"#195CA2","material":"glass"}
+{"op":"part","id":"grille","label":"Grille","detail":"Truck front grille becomes abdomen detail","shape":{"kind":"box","size":[0.78,0.5,0.12],"bevel":0.04},"transform":{"position":[0,-0.48,0.62]},"color":"#B8C2C8","material":"metal"}
+{"op":"part","id":"bumper","label":"Front bumper","detail":"Truck bumper stays below cab","shape":{"kind":"box","size":[1.9,0.18,0.22]},"transform":{"position":[0,-0.86,0.62]},"color":"#AEB9C0","material":"metal"}
+{"op":"end"}
+{"op":"group","id":"left_leg","transform":{"position":[-0.58,0.18,0]}}
+{"op":"hinge","id":"left_leg_fold","at":[0,0.83,0],"axis":"z"}
+{"op":"part","id":"left_leg_shell","label":"Left leg","detail":"Blue chassis side unfolds into left leg","shape":{"kind":"box","size":[0.72,1.55,0.78],"bevel":0.08},"transform":{"position":[0,-0.78,0]},"color":"#195CA2","material":"paint"}
+{"op":"part","id":"left_knee","label":"Left knee","detail":"Red joint plate","shape":{"kind":"box","size":[0.5,0.28,0.82]},"transform":{"position":[0,-0.25,0.04]},"color":"#C52D32","material":"paint"}
+{"op":"part","id":"left_foot","label":"Left foot","detail":"Truck chassis end becomes robot foot","shape":{"kind":"box","size":[0.88,0.28,1.05]},"transform":{"position":[0,-1.66,0.18]},"color":"#1B2734","material":"metal"}
+{"op":"part","id":"left_wheel","label":"Left wheel","detail":"Rear truck wheel remains on outer calf","shape":{"kind":"cylinder","radius":0.38,"height":0.24},"transform":{"position":[-0.4,-0.83,0],"rotation":[0,0,90]},"color":"#20262C","material":"rubber"}
+{"op":"end"}
+{"op":"end"}
+{"op":"group","id":"right_leg","transform":{"position":[0.58,0.18,0]}}
+{"op":"hinge","id":"right_leg_fold","at":[0,0.83,0],"axis":"z"}
+{"op":"part","id":"right_leg_shell","label":"Right leg","detail":"Blue chassis side unfolds into right leg","shape":{"kind":"box","size":[0.72,1.55,0.78],"bevel":0.08},"transform":{"position":[0,-0.78,0]},"color":"#195CA2","material":"paint"}
+{"op":"part","id":"right_knee","label":"Right knee","detail":"Red joint plate","shape":{"kind":"box","size":[0.5,0.28,0.82]},"transform":{"position":[0,-0.25,0.04]},"color":"#C52D32","material":"paint"}
+{"op":"part","id":"right_foot","label":"Right foot","detail":"Truck chassis end becomes robot foot","shape":{"kind":"box","size":[0.88,0.28,1.05]},"transform":{"position":[0,-1.66,0.18]},"color":"#1B2734","material":"metal"}
+{"op":"part","id":"right_wheel","label":"Right wheel","detail":"Rear truck wheel remains on outer calf","shape":{"kind":"cylinder","radius":0.38,"height":0.24},"transform":{"position":[0.4,-0.83,0],"rotation":[0,0,90]},"color":"#20262C","material":"rubber"}
+{"op":"end"}
+{"op":"end"}
+{"op":"group","id":"left_arm","transform":{"position":[-1.22,1.3,0]}}
+{"op":"hinge","id":"left_arm_fold","at":[0,0.5,0],"axis":"z"}
+{"op":"part","id":"left_arm_shell","label":"Left arm","detail":"Red side cab panel unfolds as upper arm","shape":{"kind":"box","size":[0.62,1.05,0.7],"bevel":0.08},"transform":{"position":[0,-0.38,0]},"color":"#C52D32","material":"paint"}
+{"op":"part","id":"left_shoulder_wheel","label":"Left shoulder wheel","detail":"Front truck wheel stays at shoulder","shape":{"kind":"cylinder","radius":0.38,"height":0.22},"transform":{"position":[-0.36,0.43,0],"rotation":[0,0,90]},"color":"#20262C","material":"rubber"}
+{"op":"part","id":"left_forearm","label":"Left forearm","detail":"Blue side panel becomes forearm","shape":{"kind":"box","size":[0.58,0.72,0.62],"bevel":0.06},"transform":{"position":[0,-1.18,0]},"color":"#195CA2","material":"paint"}
+{"op":"part","id":"left_hand","label":"Left hand","detail":"Dark mechanical hand","shape":{"kind":"box","size":[0.42,0.34,0.42]},"transform":{"position":[0,-1.72,0.03]},"color":"#303943","material":"metal"}
+{"op":"end"}
+{"op":"end"}
+{"op":"group","id":"right_arm","transform":{"position":[1.22,1.3,0]}}
+{"op":"hinge","id":"right_arm_fold","at":[0,0.5,0],"axis":"z"}
+{"op":"part","id":"right_arm_shell","label":"Right arm","detail":"Red side cab panel unfolds as upper arm","shape":{"kind":"box","size":[0.62,1.05,0.7],"bevel":0.08},"transform":{"position":[0,-0.38,0]},"color":"#C52D32","material":"paint"}
+{"op":"part","id":"right_shoulder_wheel","label":"Right shoulder wheel","detail":"Front truck wheel stays at shoulder","shape":{"kind":"cylinder","radius":0.38,"height":0.22},"transform":{"position":[0.36,0.43,0],"rotation":[0,0,90]},"color":"#20262C","material":"rubber"}
+{"op":"part","id":"right_forearm","label":"Right forearm","detail":"Blue side panel becomes forearm","shape":{"kind":"box","size":[0.58,0.72,0.62],"bevel":0.06},"transform":{"position":[0,-1.18,0]},"color":"#195CA2","material":"paint"}
+{"op":"part","id":"right_hand","label":"Right hand","detail":"Dark mechanical hand","shape":{"kind":"box","size":[0.42,0.34,0.42]},"transform":{"position":[0,-1.72,0.03]},"color":"#303943","material":"metal"}
+{"op":"end"}
+{"op":"end"}
+{"op":"group","id":"head","transform":{"position":[0,2.31,0]}}
+{"op":"hinge","id":"head_fold","at":[0,0,0],"axis":"x"}
+{"op":"part","id":"helmet","label":"Helmet","detail":"Blue helmet folds up from the cab roof","shape":{"kind":"box","size":[0.82,0.5,0.58],"bevel":0.08},"transform":{"position":[0,0.22,0]},"color":"#195CA2","material":"paint"}
+{"op":"part","id":"face","label":"Faceplate","detail":"Silver robot face","shape":{"kind":"box","size":[0.38,0.3,0.12]},"transform":{"position":[0,0.18,0.34]},"color":"#C9D2D8","material":"metal"}
+{"op":"part","id":"left_ear","label":"Left helmet fin","detail":"Blue helmet side fin","shape":{"kind":"box","size":[0.13,0.42,0.16]},"transform":{"position":[-0.49,0.25,0]},"color":"#195CA2"}
+{"op":"part","id":"right_ear","label":"Right helmet fin","detail":"Blue helmet side fin","shape":{"kind":"box","size":[0.13,0.42,0.16]},"transform":{"position":[0.49,0.25,0]},"color":"#195CA2"}
+{"op":"end"}
+{"op":"end"}
+{"op":"move","target":"left_leg_fold","start":0,"end":1.2,"angle":90}
+{"op":"move","target":"right_leg_fold","start":0,"end":1.2,"angle":-90}
+{"op":"move","target":"left_arm_fold","start":0.4,"end":1.7,"angle":90}
+{"op":"move","target":"right_arm_fold","start":0.4,"end":1.7,"angle":-90}
+{"op":"move","target":"head_fold","start":1.1,"end":2,"angle":-90}
+{"op":"end"}
+```
+
+The cab supplies the chest and abdomen, while its side panels and wheels unfold into the limbs. The exact fictional joint mechanics are schematic.

@@ -1,0 +1,44 @@
+```island-figure
+{"program":true,"label":"Optimus Prime transforms from truck to robot","duration":8,"steps":[{"label":"Truck"},{"label":"Panels open"},{"label":"Robot"}],"playback":{"hold_start":1,"hold_end":2,"return_seconds":6},"cues":[{"at":0,"text":"Truck form"},{"at":0.22,"text":"Cab splits; wheels swing outward"},{"at":0.58,"text":"Legs and arms unfold"},{"at":1,"text":"Robot form"}],"assembly_plan":{"source":"Red and blue semi-truck","destination":"Optimus Prime robot","assemblies":[{"id":"cab","source":"Truck cab","destination":"Red chest"},{"id":"left_leg","source":"Left cab-side panel and wheel","destination":"Left blue leg"},{"id":"right_leg","source":"Right cab-side panel and wheel","destination":"Right blue leg"},{"id":"left_arm","source":"Left side assembly","destination":"Left red arm"},{"id":"right_arm","source":"Right side assembly","destination":"Right red arm"},{"id":"back","source":"Rear truck body","destination":"Blue back pack"}]},"labels":[{"text":"Cab becomes chest","part":"cab.chest"},{"text":"Windshield panels","part":"cab.glass"},{"text":"Wheel carried by leg","part":"left_leg.wheel"},{"text":"Truck body becomes backpack","part":"back.body"},{"text":"Head","part":"cab.head"}]}
+{"op":"group","id":"root"}
+{"op":"group","id":"cab"}
+{"op":"part","id":"chest","label":"Red cab chest","detail":"Red cab front becomes robot chest","shape":{"kind":"box","size":[1.25,0.72,0.42],"bevel":0.08},"transform":{"position":[0,1.42,0.02]},"color":"#C9272C","material":"paint"}
+{"op":"part","id":"glass","label":"Windshield panels","detail":"Two blue windshield panes on chest","shape":{"kind":"box","size":[0.48,0.24,0.035],"bevel":0.025},"transform":{"position":[-0.29,1.55,0.244]},"repeat":{"count":2,"offset":[0.58,0,0]},"color":"#4D9DB8","material":"glass"}
+{"op":"part","id":"grille","label":"Cab grille","detail":"Silver front grille becomes chest center detail","shape":{"kind":"box","size":[0.34,0.38,0.045],"bevel":0.025},"transform":{"position":[0,1.17,0.25]},"color":"#AEB8BD","material":"metal"}
+{"op":"part","id":"head","label":"Blue helmet","detail":"Small blue helmet with silver face","shape":{"kind":"box","size":[0.34,0.35,0.3],"bevel":0.06},"transform":{"position":[0,2.0,0]},"color":"#174B9B","material":"paint"}
+{"op":"part","id":"face","label":"Silver faceplate","detail":"Face set into blue helmet","shape":{"kind":"box","size":[0.16,0.13,0.035]},"transform":{"position":[0,1.97,0.16]},"color":"#C2C9CB","material":"metal"}
+{"op":"end"}
+{"op":"group","id":"left_leg"}
+{"op":"part","id":"shin","label":"Left blue lower leg","detail":"Blue rectangular lower leg with silver front inset","shape":{"kind":"box","size":[0.43,0.78,0.42],"bevel":0.07},"transform":{"position":[-0.34,0.43,0]},"color":"#164A9A","material":"paint"}
+{"op":"part","id":"shin_inset","label":"Left shin inset","detail":"Silver shin panel","shape":{"kind":"box","size":[0.22,0.38,0.035],"bevel":0.02},"transform":{"position":[-0.34,0.46,0.22]},"color":"#AEB8BD","material":"metal"}
+{"op":"part","id":"wheel","label":"Left wheel","detail":"Black truck wheel remains on outside of leg","shape":{"kind":"cylinder","radius":0.22,"height":0.15},"transform":{"position":[-0.58,0.44,0],"rotation":[0,0,90]},"color":"#20252A","material":"rubber"}
+{"op":"part","id":"foot","label":"Left foot","detail":"Blue foot with red toe","shape":{"kind":"box","size":[0.48,0.2,0.48],"bevel":0.04},"transform":{"position":[-0.34,0.06,0.08]},"color":"#164A9A","material":"paint"}
+{"op":"end"}
+{"op":"group","id":"right_leg"}
+{"op":"part","id":"shin","label":"Right blue lower leg","detail":"Blue rectangular lower leg with silver front inset","shape":{"kind":"box","size":[0.43,0.78,0.42],"bevel":0.07},"transform":{"position":[0.34,0.43,0]},"color":"#164A9A","material":"paint"}
+{"op":"part","id":"shin_inset","label":"Right shin inset","detail":"Silver shin panel","shape":{"kind":"box","size":[0.22,0.38,0.035],"bevel":0.02},"transform":{"position":[0.34,0.46,0.22]},"color":"#AEB8BD","material":"metal"}
+{"op":"part","id":"wheel","label":"Right wheel","detail":"Black truck wheel remains on outside of leg","shape":{"kind":"cylinder","radius":0.22,"height":0.15},"transform":{"position":[0.58,0.44,0],"rotation":[0,0,90]},"color":"#20252A","material":"rubber"}
+{"op":"part","id":"foot","label":"Right foot","detail":"Blue foot with red toe","shape":{"kind":"box","size":[0.48,0.2,0.48],"bevel":0.04},"transform":{"position":[0.34,0.06,0.08]},"color":"#164A9A","material":"paint"}
+{"op":"end"}
+{"op":"group","id":"left_arm"}
+{"op":"part","id":"upper","label":"Left red upper arm","detail":"Red cab-side panel becomes upper arm","shape":{"kind":"box","size":[0.35,0.64,0.38],"bevel":0.06},"transform":{"position":[-0.91,1.38,0]},"color":"#C9272C","material":"paint"}
+{"op":"part","id":"forearm","label":"Left blue forearm","detail":"Blue forearm below red upper arm","shape":{"kind":"box","size":[0.34,0.48,0.36],"bevel":0.06},"transform":{"position":[-0.91,0.83,0]},"color":"#164A9A","material":"paint"}
+{"op":"part","id":"wheel","label":"Left shoulder wheel","detail":"Truck wheel carried at shoulder","shape":{"kind":"cylinder","radius":0.2,"height":0.13},"transform":{"position":[-1.0,1.73,0],"rotation":[0,0,90]},"color":"#20252A","material":"rubber"}
+{"op":"end"}
+{"op":"group","id":"right_arm"}
+{"op":"part","id":"upper","label":"Right red upper arm","detail":"Red cab-side panel becomes upper arm","shape":{"kind":"box","size":[0.35,0.64,0.38],"bevel":0.06},"transform":{"position":[0.91,1.38,0]},"color":"#C9272C","material":"paint"}
+{"op":"part","id":"forearm","label":"Right blue forearm","detail":"Blue forearm below red upper arm","shape":{"kind":"box","size":[0.34,0.48,0.36],"bevel":0.06},"transform":{"position":[0.91,0.83,0]},"color":"#164A9A","material":"paint"}
+{"op":"part","id":"wheel","label":"Right shoulder wheel","detail":"Truck wheel carried at shoulder","shape":{"kind":"cylinder","radius":0.2,"height":0.13},"transform":{"position":[1.0,1.73,0],"rotation":[0,0,90]},"color":"#20252A","material":"rubber"}
+{"op":"end"}
+{"op":"group","id":"back"}
+{"op":"part","id":"body","label":"Blue rear truck body","detail":"Rear truck body folds behind robot as backpack","shape":{"kind":"box","size":[1.0,0.65,0.5],"bevel":0.06},"transform":{"position":[0,1.48,-0.52]},"color":"#164A9A","material":"paint"}
+{"op":"part","id":"rear_axle","label":"Rear axle wheels","detail":"Paired black wheels carried by rear body","shape":{"kind":"cylinder","radius":0.18,"height":0.14},"transform":{"position":[-0.42,1.25,-0.52],"rotation":[0,0,90]},"repeat":{"count":2,"offset":[0.84,0,0]},"color":"#20252A","material":"rubber"}
+{"op":"end"}
+{"op":"part","id":"waist","label":"Waist","detail":"Dark waist block joins torso and legs","shape":{"kind":"box","size":[0.72,0.3,0.38],"bevel":0.04},"transform":{"position":[0,0.94,0]},"color":"#343B42","material":"metal"}
+{"op":"part","id":"left_thigh","label":"Left silver thigh","detail":"Silver upper leg panel","shape":{"kind":"box","size":[0.39,0.62,0.36],"bevel":0.05},"transform":{"position":[-0.34,0.85,0]},"color":"#AEB8BD","material":"metal"}
+{"op":"part","id":"right_thigh","label":"Right silver thigh","detail":"Silver upper leg panel","shape":{"kind":"box","size":[0.39,0.62,0.36],"bevel":0.05},"transform":{"position":[0.34,0.85,0]},"color":"#AEB8BD","material":"metal"}
+{"op":"part","id":"left_hand","label":"Left hand","detail":"Dark hand at end of forearm","shape":{"kind":"sphere","radius":0.12},"transform":{"position":[-0.91,0.53,0]},"color":"#343B42","material":"metal"}
+{"op":"part","id":"right_hand","label":"Right hand","detail":"Dark hand at end of forearm","shape":{"kind":"sphere","radius":0.12},"transform":{"position":[0.91,0.53,0]},"color":"#343B42","material":"metal"}
+{"op":"end"}
+```  
+Truck cab and side panels unfold into the red-chested, blue-legged robot; rear body folds behind as a backpack.

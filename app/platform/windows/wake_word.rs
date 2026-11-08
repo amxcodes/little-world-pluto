@@ -262,8 +262,12 @@ fn run(
                     ),
                 }
             }
-            Command::Matched(id) if id == revision.load(Ordering::Acquire) && active.is_some() => {
+            Command::Matched(id)
+                if id == revision.load(Ordering::Acquire)
+                    && (active.is_some() || desktop.is_some()) =>
+            {
                 close_recognizer(&mut active);
+                desktop.take();
                 publish(
                     &events,
                     &notify,
@@ -274,9 +278,11 @@ fn run(
                 );
             }
             Command::Ended(id, message)
-                if id == revision.load(Ordering::Acquire) && active.is_some() =>
+                if id == revision.load(Ordering::Acquire)
+                    && (active.is_some() || desktop.is_some()) =>
             {
                 close_recognizer(&mut active);
+                desktop.take();
                 publish(
                     &events,
                     &notify,
