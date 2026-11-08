@@ -289,7 +289,7 @@ fn notify_icon_data(window: HWND) -> Result<NOTIFYICONDATAW, String> {
         ));
     }
     // Resource ID 1 is the Pluto ICON resource embedded by build.rs.
-    let icon = unsafe { LoadIconW(instance, 1usize as *const u16) };
+    let icon = unsafe { LoadIconW(instance, std::ptr::without_provenance::<u16>(1)) };
     if icon.is_null() {
         return Err(last_error("could not load the Windows application icon"));
     }
