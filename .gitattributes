@@ -3,4 +3,4 @@
 island-ui/dist/index.html linguist-generated=true -whitespace
 island-ui/dist/figure-worker.js linguist-generated=true -whitespace
 # Malformed delimiter/spacing fixtures intentionally preserve provider output.
-app/test-fixtures/* -whitespace
+app/test-fixtures/* text eol=lf -whitespace
