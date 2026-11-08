@@ -6,6 +6,7 @@ use std::process::Command;
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=Cargo.toml");
+    println!("cargo:rerun-if-changed=packaging/windows/Assets/Pluto.ico");
     println!("cargo:rerun-if-changed=island-ui/dist/index.html");
     println!("cargo:rerun-if-changed=island-ui/dist/figure-worker.js");
     println!("cargo:rerun-if-env-changed=CARGO_PKG_VERSION");
@@ -26,9 +27,9 @@ fn main() {
     let required = env::var_os("PLUTO_REQUIRE_WINDOWS_VERSION_RESOURCE").is_some();
     if let Err(error) = embed_windows_version_resource() {
         if required {
-            panic!("Could not embed Pluto's Windows version resource: {error}");
+            panic!("Could not embed Pluto's Windows resources: {error}");
         }
-        println!("cargo:warning=Windows version information was not embedded: {error}");
+        println!("cargo:warning=Windows resources were not embedded: {error}");
     }
 }
 
@@ -47,6 +48,17 @@ fn embed_windows_version_resource() -> Result<(), String> {
 
     let numeric_version = format!("{},{},{},0", parts[0], parts[1], parts[2]);
     let string_version = format!("{}.{}.{}.0", parts[0], parts[1], parts[2]);
+    let out_dir = PathBuf::from(
+        env::var_os("OUT_DIR").ok_or_else(|| "Cargo did not provide OUT_DIR".to_owned())?,
+    );
+    let icon_source =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("packaging/windows/Assets/Pluto.ico");
+    fs::copy(&icon_source, out_dir.join("pluto.ico")).map_err(|error| {
+        format!(
+            "could not stage Pluto's Windows icon from {}: {error}",
+            icon_source.display()
+        )
+    })?;
     let company_name = env::var("PLUTO_SIGNING_COMPANY_NAME")
         .ok()
         .filter(|value| !value.trim().is_empty())
@@ -57,6 +69,8 @@ fn embed_windows_version_resource() -> Result<(), String> {
         .replace(['\r', '\n'], " ");
     let resource = format!(
         r#"
+1 ICON "pluto.ico"
+
 1 VERSIONINFO
  FILEVERSION {numeric_version}
  PRODUCTVERSION {numeric_version}
@@ -87,15 +101,13 @@ END
 "#
     );
 
-    let out_dir = PathBuf::from(
-        env::var_os("OUT_DIR").ok_or_else(|| "Cargo did not provide OUT_DIR".to_owned())?,
-    );
-    let rc_file = out_dir.join("pluto-version.rc");
-    let res_file = out_dir.join("pluto-version.res");
+    let rc_file = out_dir.join("pluto-resources.rc");
+    let res_file = out_dir.join("pluto-resources.res");
     fs::write(&rc_file, resource).map_err(|error| error.to_string())?;
 
     let rc = find_resource_compiler()?;
     let output = Command::new(&rc)
+        .current_dir(&out_dir)
         .arg("/nologo")
         .arg("/fo")
         .arg(&res_file)

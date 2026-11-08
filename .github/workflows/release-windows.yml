@@ -103,6 +103,10 @@ jobs:
               $info.OriginalFilename -ne 'pluto.exe' -or $info.FileVersion -ne $expected -or $info.ProductVersion -ne $expected) {
             throw "Pluto.exe version metadata is missing or inconsistent. Expected version $expected."
           }
+          Add-Type -AssemblyName System.Drawing
+          $icon = [System.Drawing.Icon]::ExtractAssociatedIcon((Resolve-Path target\release\pluto.exe).Path)
+          if (-not $icon) { throw 'Pluto.exe does not contain an application icon resource.' }
+          $icon.Dispose()
 
       - name: Verify Rust formatting, tests, and lint
         shell: pwsh

@@ -96,6 +96,10 @@ try {
     if ($info.ProductName -ne 'Littleworld Pluto' -or $info.CompanyName -cne $company -or
         $info.OriginalFilename -ne 'pluto.exe' -or $info.FileVersion -ne "$version.0" -or
         $info.ProductVersion -ne "$version.0") { throw "Pluto executable version resource does not match $version.0." }
+    Add-Type -AssemblyName System.Drawing
+    $embeddedIcon = [System.Drawing.Icon]::ExtractAssociatedIcon($binary)
+    if (-not $embeddedIcon) { throw 'Pluto.exe does not contain an application icon resource.' }
+    $embeddedIcon.Dispose()
     New-Item -ItemType Directory -Path $out -Force | Out-Null
     & (Join-Path $PSScriptRoot 'sign_windows_file.ps1') -FilePath $binary
     $binarySignature = Get-AuthenticodeSignature -LiteralPath $binary
