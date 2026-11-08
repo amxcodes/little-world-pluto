@@ -12,11 +12,10 @@ use windows_sys::Win32::UI::Shell::{
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu, DestroyWindow,
-    GWLP_USERDATA, GetCursorPos, GetForegroundWindow, GetWindowLongPtrW, IDI_APPLICATION,
-    LoadIconW, MF_STRING, PostMessageW, RegisterClassW, RegisterWindowMessageW,
-    SetForegroundWindow, SetWindowLongPtrW, TPM_NONOTIFY, TPM_RETURNCMD, TPM_RIGHTBUTTON,
-    TrackPopupMenu, WM_APP, WM_CLOSE, WM_LBUTTONDBLCLK, WM_LBUTTONUP, WM_NCCREATE, WM_NULL,
-    WM_RBUTTONUP, WNDCLASSW,
+    GWLP_USERDATA, GetCursorPos, GetForegroundWindow, GetWindowLongPtrW, LoadIconW, MF_STRING,
+    PostMessageW, RegisterClassW, RegisterWindowMessageW, SetForegroundWindow, SetWindowLongPtrW,
+    TPM_NONOTIFY, TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu, WM_APP, WM_CLOSE,
+    WM_LBUTTONDBLCLK, WM_LBUTTONUP, WM_NCCREATE, WM_NULL, WM_RBUTTONUP, WNDCLASSW,
 };
 
 const CLASS_NAME: &str = "PlutoDesktopTrayWindow";
@@ -283,7 +282,14 @@ fn remember_foreground(state: &TrayCallbacks) {
 }
 
 fn notify_icon_data(window: HWND) -> Result<NOTIFYICONDATAW, String> {
-    let icon = unsafe { LoadIconW(null_mut(), IDI_APPLICATION) };
+    let instance = unsafe { GetModuleHandleW(null()) };
+    if instance.is_null() {
+        return Err(last_error(
+            "could not get the application instance for its tray icon",
+        ));
+    }
+    // Resource ID 1 is the Pluto ICON resource embedded by build.rs.
+    let icon = unsafe { LoadIconW(instance, 1usize as *const u16) };
     if icon.is_null() {
         return Err(last_error("could not load the Windows application icon"));
     }

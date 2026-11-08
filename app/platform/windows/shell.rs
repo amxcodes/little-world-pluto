@@ -2355,6 +2355,17 @@ pub struct ShellController {
     worker: Option<JoinHandle<()>>,
 }
 
+fn startup_panic_error(payload: &(dyn std::any::Any + Send)) -> String {
+    let detail = payload
+        .downcast_ref::<&str>()
+        .copied()
+        .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+        .unwrap_or("non-string panic payload");
+    format!(
+        "the native shell panicked during startup: {detail}. Details are in %LOCALAPPDATA%\\Pluto\\logs\\panic.log"
+    )
+}
+
 #[derive(Clone, Copy)]
 pub struct ShellStartup {
     pub shape: ShapeMode,
@@ -2750,13 +2761,11 @@ impl ShellController {
         let worker = thread::Builder::new()
             .name("island-edge-shell".into())
             .spawn(move || {
-                match EdgeShell::create(
-                    &thread_context,
-                    thread_callbacks,
-                    command_receiver,
-                    startup,
-                ) {
-                    Ok(shell) => {
+                let creation = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+                    EdgeShell::create(&thread_context, thread_callbacks, command_receiver, startup)
+                }));
+                match creation {
+                    Ok(Ok(shell)) => {
                         if ready_sender.send(Ok(())).is_ok() {
                             run_native_message_loop(
                                 shell.window,
@@ -2766,8 +2775,11 @@ impl ShellController {
                         }
                         drop(shell);
                     }
-                    Err(error) => {
+                    Ok(Err(error)) => {
                         let _ = ready_sender.send(Err(error));
+                    }
+                    Err(payload) => {
+                        let _ = ready_sender.send(Err(startup_panic_error(payload.as_ref())));
                     }
                 }
             })
@@ -2780,8 +2792,12 @@ impl ShellController {
                 return Err(error);
             }
             Err(_) => {
-                let _ = worker.join();
-                return Err("the native shell thread stopped during startup".into());
+                let error = worker
+                    .join()
+                    .err()
+                    .map(|payload| startup_panic_error(payload.as_ref()))
+                    .unwrap_or_else(|| "the native shell thread stopped during startup".into());
+                return Err(error);
             }
         }
 
