@@ -1,0 +1,49 @@
+```island-figure
+{"program":true,"label":"Optimus Prime transforms from truck to robot","duration":4,"steps":[{"label":"Truck"},{"label":"Unfolding"},{"label":"Robot"}],"labels":[{"text":"Truck cab becomes robot chest","part":"cab"},{"text":"Wheels remain attached to limbs","part":"wheel"}]}
+{"op":"part","id":"chassis","label":"Truck chassis","shape":{"kind":"box","size":[2.8,0.45,1.35]},"color":"#26394A","material":"metal","transform":{"position":[0,0.75,0]}}
+{"op":"group","id":"cab","transform":{"position":[0,1.55,0.45]}}
+{"op":"part","id":"cab_shell","label":"Blue cab","shape":{"kind":"box","size":[1.85,1.35,1.2],"bevel":0.08},"color":"#1458B8","material":"paint","transform":{"position":[0,0,0]}}
+{"op":"part","id":"windshield","label":"Windshield","shape":{"kind":"box","size":[1.5,0.48,0.04]},"color":"#75C9E8","material":"glass","transform":{"position":[0,0.36,0.62]}}
+{"op":"part","id":"grille","label":"Front grille","shape":{"kind":"box","size":[0.9,0.32,0.06]},"color":"#B8C4CC","material":"metal","transform":{"position":[0,-0.36,0.64]}}
+{"op":"part","id":"bumper","label":"Front bumper","shape":{"kind":"box","size":[1.9,0.16,0.16]},"color":"#AAB6C0","material":"metal","transform":{"position":[0,-0.58,0.66]}}
+{"op":"end"}
+{"op":"group","id":"left_leg","transform":{"position":[-0.7,0.35,0]}}
+{"op":"part","id":"left_leg_shell","shape":{"kind":"box","size":[0.62,1.25,0.85]},"color":"#1458B8","material":"paint","transform":{"position":[0,-0.55,0]}}
+{"op":"part","id":"left_wheel","label":"Wheel","shape":{"kind":"cylinder","radius":0.36,"height":0.22},"color":"#20252A","material":"rubber","transform":{"position":[-0.34,-0.42,0.34],"rotation":[0,0,90]}}
+{"op":"end"}
+{"op":"build","template":"legAssembly","id":"right_leg","transform":{"position":[0.7,0.35,0]}}
+{"op":"group","id":"left_arm","transform":{"position":[-1.15,1.65,0]}}
+{"op":"part","id":"left_arm_shell","shape":{"kind":"box","size":[0.55,1.05,0.72]},"color":"#C52B2B","material":"paint","transform":{"position":[0,-0.42,0]}}
+{"op":"part","id":"left_arm_wheel","shape":{"kind":"cylinder","radius":0.3,"height":0.2},"color":"#25292D","material":"rubber","transform":{"position":[-0.25,-0.18,0.35],"rotation":[0,0,90]}}
+{"op":"end"}
+{"op":"group","id":"right_arm","transform":{"position":[1.15,1.65,0]}}
+{"op":"part","id":"right_arm_shell","shape":{"kind":"box","size":[0.55,1.05,0.72]},"color":"#C52B2B","material":"paint","transform":{"position":[0,-0.42,0]}}
+{"op":"part","id":"right_arm_wheel","shape":{"kind":"cylinder","radius":0.3,"height":0.2},"color":"#25292D","material":"rubber","transform":{"position":[0.25,-0.18,0.35],"rotation":[0,0,90]}}
+{"op":"end"}
+{"op":"group","id":"head","transform":{"position":[0,2.75,0]}}
+{"op":"part","id":"helmet","label":"Robot head","shape":{"kind":"box","size":[0.62,0.62,0.55],"bevel":0.08},"color":"#1458B8","material":"paint","transform":{"position":[0,0,0]}}
+{"op":"part","id":"face","shape":{"kind":"box","size":[0.34,0.28,0.57]},"color":"#C9D3D9","material":"metal","transform":{"position":[0,-0.12,0.03]}}
+{"op":"part","id":"crest","shape":{"kind":"box","size":[0.12,0.4,0.16]},"color":"#D8E0E5","material":"metal","transform":{"position":[0,0.12,0.31]}}
+{"op":"end"}
+{"op":"part","id":"torso","label":"Robot torso","shape":{"kind":"box","size":[1.75,1.15,0.72],"bevel":0.05},"color":"#C52B2B","material":"paint","transform":{"position":[0,1.8,0]}}
+{"op":"part","id":"abdomen","shape":{"kind":"box","size":[0.85,0.42,0.68]},"color":"#26394A","material":"metal","transform":{"position":[0,1.02,0]}}
+{"op":"part","id":"hip","shape":{"kind":"box","size":[1.35,0.4,0.72]},"color":"#26394A","material":"metal","transform":{"position":[0,0.48,0]}}
+{"op":"group","id":"shoulder_left","transform":{"position":[-1.15,2.05,0]}}
+{"op":"part","id":"shoulder_left_shell","shape":{"kind":"box","size":[0.62,0.62,0.78]},"color":"#C52B2B","material":"paint","transform":{"position":[0,0,0]}}
+{"op":"end"}
+{"op":"group","id":"shoulder_right","transform":{"position":[1.15,2.05,0]}}
+{"op":"part","id":"shoulder_right_shell","shape":{"kind":"box","size":[0.62,0.62,0.78]},"color":"#C52B2B","material":"paint","transform":{"position":[0,0,0]}}
+{"op":"end"}
+{"op":"move","target":"left_leg","start":0,"end":1,"rotate":[0,0,-90]}
+{"op":"move","target":"right_leg","start":0,"end":1,"rotate":[0,0,90]}
+{"op":"move","target":"cab","start":0.5,"end":1.5,"translate":[0,0.95,0]}
+{"op":"move","target":"left_arm","start":1,"end":2,"rotate":[0,0,90]}
+{"op":"move","target":"right_arm","start":1,"end":2,"rotate":[0,0,-90]}
+{"op":"move","target":"head","start":1.5,"end":2.5,"translate":[0,0.55,0]}
+{"op":"move","target":"shoulder_left","start":1.5,"end":2.5,"translate":[-0.15,0,0]}
+{"op":"move","target":"shoulder_right","start":1.5,"end":2.5,"translate":[0.15,0,0]}
+{"op":"template","name":"legAssembly"}
+{"op":"part","id":"leg","shape":{"kind":"box","size":[0.62,1.25,0.85]},"color":"#1458B8","material":"paint","transform":{"position":[0,-0.55,0]}}
+{"op":"part","id":"wheel","shape":{"kind":"cylinder","radius":0.36,"height":0.22},"color":"#20252A","material":"rubber","transform":{"position":[0.34,-0.42,0.34],"rotation":[0,0,90]}}
+{"op":"endtemplate"}
+```

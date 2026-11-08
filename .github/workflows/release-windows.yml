@@ -68,11 +68,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm audit --audit-level=high
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node --test tests/agent-navigation.test.mjs tests/voice-capture.test.mjs tests/voice-submit.test.mjs tests/motion-lifecycle.test.mjs tests/memory-delivery.test.mjs
+          $uiTests = @(Get-ChildItem -LiteralPath tests -Filter '*.test.mjs' -File | ForEach-Object FullName)
+          node --test @uiTests
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run build
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          git diff --exit-code -- dist/index.html
+          git diff --exit-code -- dist/index.html dist/figure-worker.js
           if ($LASTEXITCODE -ne 0) { throw 'The committed UI bundle is stale; rebuild and commit island-ui/dist/index.html before tagging.' }
 
       - name: Audit locked Rust dependencies
@@ -200,7 +201,7 @@ jobs:
             Remove-Item Env:PLUTO_SIGNING_PFX_PASSWORD -ErrorAction SilentlyContinue
           }
 
-      - name: Sign and verify executable, runtime DLLs, and installer
+      - name: Sign and verify executable and installer
         shell: pwsh
         run: |
           ./scripts/phase1/package_windows_installer.ps1 -SkipBuild -SigningCertificateThumbprint $env:PLUTO_SIGNING_CERT_THUMBPRINT
@@ -277,7 +278,7 @@ jobs:
           $assets = @(
             $portableBundle,
             (Join-Path 'target\release-assets' "Pluto-Setup-$($env:GITHUB_REF_NAME)-windows-x64.exe")
-          ) + @(Get-ChildItem -LiteralPath $portableDir -File | Where-Object { $_.Extension -in @('.exe', '.dll') } | ForEach-Object FullName)
+          ) + @(Get-ChildItem -LiteralPath $portableDir -File -Recurse | Where-Object { $_.Extension -in @('.exe', '.dll') } | ForEach-Object FullName)
           $scanStartedUtc = [DateTime]::UtcNow
           $scannedPaths = @()
           foreach ($asset in $assets) {
@@ -343,22 +344,7 @@ jobs:
           if (Test-Path -LiteralPath $portableDir) { Remove-Item -LiteralPath $portableDir -Recurse -Force }
           Expand-Archive -LiteralPath $portableBundle -DestinationPath $portableDir
           $releaseProgram = Join-Path $portableDir 'Pluto.exe'
-          $runtimeNames = @(
-            'onnxruntime.dll',
-            'onnxruntime_providers_shared.dll',
-            'sherpa-onnx-c-api.dll',
-            'sherpa-onnx-cxx-api.dll'
-          )
-          foreach ($runtimeName in $runtimeNames) {
-            if (-not (Test-Path -LiteralPath (Join-Path $portableDir $runtimeName) -PathType Leaf)) {
-              throw "Portable bundle is missing runtime DLL $runtimeName."
-            }
-          }
-          if (-not (Test-Path -LiteralPath (Join-Path $portableDir 'THIRD_PARTY_NOTICES.txt')) -or
-              -not (Test-Path -LiteralPath (Join-Path $portableDir 'licenses\Apache-2.0-Sherpa-ONNX.txt')) -or
-              -not (Test-Path -LiteralPath (Join-Path $portableDir 'licenses\MIT-ONNX-Runtime.txt'))) {
-            throw 'Portable bundle is missing third-party notices or license texts.'
-          }
+          if (-not (Test-Path -LiteralPath (Join-Path $portableDir 'THIRD_PARTY_NOTICES.txt'))) { throw 'Portable notices missing.' }
           $installDir = Join-Path $env:RUNNER_TEMP 'PlutoInstallerSmoke'
           $sentinel = Join-Path $env:LOCALAPPDATA 'Pluto\installer-smoke.txt'
           $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
@@ -374,21 +360,8 @@ jobs:
           if ((Get-FileHash -LiteralPath $program -Algorithm SHA256).Hash -cne (Get-FileHash -LiteralPath $releaseProgram -Algorithm SHA256).Hash) {
             throw 'Installed Pluto.exe differs from the signed portable release executable.'
           }
-          foreach ($runtimeName in $runtimeNames) {
-            $portableRuntime = Join-Path $portableDir $runtimeName
-            $installedRuntime = Join-Path $installDir $runtimeName
-            if (-not (Test-Path -LiteralPath $installedRuntime -PathType Leaf) -or
-                (Get-FileHash -LiteralPath $installedRuntime -Algorithm SHA256).Hash -cne
-                (Get-FileHash -LiteralPath $portableRuntime -Algorithm SHA256).Hash) {
-              throw "Installed runtime DLL differs from portable bundle: $runtimeName"
-            }
-          }
-          if (-not (Test-Path -LiteralPath (Join-Path $installDir 'THIRD_PARTY_NOTICES.txt')) -or
-              -not (Test-Path -LiteralPath (Join-Path $installDir 'licenses\Apache-2.0-Sherpa-ONNX.txt')) -or
-              -not (Test-Path -LiteralPath (Join-Path $installDir 'licenses\MIT-ONNX-Runtime.txt'))) {
-            throw 'Installer omitted third-party notices or license texts.'
-          }
-          $signedFiles = @($program, $uninstaller) + @($runtimeNames | ForEach-Object { Join-Path $installDir $_ })
+          if (-not (Test-Path -LiteralPath (Join-Path $installDir 'THIRD_PARTY_NOTICES.txt'))) { throw 'Installed notices missing.' }
+          $signedFiles = @($program, $uninstaller)
           foreach ($signedFile in $signedFiles) {
             $signature = Get-AuthenticodeSignature -LiteralPath $signedFile
             if ($null -eq $signature.SignerCertificate -or $null -eq $signature.TimeStamperCertificate -or

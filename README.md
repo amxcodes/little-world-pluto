@@ -25,7 +25,7 @@ Little World Pluto keeps everyday tools and AI conversations close at hand in a 
 | Notes and Expand | Saves notes and reminders, and inserts saved text when you type a shortcut. |
 | Meetings | Transcribes microphone and/or system audio locally into a saved, source-labeled transcript. Install the separate speech runtime and model on demand in Settings; the runtime stops when recording ends. |
 | Agents and Ask | Runs tasks through your configured OpenCode or Codex ACP provider. Answers can include Pluto's built-in visual components; Ask and wake answers stay focused on spoken or plain-text replies. |
-| Appearance | Offers light and dark themes, accent colors, media-card layouts, and optional Liquid Glass styling. |
+| Appearance | Offers light and dark themes, accent colors, media-card layouts, and Standard, Liquid Glass, and opt-in Hyper Glass styling. See the [appearance guide](docs/APPEARANCE.md). |
 
 Features that need a provider, model, permission, or optional tool are configured in Settings. Pluto does not bundle OpenCode, Codex, FFmpeg, or the meeting speech model.
 

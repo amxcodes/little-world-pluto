@@ -1,0 +1,43 @@
+```island-figure
+{"program":true,"label":"Optimus Prime","duration":4,"steps":[{"label":"Front view"}],"camera":{"yaw":28,"pitch":12,"orbit_degrees_per_second":0},"labels":[{"text":"Optimus Prime","part":"torso"},{"text":"Autobot insignia","part":"insignia"},{"text":"Wheels","part":"wheel.left"},{"text":"Ion blaster","part":"blaster"}]}
+{"op":"group","id":"body","transform":{"position":[0,1.7,0]}}
+{"op":"part","id":"torso","label":"Cab chest","shape":{"kind":"box","size":[1.35,1.15,0.55],"bevel":0.12},"color":"#D52B2B","material":"paint"}
+{"op":"part","id":"windshield.left","label":"Blue windshield","shape":{"kind":"box","size":[0.55,0.42,0.07],"bevel":0.04},"transform":{"position":[-0.32,0.24,0.315]},"color":"#4FB7E8","material":"glass"}
+{"op":"part","id":"windshield.right","label":"Blue windshield","shape":{"kind":"box","size":[0.55,0.42,0.07],"bevel":0.04},"transform":{"position":[0.32,0.24,0.315]},"color":"#4FB7E8","material":"glass"}
+{"op":"part","id":"insignia","label":"Autobot insignia","shape":{"kind":"box","size":[0.24,0.24,0.04],"bevel":0.04},"transform":{"position":[0,-0.28,0.315]},"color":"#F5F5F5","material":"paint"}
+{"op":"part","id":"waist","label":"Waist","shape":{"kind":"box","size":[0.9,0.35,0.48],"bevel":0.06},"transform":{"position":[0,-0.78,0]},"color":"#244FA3","material":"metal"}
+{"op":"end"}
+{"op":"group","id":"head","transform":{"position":[0,2.58,0]}}
+{"op":"part","id":"helmet","label":"Blue helmet","shape":{"kind":"box","size":[0.58,0.42,0.48],"bevel":0.09},"color":"#2454AD","material":"metal"}
+{"op":"part","id":"face","label":"Silver faceplate","shape":{"kind":"box","size":[0.38,0.2,0.08],"bevel":0.03},"transform":{"position":[0,-0.1,0.26]},"color":"#B9C4CF","material":"metal"}
+{"op":"part","id":"crest","label":"Helmet crest","shape":{"kind":"box","size":[0.14,0.22,0.13],"bevel":0.04},"transform":{"position":[0,0.28,0]},"color":"#D52B2B","material":"paint"}
+{"op":"part","id":"ear.left","label":"Side antenna","shape":{"kind":"box","size":[0.12,0.38,0.12],"bevel":0.03},"transform":{"position":[-0.39,0.02,0]},"color":"#2454AD","material":"metal"}
+{"op":"part","id":"ear.right","label":"Side antenna","shape":{"kind":"box","size":[0.12,0.38,0.12],"bevel":0.03},"transform":{"position":[0.39,0.02,0]},"color":"#2454AD","material":"metal"}
+{"op":"end"}
+{"op":"group","id":"arm.left","transform":{"position":[-0.96,1.88,0]}}
+{"op":"part","id":"upper","label":"Red shoulder","shape":{"kind":"box","size":[0.42,0.62,0.48],"bevel":0.09},"color":"#D52B2B","material":"paint"}
+{"op":"part","id":"forearm","label":"Blue forearm","shape":{"kind":"box","size":[0.38,0.65,0.44],"bevel":0.07},"transform":{"position":[0,-0.58,0]},"color":"#2454AD","material":"metal"}
+{"op":"end"}
+{"op":"group","id":"arm.right","transform":{"position":[0.96,1.88,0]}}
+{"op":"part","id":"upper","label":"Red shoulder","shape":{"kind":"box","size":[0.42,0.62,0.48],"bevel":0.09},"color":"#D52B2B","material":"paint"}
+{"op":"part","id":"forearm","label":"Blue forearm","shape":{"kind":"box","size":[0.38,0.65,0.44],"bevel":0.07},"transform":{"position":[0,-0.58,0]},"color":"#2454AD","material":"metal"}
+{"op":"end"}
+{"op":"group","id":"leg.left","transform":{"position":[-0.42,0.45,0]}}
+{"op":"part","id":"thigh","label":"Blue thigh","shape":{"kind":"box","size":[0.48,0.56,0.5],"bevel":0.08},"color":"#2454AD","material":"metal"}
+{"op":"part","id":"shin","label":"Red shin","shape":{"kind":"box","size":[0.46,0.62,0.52],"bevel":0.07},"transform":{"position":[0,-0.58,0]},"color":"#D52B2B","material":"paint"}
+{"op":"part","id":"foot","label":"Blue foot","shape":{"kind":"box","size":[0.56,0.22,0.72],"bevel":0.05},"transform":{"position":[0,-0.97,0.08]},"color":"#2454AD","material":"metal"}
+{"op":"part","id":"wheel.left","label":"Truck wheel","shape":{"kind":"cylinder","radius":0.24,"height":0.16,"segments":16},"transform":{"position":[-0.28,-0.35,0.02],"rotation":[0,0,90]},"color":"#20252B","material":"rubber"}
+{"op":"end"}
+{"op":"group","id":"leg.right","transform":{"position":[0.42,0.45,0]}}
+{"op":"part","id":"thigh","label":"Blue thigh","shape":{"kind":"box","size":[0.48,0.56,0.5],"bevel":0.08},"color":"#2454AD","material":"metal"}
+{"op":"part","id":"shin","label":"Red shin","shape":{"kind":"box","size":[0.46,0.62,0.52],"bevel":0.07},"transform":{"position":[0,-0.58,0]},"color":"#D52B2B","material":"paint"}
+{"op":"part","id":"foot","label":"Blue foot","shape":{"kind":"box","size":[0.56,0.22,0.72],"bevel":0.05},"transform":{"position":[0,-0.97,0.08]},"color":"#2454AD","material":"metal"}
+{"op":"part","id":"wheel.right","label":"Truck wheel","shape":{"kind":"cylinder","radius":0.24,"height":0.16,"segments":16},"transform":{"position":[0.28,-0.35,0.02],"rotation":[0,0,90]},"color":"#20252B","material":"rubber"}
+{"op":"end"}
+{"op":"group","id":"blaster","transform":{"position":[1.2,1.32,0.1],"rotation":[0,0,-90]}}
+{"op":"part","id":"barrel","label":"Ion blaster","shape":{"kind":"cylinder","radius":0.12,"height":0.85,"segments":16},"color":"#68727D","material":"metal"}
+{"op":"part","id":"grip","label":"Blaster grip","shape":{"kind":"box","size":[0.18,0.3,0.18],"bevel":0.03},"transform":{"position":[0,-0.42,0]},"color":"#343A42","material":"metal"}
+{"op":"end"}
+```
+
+A front-facing, detailed robot figure with the red, blue, and silver armor, truck-window chest, paired wheels, helmet, and ion blaster.

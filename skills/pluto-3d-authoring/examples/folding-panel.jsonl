@@ -1,0 +1,10 @@
+{"program":true,"label":"Hinged panel example","duration":3,"steps":[{"label":"Flat"},{"label":"Raised"}],"playback":{"hold_start":1,"hold_end":1,"return_seconds":3},"labels":[{"text":"Hinge","part":"pin"}]}
+{"op":"group","id":"root"}
+{"op":"part","id":"base","label":"Base","detail":"Stationary mounting rail","shape":{"kind":"box","size":[1.4,0.2,0.25],"bevel":0.03},"color":"#6B7885","material":"metal"}
+{"op":"hinge","id":"pivot","at":[0,0.15,0],"axis":"x"}
+{"op":"part","id":"panel","label":"Panel","detail":"Panel extends from the hinge in its local forward direction","shape":{"kind":"box","size":[1.2,0.08,1.2],"bevel":0.02},"transform":{"position":[0,0,0.6]},"color":"#3675A8","material":"paint"}
+{"op":"part","id":"ribs","label":"Ribs","detail":"Repeated stiffeners carried with the panel","shape":{"kind":"box","size":[0.06,0.04,1.05]},"transform":{"position":[-0.4,0.06,0.6]},"repeat":{"count":3,"offset":[0.4,0,0]},"color":"#9CA8B2","material":"metal"}
+{"op":"part","id":"pin","label":"Pin","detail":"Axle aligned with the hinge axis","shape":{"kind":"cylinder","radius":0.08,"height":1.35},"transform":{"rotation":[0,0,90]},"color":"#BDC6CC","material":"metal"}
+{"op":"end"}
+{"op":"end"}
+{"op":"move","target":"pivot","start":0,"end":3,"angle":-90}

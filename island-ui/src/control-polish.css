@@ -1,0 +1,52 @@
+/* Shared secondary controls. Material layers stay stable while their tint
+   changes, and selected text keeps the same weight and neutral foreground. */
+.island {
+  --polish-fill:var(--card); --polish-hover:var(--card-hover);
+  --polish-image:none; --polish-rim:inset 0 0 0 1px var(--line);
+}
+.island[data-material="glass"] { --polish-fill:var(--glass-control); --polish-hover:color-mix(in srgb,var(--text) 7%,var(--glass-control)); --polish-image:var(--glass-lens); --polish-rim:var(--glass-lens-shadow); }
+.island[data-material="hyper-glass"] { --polish-fill:var(--hyper-fill); --polish-hover:color-mix(in srgb,var(--text) 7%,var(--hyper-fill)); --polish-image:var(--hyper-bevel); --polish-rim:var(--hyper-rim); }
+
+.island.expanded :is(.opencode-profile-select-trigger,.opencode-profile-back),
+.island.expanded .bar button.pin-toggle,
+.island.expanded[data-material] .dictate-page button.dictate-record {
+  color:var(--text); background-image:var(--polish-image); background-color:var(--polish-fill);
+  box-shadow:var(--polish-rim); filter:none; font-weight:500;
+  transition:background-color 180ms ease,color 180ms ease,border-color 180ms ease;
+}
+.island.expanded :is(.opencode-profile-select-trigger,.opencode-profile-back):is(:hover,:focus-visible,[aria-expanded="true"]):not(:disabled),
+.island.expanded .bar button.pin-toggle:is(:hover,:focus-visible,.pinned),
+.island.expanded[data-material] .dictate-page button.dictate-record:is(:hover,:focus-visible):not(:disabled) {
+  color:var(--text); background-image:var(--polish-image); background-color:var(--polish-hover); filter:none;
+}
+.island.expanded .bar button.pin-toggle.pinned { box-shadow:var(--polish-rim),inset 0 0 0 1px color-mix(in srgb,var(--text) 25%,transparent); }
+.island.expanded[data-material] .dictate-page button.dictate-record.is-recording { color:var(--recording); background-color:color-mix(in srgb,var(--recording) 10%,var(--polish-fill)); }
+.island.expanded[data-material] .dictate-page .dictate-record-split { background:var(--polish-image),var(--polish-fill); box-shadow:var(--polish-rim); border-color:var(--line); }
+.island.expanded[data-material] .dictate-page .dictate-record-split button.dictate-record,
+.island.expanded[data-material] .dictate-page .dictate-record-split button.dictate-record:is(:hover,:focus-visible):not(:disabled) { background-image:none; background-color:transparent; box-shadow:none; color:var(--recording); }
+.island.expanded[data-material] .dictate-page .dictate-record-split button.dictate-cancel { color:var(--text); background-image:none; background-color:transparent; box-shadow:none; }
+.island.expanded[data-material] .dictate-page .dictate-record-split button.dictate-cancel:is(:hover,:focus-visible) { color:var(--text); background-color:color-mix(in srgb,var(--text) 7%,transparent); }
+
+.island.expanded .opencode-profile-select-menu { padding:6px; gap:4px; background:var(--card); border:1px solid var(--line); box-shadow:0 4px 14px #0002; }
+.island.expanded .opencode-profile-select-menu > button[role="option"] { color:var(--text); background:transparent; box-shadow:none; border:0; font-weight:500; transition:background-color 180ms ease,color 180ms ease; }
+.island.expanded .opencode-profile-select-menu > button[role="option"]:is(:hover,:focus-visible,[aria-selected="true"]) { color:var(--text); background:color-mix(in srgb,var(--text) 7%,var(--card)); box-shadow:none; }
+.island.expanded .opencode-profile-select-menu > button > svg { color:var(--muted); }
+.island.expanded .opencode-profile-select-menu > button strong { font-weight:500; }
+.island.expanded[data-material] .agent-profiles-view button.opencode-profile-select-trigger[role="combobox"] { color:var(--text); background-image:var(--polish-image); background-color:var(--polish-fill); box-shadow:var(--polish-rim); font-weight:500; }
+.island.expanded[data-material] .agent-profiles-view button.opencode-profile-select-trigger[role="combobox"]:is(:hover,:focus-visible,[aria-expanded="true"]) { color:var(--text); background-image:var(--polish-image); background-color:var(--polish-hover); }
+.island.expanded .opencode-profile-sections { display:flex; width:fit-content; max-width:100%; gap:3px; padding:3px; border:1px solid var(--line); border-radius:999px; background:var(--bg); }
+.island.expanded .opencode-profile-sections > button { min-height:28px; padding-inline:11px; border-radius:999px; color:var(--text); background:transparent; box-shadow:none; font-weight:500; transition:background-color 180ms ease,color 180ms ease; }
+.island.expanded .opencode-profile-sections > button:is(:hover,:focus-visible,[aria-selected="true"]) { color:var(--text); background:color-mix(in srgb,var(--text) 7%,var(--card)); box-shadow:none; }
+.island.expanded .opencode-profile-sections[data-hyper-track] > button:is(:hover,:focus-visible,[aria-selected="true"]) { background:transparent; }
+
+/* Selection uses its surface and icon cues, without changing text width. */
+.island.settings-open :is(.settings-segments,.settings-lane-tabs,.settings-choice,.appearance-mode-picker) button,
+.island.settings-open :is(.settings-segments,.settings-lane-tabs,.settings-choice,.appearance-mode-picker) button:is(.selected,.active,[aria-pressed="true"],[aria-selected="true"]) { font-weight:500; }
+.island.settings-open button.settings-nav-item,
+.island.settings-open button.settings-nav-item.selected { font-weight:500; }
+
+.island[data-reduced-motion="true"] :is(.opencode-profile-select-trigger,.opencode-profile-back,.opencode-profile-select-menu > button,.opencode-profile-sections > button,.pin-toggle,.dictate-record,.dictate-cancel),
+.island[data-hyper-motion="false"] :is(.opencode-profile-select-trigger,.opencode-profile-back,.opencode-profile-select-menu > button,.opencode-profile-sections > button,.pin-toggle,.dictate-record,.dictate-cancel) { transition:none; }
+@media(prefers-reduced-motion:reduce) {
+  .island.expanded :is(.opencode-profile-select-trigger,.opencode-profile-back,.opencode-profile-select-menu > button,.opencode-profile-sections > button,.pin-toggle,.dictate-record,.dictate-cancel) { transition:none; }
+}

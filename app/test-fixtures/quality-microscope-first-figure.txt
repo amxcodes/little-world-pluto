@@ -1,0 +1,50 @@
+```island-figure
+{"program":true,"label":"Monocular compound microscope","duration":4,"steps":[{"label":"Complete microscope"}],"camera":{"yaw":28,"pitch":12},"labels":[{"text":"Eyepiece","part":"eye_glass"},{"text":"Objective turret","part":"nose_hub"},{"text":"Mechanical stage","part":"stage_top"},{"text":"Coarse focus","part":"focus_coarse"}]}
+{"op":"group","id":"base","transform":{"position":[0,0.2,0]}}
+{"op":"part","id":"foot","label":"Foot","detail":"Broad weighted base","shape":{"kind":"box","size":[2.35,0.34,1.55],"bevel":0.16},"color":"#20272C","material":"paint"}
+{"op":"part","id":"foot_trim","label":"Base trim","detail":"Thin lower metal edge","shape":{"kind":"box","size":[2.08,0.055,1.34],"bevel":0.025},"transform":{"position":[0,-0.19,0]},"color":"#A7ADB0","material":"metal"}
+{"op":"part","id":"foot_badge","label":"Maker badge","detail":"Small front plaque","shape":{"kind":"box","size":[0.46,0.11,0.035],"bevel":0.025},"transform":{"position":[0,-0.02,0.79]},"color":"#B5A16E","material":"metal"}
+{"op":"end"}
+{"op":"group","id":"arm"}
+{"op":"part","id":"arm_casting","label":"Stand arm","detail":"Sculpted rear support","shape":{"kind":"tube","path":[[0,3.9,-0.27],[-0.12,3.55,-0.28],[-0.2,3.05,-0.3],[-0.18,2.45,-0.31],[-0.12,1.75,-0.3],[0,1.05,-0.28],[0.12,0.48,-0.23]],"radius":0.14,"segments":12,"radial_segments":10},"color":"#242B30","material":"paint"}
+{"op":"part","id":"arm_web","label":"Arm web","detail":"Broad reinforcing spine","shape":{"kind":"box","size":[0.27,1.12,0.18],"bevel":0.09},"transform":{"position":[-0.16,2.3,-0.17],"rotation":[0,0,-4]},"color":"#30383D","material":"paint"}
+{"op":"end"}
+{"op":"group","id":"head","transform":{"position":[0,3.86,0.02]}}
+{"op":"part","id":"head_block","label":"Optical head","detail":"Monocular head casting","shape":{"kind":"box","size":[0.64,0.5,0.55],"bevel":0.12},"transform":{"position":[0,0,-0.12]},"color":"#292F34","material":"paint"}
+{"op":"part","id":"head_neck","label":"Head neck","detail":"Joined optical neck","shape":{"kind":"cylinder","radius":0.2,"height":0.42,"segments":24},"transform":{"position":[0,-0.39,-0.12]},"color":"#A7ADB0","material":"metal"}
+{"op":"part","id":"drawtube","label":"Draw tube","detail":"Upright eyepiece barrel","shape":{"kind":"cylinder","radius":0.17,"height":0.7,"bevel":0.025,"segments":24},"transform":{"position":[0,0.49,0.01],"rotation":[-8,0,0]},"color":"#343B40","material":"paint"}
+{"op":"part","id":"eye_rim","label":"Eyepiece rim","detail":"Raised ocular rim","shape":{"kind":"sleeve","radius":0.19,"inner_radius":0.11,"height":0.09,"bevel":0.02,"segments":24},"transform":{"position":[0,0.86,0.06],"rotation":[-8,0,0]},"color":"#A6ADB0","material":"metal"}
+{"op":"part","id":"eye_glass","label":"Eyepiece lens","detail":"Dark ocular glass","shape":{"kind":"cylinder","radius":0.105,"height":0.025,"segments":24},"transform":{"position":[0,0.862,0.06],"rotation":[-8,0,0]},"color":"#456776","material":"glass"}
+{"op":"part","id":"nose_hub","label":"Revolving nosepiece","detail":"Turret above objectives","shape":{"kind":"cylinder","radius":0.27,"height":0.14,"bevel":0.025,"segments":24},"transform":{"position":[0,-0.43,0.1]},"color":"#B6BABD","material":"metal"}
+{"op":"part","id":"turret_face","label":"Turret face","detail":"Circular lower plate","shape":{"kind":"cylinder","radius":0.23,"height":0.06,"segments":24},"transform":{"position":[0,-0.52,0.1]},"color":"#343B40","material":"paint"}
+{"op":"part","id":"obj_short","label":"Scanning objective","detail":"Short objective barrel","shape":{"kind":"cylinder","radius":0.085,"height":0.35,"bevel":0.015,"segments":20},"transform":{"position":[-0.17,-0.72,0.1]},"color":"#B8BDC0","material":"metal"}
+{"op":"part","id":"obj_mid","label":"Low power objective","detail":"Medium objective barrel","shape":{"kind":"cylinder","radius":0.095,"height":0.47,"bevel":0.015,"segments":20},"transform":{"position":[0,-0.77,0.1]},"color":"#AEB4B7","material":"metal"}
+{"op":"part","id":"obj_long","label":"High power objective","detail":"Long objective barrel","shape":{"kind":"cylinder","radius":0.105,"height":0.58,"bevel":0.015,"segments":20},"transform":{"position":[0.17,-0.82,0.1]},"color":"#B8BDC0","material":"metal"}
+{"op":"part","id":"obj_dark_a","label":"Objective band","detail":"Black barrel band","shape":{"kind":"cylinder","radius":0.108,"height":0.06,"segments":20},"transform":{"position":[-0.17,-0.86,0.1]},"color":"#262C30","material":"paint"}
+{"op":"part","id":"obj_dark_b","label":"Objective band","detail":"Black barrel band","shape":{"kind":"cylinder","radius":0.112,"height":0.06,"segments":20},"transform":{"position":[0,-0.98,0.1]},"color":"#262C30","material":"paint"}
+{"op":"part","id":"obj_dark_c","label":"Objective band","detail":"Black barrel band","shape":{"kind":"cylinder","radius":0.12,"height":0.06,"segments":20},"transform":{"position":[0.17,-1.08,0.1]},"color":"#262C30","material":"paint"}
+{"op":"end"}
+{"op":"group","id":"stage","transform":{"position":[0,1.82,0.03]}}
+{"op":"part","id":"stage_carrier","label":"Stage carrier","detail":"Rises from stand arm","shape":{"kind":"box","size":[0.7,0.22,0.42],"bevel":0.07},"transform":{"position":[-0.12,0,-0.23]},"color":"#30373C","material":"paint"}
+{"op":"part","id":"stage_top","label":"Mechanical stage","detail":"Flat specimen platform","shape":{"kind":"box","size":[1.62,0.16,1.12],"bevel":0.06},"transform":{"position":[0,0.12,0.05]},"color":"#272E33","material":"paint"}
+{"op":"part","id":"stage_insert","label":"Stage aperture","detail":"Inset circular opening","shape":{"kind":"cylinder","radius":0.19,"height":0.025,"segments":24},"transform":{"position":[0,0.215,0.04]},"color":"#12191D","material":"metal"}
+{"op":"part","id":"stage_clip","label":"Slide clips","detail":"Spring steel slide retainers","shape":{"kind":"box","size":[0.38,0.045,0.09],"bevel":0.015},"transform":{"position":[0,0.23,0.39]},"repeat":{"count":2,"offset":[0,0,-0.7]},"color":"#B9BEC1","material":"metal"}
+{"op":"part","id":"stage_edge","label":"Stage edge","detail":"Bright front edge strip","shape":{"kind":"box","size":[1.18,0.035,0.035],"bevel":0.012},"transform":{"position":[0,0.2,0.62]},"color":"#92999D","material":"metal"}
+{"op":"end"}
+{"op":"group","id":"focus"}
+{"op":"part","id":"focus_axle","label":"Focus shaft","detail":"Cross shaft through arm","shape":{"kind":"cylinder","radius":0.12,"height":0.78,"segments":20},"transform":{"position":[-0.2,2.45,-0.24],"rotation":[0,0,90]},"color":"#A5ABAE","material":"metal"}
+{"op":"part","id":"focus_coarse","label":"Coarse focus","detail":"Large knurled focus wheel","shape":{"kind":"cylinder","radius":0.39,"height":0.16,"bevel":0.035,"segments":32},"transform":{"position":[0.25,2.45,-0.24],"rotation":[0,0,90]},"color":"#272E33","material":"paint"}
+{"op":"part","id":"coarse_cap","label":"Focus hub","detail":"Bright central hub","shape":{"kind":"cylinder","radius":0.14,"height":0.18,"segments":24},"transform":{"position":[0.36,2.45,-0.24],"rotation":[0,0,90]},"color":"#AEB4B7","material":"metal"}
+{"op":"part","id":"coarse_ridges","label":"Wheel grip","detail":"Raised radial grip ribs","shape":{"kind":"box","size":[0.07,0.06,0.19],"bevel":0.02},"transform":{"position":[0.25,2.45,-0.24]},"repeat":{"count":12,"offset":[0,0,0]},"color":"#555D62","material":"metal"}
+{"op":"part","id":"fine_focus","label":"Fine focus","detail":"Small fine adjustment wheel","shape":{"kind":"cylinder","radius":0.22,"height":0.1,"bevel":0.025,"segments":28},"transform":{"position":[0.49,2.45,-0.24],"rotation":[0,0,90]},"color":"#B5BABD","material":"metal"}
+{"op":"part","id":"fine_hub","label":"Fine focus hub","detail":"Fine wheel center cap","shape":{"kind":"cylinder","radius":0.08,"height":0.11,"segments":20},"transform":{"position":[0.56,2.45,-0.24],"rotation":[0,0,90]},"color":"#31383D","material":"paint"}
+{"op":"end"}
+{"op":"group","id":"illumination","transform":{"position":[0,0.54,0.04]}}
+{"op":"part","id":"illuminator","label":"Illuminator housing","detail":"Built-in lamp beneath stage","shape":{"kind":"cylinder","radius":0.34,"height":0.3,"bevel":0.04,"segments":24},"transform":{"position":[0,0.2,0]},"color":"#30373C","material":"paint"}
+{"op":"part","id":"lamp_rim","label":"Lamp bezel","detail":"Metal ring around lamp","shape":{"kind":"sleeve","radius":0.28,"inner_radius":0.2,"height":0.06,"bevel":0.015,"segments":24},"transform":{"position":[0,0.37,0]},"color":"#AAB0B3","material":"metal"}
+{"op":"part","id":"lamp_lens","label":"Condenser lens","detail":"Opal glass illuminator","shape":{"kind":"cylinder","radius":0.195,"height":0.035,"segments":24},"transform":{"position":[0,0.4,0]},"color":"#D8D6C9","material":"glass"}
+{"op":"part","id":"lamp_knob","label":"Lamp control","detail":"Small front brightness knob","shape":{"kind":"cylinder","radius":0.085,"height":0.13,"segments":20},"transform":{"position":[0.42,0.17,0.22],"rotation":[90,0,0]},"color":"#A7ADB0","material":"metal"}
+{"op":"end"}
+```
+
+A monocular compound microscope with a curved support arm, three objective lenses, mechanical stage, focus controls, and built-in illumination.

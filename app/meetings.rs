@@ -619,7 +619,7 @@ impl Meetings {
                 config,
                 files: Vec::new(),
                 system_prompt: system_prompt.into(),
-                hybrid_whiteboard: false,
+                handoff: None,
             })
             .is_err()
         {

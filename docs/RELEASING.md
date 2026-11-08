@@ -1,6 +1,6 @@
 # Windows releases
 
-Pluto releases use a signed per-user EXE installer and a portable ZIP bundle. The wake-word feature links Sherpa ONNX as shared runtime libraries to avoid an MSVC static CRT conflict, so each release ships the signed runtime DLLs next to `Pluto.exe`. The GitHub workflow builds from a version-matched `vX.Y.Z` tag, checks locked Rust and npm dependencies, verifies the committed UI bundle and Windows version resources, signs the executable, runtime DLLs, installer, and uninstaller, runs Microsoft Defender against the release files, then publishes SHA-256 checksums, a build manifest, SBOMs, and GitHub artifact attestations. Publishing stops if any gate fails.
+Pluto releases use a signed per-user EXE installer and portable ZIP. Wake recognition uses Windows speech APIs, with no downloadable wake model or separate runtime. The release workflow checks locked dependencies, UI generation and version resources, signs Pluto and its installer/uninstaller, and verifies release artifacts before publishing. Local release preparation does not require publishing or pushing a tag.
 
 ## One-time GitHub setup
 
@@ -17,13 +17,19 @@ If signing is not configured, the release intentionally fails. This self-signed 
 
 ## Publishing
 
+For a local release without any external timestamp request, use
+`scripts/phase1/package_windows_installer.ps1 -LocalOffline` with the existing
+signing certificate thumbprint. This signs and verifies the installer and portable app locally; signatures have no timestamp. The normal publishing path still
+requires verified HTTPS timestamps. Keep signing tools outside `target` before
+clearing generated build outputs.
+
 Update `Cargo.toml` to a three-part version, rebuild and commit `island-ui/dist/index.html`, and push the matching protected tag (for example `v0.1.2`). The workflow rejects a mismatched tag or source changes during build. After approval and verification, it publishes:
 
 - `Pluto-Setup-vX.Y.Z-windows-x64.exe` — signed per-user installer and signed uninstaller.
-- `Pluto-vX.Y.Z-windows-x64.zip` — portable bundle with signed executable and native runtime DLLs.
+- `Pluto-vX.Y.Z-windows-x64.zip` — portable core with signed executable.
 - `SHA256SUMS.txt`, `release-manifest.json`, and Rust/UI CycloneDX SBOMs.
 
-The portable ZIP must be extracted as a whole; `Pluto.exe` needs the included DLLs beside it. Third-party notices and license texts are included with the installer and portable bundle.
+Extract the portable ZIP before running Pluto.exe. Windows supplies wake recognition. Third-party notices are included in the installer and portable bundle.
 
 The installer upgrades the per-user install under `%LOCALAPPDATA%\Programs\Pluto`. App data and saved meetings under `%LOCALAPPDATA%\Pluto` are not removed. Verify a downloaded file with `Get-FileHash -Algorithm SHA256`, Windows' signature details, and GitHub provenance:
 

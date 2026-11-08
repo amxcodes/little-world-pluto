@@ -1,0 +1,340 @@
+/* Hyper Glass is opt-in. No selector below changes Standard or Liquid Glass. */
+.appearance-mode-picker { display:flex; flex-wrap:wrap; gap:6px; }
+.appearance-mode-picker > button { min-height:30px; padding:5px 10px; border:1px solid var(--line); border-radius:999px; color:var(--muted); background:var(--card-hover); font-size:11px; }
+.appearance-mode-picker > button.selected { color:var(--accent-ink); background:var(--accent-gradient); border-color:transparent; }
+.island[data-material="glass"] .appearance-mode-picker > button { background:var(--glass-lens),var(--glass-control); color:var(--text); box-shadow:var(--glass-lens-shadow); }
+.island[data-material="glass"] .appearance-mode-picker > button.selected { background:var(--glass-lens),var(--accent-gradient); color:var(--accent-ink); }
+
+.island[data-material="hyper-glass"] {
+  isolation:isolate; color-scheme:dark;
+  --bg:#000; --text:#f5f7fa; --muted:#b5bac5; --line:#c5d9f12b;
+  --card:#15171c; --card-hover:#272c35;
+  --hyper-fill:rgb(52 55 64 / .48);
+  --hyper-panel-tint:rgb(30 32 39 / .62);
+  --hyper-toggle-track:rgb(120 120 128 / .44);
+  --hyper-wash:none;
+  --hyper-bevel:linear-gradient(160deg,#ffffff16,transparent 45%,#ffffff04 80%);
+  --hyper-rim:inset 0 .7px 0 #ffffff60,inset 0 -.5px 0 #ffffff1c,0 2px 5px #00000029;
+  --hyper-panel-shadow:inset 0 .5px 0 #ffffff14,0 2px 6px #00000012;
+  --hyper-ink:var(--text);
+  /* The native shell owns the curved contour and its backing. Painting the
+     entire rectangular WebView here exposes a mismatched edge around it. */
+  background:transparent;
+}
+.island.light[data-material="hyper-glass"] {
+  color-scheme:light; --bg:#f6f6f7; --text:#20242c; --muted:#59616e; --line:#34465d22;
+  --card:#ffffff; --card-hover:#e8ecf2;
+  --hyper-fill:rgb(255 255 255 / .66); --hyper-panel-tint:rgb(255 255 255 / .62); --hyper-toggle-track:rgb(120 120 128 / .26);
+  --hyper-wash:none;
+  --hyper-bevel:linear-gradient(160deg,#ffffffa6,transparent 55%,#6582a009);
+  --hyper-rim:inset 0 1px 0 #fff,inset 0 -.5px 0 #435b7720,0 2px 5px #203f5d12;
+  --hyper-panel-shadow:inset 0 1px 0 #ffffffed,inset 0 -1px 0 #4457700a,0 2px 6px #203f5d07;
+}
+
+/* All actions start from one material; shapes and hit targets stay component-owned. */
+.island[data-material="hyper-glass"] :is(button,.meeting-export-menu > summary) {
+  color:var(--hyper-ink); background:var(--hyper-bevel),var(--hyper-fill);
+  border-color:var(--line); box-shadow:var(--hyper-rim);
+  transition:scale 110ms cubic-bezier(.2,0,0,1),translate 180ms cubic-bezier(.2,.8,.2,1),background-color 150ms ease,color 150ms ease,border-color 150ms ease;
+}
+.island[data-material="hyper-glass"] button:hover:not(:disabled) { background:var(--hyper-bevel),color-mix(in srgb,var(--accent) 9%,var(--hyper-fill)); color:var(--text); }
+.island[data-material="hyper-glass"] button:active:not(:disabled) { transform:none; }
+/* Physical presses move the entire control coherently; layout slots stay put. */
+.island[data-material="hyper-glass"] [data-hyper-physical] { transform-origin:center; transition-property:color,background-color,border-color; will-change:transform; }
+.island[data-material="hyper-glass"] :is(button,input,textarea,select,summary):focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+.island[data-material="hyper-glass"] button:disabled { opacity:.5; cursor:default; }
+.island[data-material="hyper-glass"] button:disabled:hover { background:var(--hyper-bevel),var(--hyper-fill); transform:none; scale:1; }
+
+/* A quiet reading plane provides depth without filtering every nested control. */
+.island[data-material="hyper-glass"] :is(.home-primary,.home-strip,.shelf-panel,.settings-card,.settings-disclosure,.control-tile,.battery-tile,.clip-card,.media-session-panel,.convert-source,.convert-inspector,.convert-options,.agent-session-card,.agent-result,.agent-approval,.agent-question,.calendar-popover,.device-menu,.voice-answer-text,.agent-composer,.agent-voice-composer,.opencode-composer,.power-section,.wx-current,.wx-daily,.meeting-session-detail,.meetings-page .panel) {
+  background:var(--hyper-wash),var(--hyper-panel-tint); border-color:transparent; box-shadow:var(--hyper-panel-shadow);
+}
+/* Frost is on a sibling layer, not the host, so nested lenses can see the
+   backdrop. This is the reference's glass-host arrangement. */
+.island[data-material="hyper-glass"] [data-hyper-host] { isolation:isolate; background:transparent; }
+.island[data-material="hyper-glass"] [data-hyper-host]::before {
+  content:''; position:absolute; inset:0; z-index:-1; border-radius:inherit; pointer-events:none;
+  background:var(--hyper-wash),var(--hyper-panel-tint);
+  /* The persistent backdrop is already soft; filtering it again per card
+     adds a large compositor pass with no visible information to soften. */
+}
+.island[data-material="hyper-glass"] :is(.media-session-panel,.device-menu,.calendar-popover,.meeting-export-menu > div)::before { backdrop-filter:blur(var(--hyper-frost,8px)) saturate(1.4); -webkit-backdrop-filter:blur(var(--hyper-frost,8px)) saturate(1.4); }
+.island[data-material="hyper-glass"] :is(.agent-result-scroll,.agent-answer,.voice-answer-text,.agent-figure,.agent-procedural-scene) { backdrop-filter:none; }
+.island[data-material="hyper-glass"] :is(.clipboard-search,.wx-search,.agent-search,.command-form,.home-launcher,.settings-library-search,.new-folder,.note-quick-reminder,.settings-output-location) {
+  background:var(--hyper-wash),var(--card); border-color:var(--line); box-shadow:inset 0 1px 3px #0000000a,inset 0 -1px 0 #ffffff15;
+}
+.island[data-material="hyper-glass"] :where(input:not([type="range"]):not([type="checkbox"]):not([type="radio"]),textarea,select) {
+  color:var(--text); border-color:var(--line); background:var(--card); box-shadow:inset 0 1px 2px #00000009;
+}
+.island[data-material="hyper-glass"] :is(.agent-composer,.opencode-composer,.clipboard-search,.wx-search,.agent-search,.command-form,.home-launcher,.settings-library-search,.new-folder,.note-quick-reminder) :is(input,textarea) { background:transparent; box-shadow:none; }
+.island[data-material="hyper-glass"] :is(input,textarea)::placeholder { color:var(--muted); opacity:1; }
+.island[data-material="hyper-glass"] :is(input[type="checkbox"],input[type="radio"]) { accent-color:var(--accent); }
+
+/* Navigation is one moving lens above a shallow track, not a stack of pills. */
+.island[data-material="hyper-glass"] :is(.bar,.settings-sidebar,.agent-toolbar,.signature-toolbar,.agent-tabs,.settings-lane-tabs,.agent-settings-browser-head) { border-color:transparent; background:transparent; box-shadow:none; }
+.island[data-material="hyper-glass"] :is(.bar,.settings-sidebar,.agent-tabs) { border-bottom:0; }
+.island[data-material="hyper-glass"] .bar { padding-block:6px 3px; }
+.island[data-material="hyper-glass"] .settings-sidebar { padding-top:6px; }
+.island[data-material="hyper-glass"] :is(.settings-segments,.settings-lane-tabs,.agent-tabs,.note-mode-switch,.meeting-view-tabs,.meeting-source-options,.signature-format) {
+  background:color-mix(in srgb,var(--text) 4%,transparent); border-color:var(--line); box-shadow:inset 0 1px 2px #00000012; border-radius:999px;
+}
+.island[data-material="hyper-glass"] [data-hyper-track] { position:relative; isolation:isolate; overflow:visible; }
+.island[data-material="hyper-glass"] [data-hyper-track] > button { position:relative; z-index:1; border-radius:999px; }
+.island[data-material="hyper-glass"] :is(.bar .tab,.settings-segments > button,.settings-lane-tabs > button,.agent-tabs > button,.note-mode-switch > button,.meeting-view-tabs > button,.meeting-source-options > button,.signature-format > button) {
+  background:transparent; box-shadow:none; border-color:transparent;
+}
+.island[data-material="hyper-glass"] :is(.bar .tab,.settings-segments > button,.settings-lane-tabs > button,.agent-tabs > button,.note-mode-switch > button,.meeting-view-tabs > button,.meeting-source-options > button,.signature-format > button):hover:not(:disabled) { background:transparent; box-shadow:none; }
+.island[data-material="hyper-glass"] :is(.tab-indicator,.hyper-selection-lens,.hyper-raised-lens) {
+  position:absolute; z-index:0; left:0; top:0; pointer-events:none; display:block;
+  background:var(--hyper-bevel),color-mix(in srgb,var(--accent) 13%,var(--hyper-fill));
+  border:0; box-shadow:var(--hyper-rim); transform-origin:0 0;
+}
+.island[data-material="hyper-glass"] :is(.hyper-selection-lens,.hyper-raised-lens)[hidden] { display:none; }
+.island[data-material="hyper-glass"] .hyper-raised-lens {
+  opacity:0; bottom:auto; transform-origin:center; transition:none;
+  background:color-mix(in srgb,var(--hyper-fill) 35%,transparent);
+  border-color:color-mix(in srgb,var(--text) 24%,transparent);
+  box-shadow:inset 0 1px 0 #ffffff70,inset 0 -1px 0 #ffffff25,0 4px 12px #00000024;
+}
+.island[data-material="hyper-glass"] .bar > nav { min-height:42px; padding:4px 6px; margin:-4px -6px; overflow-x:auto; }
+/* Horizontal navigation must scroll. Outer lens shadows hit that scrollport
+   edge in light mode, so use an entirely inset rim for both glass materials. */
+.island.light:is([data-material="glass"],[data-material="hyper-glass"]) .bar :is(.tab-indicator,.hyper-selection-lens,.hyper-raised-lens) { box-shadow:inset 0 1px 0 #fff,inset 0 -1px 0 #435b7720; }
+.island[data-material="hyper-glass"] .bar .tab:is(.active,:hover,:active) { color:var(--text); background:transparent; box-shadow:none; scale:1; }
+.island[data-material="hyper-glass"] .agent-tabs { padding:5px; max-height:none; min-height:40px; }
+.island[data-material="hyper-glass"] .bar .icon-button { color:var(--text); }
+.island[data-material="hyper-glass"] .actions[aria-label="Quick actions"] { padding:4px; gap:7px; background:transparent; border:0; overflow:visible; }
+.island[data-material="hyper-glass"] .actions[aria-label="Quick actions"] > button { border:1px solid var(--line); border-radius:12px; gap:6px; padding:5px 7px; }
+.island[data-material="hyper-glass"] .actions[aria-label="Quick actions"] > button > svg { width:24px; height:24px; padding:3px; }
+.island[data-material="hyper-glass"] .power-actions { flex-wrap:wrap; }
+.island[data-material="hyper-glass"] .power-actions > button { flex:1 1 65px; min-width:0; }
+
+/* Explicit semantic states override the neutral material everywhere. */
+.island[data-material="hyper-glass"] :is(button.selected,button.active,button.is-selected,button[aria-pressed="true"],button[aria-selected="true"],button[aria-current="true"],.primary-action,.utility-primary,.subtle-action.primary,.settings-save,.expand-save,.calendar-save,.agent-onboarding-continue,.agent-voice-record,.dictate-record:not(.is-recording),.meeting-start-button,.meeting-ai-send,.convert-primary,.agent-submit:not(:disabled),.agent-approval-actions .allow,.agent-library-save,.wx-search > button,.meeting-manager-actions .primary) {
+  color:var(--accent-ink); background:var(--hyper-bevel),var(--accent-gradient); border-color:transparent; box-shadow:var(--hyper-rim);
+}
+.island[data-material="hyper-glass"] [data-hyper-track] > button:is(.selected,.active,.is-selected,[aria-selected="true"],[aria-pressed="true"],[aria-current="page"]) { background:transparent; color:var(--text); box-shadow:none; border-color:transparent; }
+.island[data-material="hyper-glass"] :is(.danger,.destructive,.is-armed,.agent-approval-actions .deny,.agent-stop,.reminder-pill.due,.meeting-pill.is-stop,.dictate-record.is-recording) { color:var(--recording); }
+.island[data-material="hyper-glass"] .agent-approval-actions .allow-persistent { border-color:var(--warning); }
+.island[data-material="hyper-glass"] .settings-nav-item.selected { color:var(--accent); background:var(--hyper-bevel),var(--hyper-fill); border-color:color-mix(in srgb,var(--accent) 40%,transparent); }
+.island[data-material="hyper-glass"] .settings-nav-item.selected svg { color:inherit; }
+.island[data-material="hyper-glass"] :is(.control-tile,.battery-tile) strong { color:var(--text); }
+.island[data-material="hyper-glass"] .control-tile.control-active .control-icon { color:var(--accent); }
+
+/* Toggles have a glass knob with stable hit geometry and bounded travel. */
+.island[data-material="hyper-glass"] .settings-switch {
+  width:37px; height:21px; min-height:21px; padding:2px; border:0; border-radius:999px;
+  position:relative; isolation:isolate; background:transparent; box-shadow:none; --hyper-lift:0; --hyper-knob-x:10.5px;
+}
+.island[data-material="hyper-glass"] .settings-switch:is(.on,[aria-checked="true"]) { --hyper-toggle-track:var(--accent-a); --hyper-knob-x:26.5px; background:transparent; }
+.island[data-material="hyper-glass"] .settings-switch::before {
+  content:''; position:absolute; inset:0; border-radius:inherit; background:var(--hyper-toggle-track); pointer-events:none;
+  mask-image:linear-gradient(90deg,#000 calc(var(--hyper-knob-x) - 14px),rgb(0 0 0 / calc(1 - var(--hyper-lift))) calc(var(--hyper-knob-x) - 7px),rgb(0 0 0 / calc(1 - var(--hyper-lift))) calc(var(--hyper-knob-x) + 7px),#000 calc(var(--hyper-knob-x) + 14px));
+}
+.island[data-material="hyper-glass"] .settings-switch i {
+  position:relative; isolation:isolate; background:color-mix(in srgb,#f8fbff calc((1 - var(--hyper-lift)) * 100%),transparent);
+  box-shadow:inset 0 .6px 0 #fff,inset 0 -.5px 0 #ffffff60,0 2px 5px #0003; transition:transform 210ms cubic-bezier(.2,.8,.2,1);
+}
+.island[data-material="hyper-glass"] .settings-switch i::after {
+  content:''; position:absolute; inset:0; z-index:-1; border-radius:inherit; background:var(--hyper-toggle-track);
+  background:linear-gradient(0deg,transparent 22%,var(--hyper-toggle-track) 22%,var(--hyper-toggle-track) 78%,transparent 78%);
+  opacity:var(--hyper-lift); pointer-events:none;
+}
+.island[data-material="hyper-glass"] .settings-switch i[data-hyper-physical] { transition:none; }
+.island[data-material="hyper-glass"] .settings-switch.on i { transform:translateX(16px); }
+.island[data-material="hyper-glass"] .settings-switch[data-hyper-held] { scale:1; }
+.island[data-material="hyper-glass"] .convert-switch-row { background:transparent; box-shadow:none; }
+.island[data-material="hyper-glass"] .convert-switch-row > i { background:var(--card-hover); box-shadow:inset 0 1px 2px #0003; }
+.island[data-material="hyper-glass"] .convert-switch-row[aria-checked="true"] > i { background:var(--accent-gradient); }
+.island[data-material="hyper-glass"] .convert-switch-row > i > b { background:var(--hyper-bevel),#f8fbff; box-shadow:var(--hyper-rim); }
+.island[data-material="hyper-glass"] .convert-switch-row { --hyper-lift:0; --hyper-knob-x:8.5px; }
+.island[data-material="hyper-glass"] .convert-switch-row[aria-checked="true"] { --hyper-toggle-track:var(--accent-a); --hyper-knob-x:21.5px; }
+.island[data-material="hyper-glass"] .convert-switch-row > i { position:relative; isolation:isolate; border:0; background:transparent; box-shadow:none; }
+.island[data-material="hyper-glass"] .convert-switch-row[aria-checked="true"] > i { background:transparent; }
+.island[data-material="hyper-glass"] .convert-switch-row > i::before {
+  content:''; position:absolute; inset:0; border-radius:inherit; background:var(--hyper-toggle-track); pointer-events:none;
+  mask-image:linear-gradient(90deg,#000 calc(var(--hyper-knob-x) - 12px),rgb(0 0 0 / calc(1 - var(--hyper-lift))) calc(var(--hyper-knob-x) - 6px),rgb(0 0 0 / calc(1 - var(--hyper-lift))) calc(var(--hyper-knob-x) + 6px),#000 calc(var(--hyper-knob-x) + 12px));
+}
+.island[data-material="hyper-glass"] .convert-switch-row > i > b { position:relative; isolation:isolate; background:color-mix(in srgb,#f8fbff calc((1 - var(--hyper-lift)) * 100%),transparent); }
+.island[data-material="hyper-glass"] .convert-switch-row > i > b::after { content:''; position:absolute; inset:0; z-index:-1; border-radius:inherit; background:linear-gradient(0deg,transparent 22%,var(--hyper-toggle-track) 22%,var(--hyper-toggle-track) 78%,transparent 78%); opacity:var(--hyper-lift); pointer-events:none; }
+.island[data-material="hyper-glass"] .convert-switch-row > i > b[data-hyper-physical] { transition:none; }
+
+/* Range semantics stay native. Only the track/divider optics change. */
+.island[data-material="hyper-glass"] .split-range-face { top:var(--split-edge-inset); bottom:var(--split-edge-inset); border-radius:calc(12px - var(--split-edge-inset) * .6); background:var(--hyper-bevel),var(--hyper-fill); box-shadow:var(--hyper-rim); transition:top 260ms cubic-bezier(.2,0,0,1),bottom 260ms cubic-bezier(.2,0,0,1),border-radius 260ms ease; }
+.island[data-material="hyper-glass"] .split-range[data-hyper-held] .split-range-face { transition:none; }
+.island[data-material="hyper-glass"] :is(.split-range-filled,.split-range-remaining) { top:1px; bottom:1px; }
+.island[data-material="hyper-glass"] .split-range-filled { background:linear-gradient(120deg,color-mix(in srgb,var(--accent-a) 40%,#f6faff),var(--accent-b)); color:var(--accent-ink); }
+.island[data-material="hyper-glass"] .split-range-remaining { background:transparent; color:var(--muted); }
+.island[data-material="hyper-glass"] .split-range-divider { top:5px; bottom:5px; background:var(--hyper-bevel),#f5f9ff; box-shadow:0 0 0 1px #0002,0 1px 4px #0003; }
+.island[data-material="hyper-glass"] input[type="range"]:not(.split-range-input) { accent-color:var(--accent); }
+.island[data-material="hyper-glass"] input[type="range"]:not(.split-range-input)::-webkit-slider-thumb { box-shadow:inset 0 1px 0 #fff,0 1px 3px #0003; }
+.island[data-material="hyper-glass"] .split-range[data-range-pointer] { outline:none; }
+.island[data-material="hyper-glass"] .split-range[data-hyper-held] .split-range-divider { backdrop-filter:blur(1px) saturate(1.4); -webkit-backdrop-filter:blur(1px) saturate(1.4); background:#f5f9ffdb; }
+
+/* Lists keep clear hierarchy; disclosure headings don't acquire nested lenses. */
+.island[data-material="hyper-glass"] :is(.agent-option-row,.agent-library-tile,.agent-session-main,.command-results > button,.settings-disclosure-trigger,.shelf-file,.strip-heading,.recent-clip,.meeting-session,.media-session-option,.ask-session-choice) { background:transparent; box-shadow:none; }
+.island[data-material="hyper-glass"] :is(.agent-option-row,.agent-library-tile,.agent-session-main,.command-results > button,.settings-disclosure-trigger,.meeting-session):hover:not(:disabled) { background:color-mix(in srgb,var(--accent) 7%,var(--card)); }
+.island[data-material="hyper-glass"] :is(.choice-row.is-selected,.choice-row[aria-current="true"],.agent-option-browser-list [aria-selected="true"],.meeting-session.is-selected) { background:var(--hyper-bevel),color-mix(in srgb,var(--accent) 18%,var(--card)); color:var(--text); box-shadow:var(--hyper-rim); }
+/* These are rows in one shared pane, not adjoining raised button cards. */
+.island[data-material="hyper-glass"] :is(.command-results,.agent-option-browser-list) { display:flex; flex-direction:column; gap:6px; padding:4px 8px 6px 4px; }
+.island[data-material="hyper-glass"] :is(.command-results,.agent-option-browser-list) > button { flex:none; min-height:48px; padding:8px 10px; color:var(--text); background:transparent; border:1px solid transparent; box-shadow:none; }
+.island[data-material="hyper-glass"] :is(.command-results,.agent-option-browser-list) > button:is(:hover,.is-selected,.is-cursor,[aria-selected="true"]) { color:var(--text); background:color-mix(in srgb,var(--accent) 12%,var(--card)); border-color:transparent; box-shadow:none; }
+.island[data-material="hyper-glass"] :is(.command-results,.agent-option-browser-list) > button strong { color:inherit; }
+.island[data-material="hyper-glass"] :is(.command-results,.agent-option-browser-list) > button small { color:var(--muted); }
+.island[data-material="hyper-glass"] :is(.agent-settings.is-detail > .settings-card,.agent-settings.is-detail > .settings-card:hover,.agent-settings.is-detail > .agent-library-card,.agent-settings.is-detail > .agent-system-prompt-card) { background:transparent; border:0; box-shadow:none; backdrop-filter:none; }
+.island[data-material="hyper-glass"] .agent-settings.is-detail > .settings-card > .settings-card-heading { display:none; }
+.island[data-material="hyper-glass"] .settings-disclosure-trigger { border-radius:0; }
+.island[data-material="hyper-glass"] :is(.media-session-panel,.device-menu,.calendar-popover,.meeting-export-menu > div) { background:transparent; box-shadow:var(--hyper-rim),0 8px 22px #00000020; transform-origin:top center; }
+.island[data-material="hyper-glass"] .agent-settings.is-detail > .settings-card[data-hyper-host]::before { display:none; }
+.island[data-material="hyper-glass"] .meeting-export-menu > div button { color:var(--text); }
+.island[data-material="hyper-glass"] .dictate-record-split { background:var(--hyper-bevel),color-mix(in srgb,var(--recording) 13%,var(--card)); box-shadow:var(--hyper-rim); }
+.island[data-material="hyper-glass"] .dictate-record-split button { background:transparent; box-shadow:none; color:var(--recording); }
+.island[data-material="hyper-glass"] .expand-save { border-radius:999px; }
+.island[data-material="hyper-glass"].settings-open .settings-workspace:not(.is-agent-detail) { grid-template-columns:46px minmax(0,1fr); gap:12px; }
+.island[data-material="hyper-glass"].settings-open .settings-sidebar { padding:6px; border-right:0; }
+.island[data-material="hyper-glass"].settings-open .settings-content { padding-top:8px; }
+.island[data-material="hyper-glass"] .agent-settings-browser-head { min-height:46px; padding:6px; }
+.island[data-material="hyper-glass"] .volume-range .split-range-face strong { font-family:inherit; font-size:12px; font-weight:550; line-height:1.2; letter-spacing:0; }
+.island[data-material="hyper-glass"] button.volume-mute,
+.island[data-material="hyper-glass"] button.volume-mute:is(:hover,:active,[aria-pressed="true"]) { color:var(--text); background:transparent; box-shadow:none; }
+.island[data-material="hyper-glass"] .settings-speech-footer { background:var(--bg); }
+.island[data-material="hyper-glass"] :is(.settings-accent-choice .accent-swatch,.volume-mute,.home-launcher > button) { background:transparent; box-shadow:none; }
+.island[data-material="hyper-glass"] .actions button > svg,
+.island[data-material="hyper-glass"] .actions button:is(:hover,:focus-visible,:active) > svg { background:transparent; color:inherit; transform:none; }
+.island[data-material="hyper-glass"] .actions[aria-label="Quick actions"] > button:is(:hover,:focus-visible,:active):not(:disabled) > svg { background:transparent; color:inherit; transform:none; }
+
+/* Like the reference's .lg-glass: filter only the backdrop, never an overlay
+   which samples the button's own icon/text. Positioning never changes on press. */
+.island[data-material="hyper-glass"] [data-hyper-anchor] { position:relative; }
+.island[data-material="hyper-glass"] [data-hyper-surface] { isolation:isolate; }
+.island[data-material="hyper-glass"] [data-hyper-optic] { backdrop-filter:var(--hyper-optic-filter) blur(calc(var(--hyper-frost,8px) * .15)) saturate(1.4); -webkit-backdrop-filter:var(--hyper-optic-filter) blur(calc(var(--hyper-frost,8px) * .15)) saturate(1.4); }
+.island[data-material="hyper-glass"] [data-hyper-surface]::before {
+  content:''; position:absolute; z-index:-1; inset:0; border-radius:inherit; pointer-events:none;
+  background:radial-gradient(ellipse at var(--hyper-press-x,50%) var(--hyper-press-y,30%),rgb(255 255 255 / calc(.08 + var(--hyper-light,.48) * .1)),transparent 72%);
+  box-shadow:inset 0 0 0 .5px #ffffff35; opacity:0;
+  transform-origin:center; transition:opacity 200ms ease,scale 260ms cubic-bezier(.2,.8,.2,1);
+}
+.island[data-material="hyper-glass"] :is(button,summary)[data-hyper-surface]:is(:hover,:focus-visible):where(:not(:disabled))::before { opacity:.6; }
+.island[data-material="hyper-glass"] :is(button,summary)[data-hyper-surface][data-hyper-held]:where(:not(:disabled))::before { opacity:1; }
+/* Keep the image layers stable so hover interpolates rather than replacing a
+   gradient. The light and icon move independently of the control's hit area. */
+.island[data-material="hyper-glass"] .controls-page button.control-tile,
+.island[data-material="hyper-glass"] .actions[aria-label="Quick actions"] > button { background-image:var(--hyper-bevel); background-color:var(--hyper-fill); color:var(--text); transition:background-color 200ms ease,color 200ms ease,border-color 200ms ease; }
+.island[data-material="hyper-glass"] .controls-page button.control-tile:is(:hover,:focus-visible):where(:not(:disabled)),
+.island[data-material="hyper-glass"] .actions[aria-label="Quick actions"] > button:is(:hover,:focus-visible):where(:not(:disabled)) { background-image:var(--hyper-bevel); background-color:color-mix(in srgb,var(--accent) 9%,var(--hyper-fill)); color:var(--text); }
+.island[data-material="hyper-glass"] .controls-page button.control-tile.control-active { background-image:var(--hyper-bevel); background-color:color-mix(in srgb,var(--accent) 15%,var(--hyper-fill)); color:var(--text); }
+.island[data-material="hyper-glass"] .controls-page button.control-tile .control-icon { color:var(--muted); background:var(--card-hover); transform:none; transition:translate 200ms cubic-bezier(.2,.8,.2,1),scale 200ms cubic-bezier(.2,.8,.2,1),color 200ms ease,background-color 200ms ease; }
+.island[data-material="hyper-glass"] .controls-page button.control-tile:is(:hover,:focus-visible,.control-active):where(:not(:disabled)) .control-icon { color:var(--accent); background:color-mix(in srgb,var(--accent) 12%,var(--card-hover)); transform:none; }
+.island[data-material="hyper-glass"] :is(.control-icon,.actions[aria-label="Quick actions"] > button > svg) { transition:translate 200ms cubic-bezier(.2,.8,.2,1),scale 200ms cubic-bezier(.2,.8,.2,1),color 200ms ease; }
+.island[data-material="hyper-glass"] .control-tile:is(:hover,:focus-visible):where(:not(:disabled)) .control-icon,
+.island[data-material="hyper-glass"] .actions[aria-label="Quick actions"] > button:is(:hover,:focus-visible):where(:not(:disabled)) > svg { translate:0 -1px; scale:1.04; }
+
+/* Segmented tracks own selection. Legacy selected:hover rules must not paint
+   an accent button over the moving lens or change its foreground ink. */
+.island[data-material="hyper-glass"] [data-hyper-track] > button:is(:hover,:focus-visible,:active,.active,.selected,.is-selected,[aria-pressed="true"],[aria-selected="true"]) { color:var(--text); background:transparent; border-color:transparent; box-shadow:none; }
+.island[data-material="hyper-glass"] .meeting-record-panel .meeting-source-picker { width:fit-content; max-width:100%; }
+.island[data-material="hyper-glass"] .meeting-record-panel .meeting-source-options { width:fit-content; max-width:100%; padding:4px; gap:3px; }
+.island[data-material="hyper-glass"] .meeting-record-panel .meeting-source-options > button:is(.is-selected,:hover,:focus-visible,:active) { color:var(--text); background:transparent; border-color:transparent; box-shadow:none; }
+@media(max-width:500px) {
+  .island[data-material="hyper-glass"] .meeting-record-panel .meeting-source-options { flex-wrap:nowrap; }
+  .island[data-material="hyper-glass"] .meeting-record-panel .meeting-source-options > button { gap:4px; padding-inline:6px; font-size:9px; white-space:nowrap; }
+  .island[data-material="hyper-glass"] .meeting-source-options svg { width:12px; height:12px; }
+}
+
+/* Secondary actions share a quiet glass fill through hover, including the old
+   primary-looking empty states. Accent remains available for real status. */
+.island[data-material="hyper-glass"].expanded :is(button.meeting-start-button,button.meeting-pill,button.utility-primary,button.nested-page-back,button.agent-answer-open,button.folder-chip) { color:var(--text); background:var(--hyper-bevel),var(--hyper-fill); border:1px solid var(--line); border-radius:999px; box-shadow:var(--hyper-rim); filter:none; transition:background-color 200ms ease,color 200ms ease,border-color 200ms ease; }
+.island[data-material="hyper-glass"].expanded :is(button.meeting-start-button,button.meeting-pill,button.utility-primary,button.nested-page-back,button.agent-answer-open,button.folder-chip):is(:hover,:focus-visible,:active,.active):not(:disabled) { color:var(--text); background:var(--hyper-bevel),color-mix(in srgb,var(--text) 7%,var(--hyper-fill)); border-color:var(--line); filter:none; }
+.island[data-material="hyper-glass"] .meetings-page button.meeting-start-button { min-height:36px; padding:0 14px; font-size:11px; font-weight:600; background-image:var(--hyper-bevel); background-color:var(--hyper-fill); color:var(--text); }
+.island[data-material="hyper-glass"] .meetings-page button.meeting-start-button:is(:hover,:focus-visible):not(:disabled) { background-color:color-mix(in srgb,var(--text) 7%,var(--hyper-fill)); color:var(--text); transform:none; }
+.island[data-material="hyper-glass"] .meetings-page button.meeting-start-button > svg { color:var(--recording); }
+
+/* Menus and history are flat, opaque reading panes with gently tinted rows. */
+.island[data-material="hyper-glass"] .agent-turn-history { gap:5px; padding:8px; background:var(--card); box-shadow:var(--hyper-panel-shadow); }
+.island[data-material="hyper-glass"] :is(.agent-turn-history,.device-menu,.meeting-session-list,.meeting-export-menu > div) > button { color:var(--text); background:transparent; box-shadow:none; border-color:transparent; transition:background-color 200ms ease,color 200ms ease; }
+.island[data-material="hyper-glass"] :is(.agent-turn-history,.device-menu,.meeting-session-list,.meeting-export-menu > div) > button:is(:hover,:focus-visible,[aria-current="true"],[aria-selected="true"],.is-selected):not(:disabled) { color:var(--text); background:color-mix(in srgb,var(--text) 7%,var(--card)); box-shadow:none; border-color:transparent; }
+.island[data-material="hyper-glass"] .agent-turn-index { color:var(--muted); background:color-mix(in srgb,var(--text) 5%,transparent); }
+.island[data-material="hyper-glass"] :is(.agent-session-actions,.meeting-transcript-actions) button:is(.is-delete-armed,.is-armed),
+.island[data-material="hyper-glass"] :is(.agent-session-actions,.meeting-transcript-actions) button:is(.is-delete-armed,.is-armed):is(:hover,:focus-visible,:active) { color:var(--recording); background:color-mix(in srgb,var(--recording) 10%,var(--card)); box-shadow:none; }
+.island[data-material="hyper-glass"] .home-strip .strip-heading { gap:7px; padding:5px 8px; }
+.island[data-material="hyper-glass"] .home-strip .strip-heading > strong { display:none; }
+
+/* The six-week calendar needs its own content height. On a narrow island the
+   time controls flow below it; the page scrolls rather than compressing rows. */
+.island[data-material="hyper-glass"] .reminder-calendar-page { container-type:inline-size; min-height:0; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin; padding:12px; }
+.island[data-material="hyper-glass"] .reminder-calendar-page > :is(.nested-page-header,.reminder-calendar-layout,.calendar-footer) { flex-shrink:0; }
+.island[data-material="hyper-glass"] .reminder-calendar-layout { flex:none; grid-template-columns:minmax(0,1.4fr) minmax(190px,.9fr); align-items:start; }
+.island[data-material="hyper-glass"] .calendar-month-grid { flex:none; overflow:visible; padding:4px; }
+.island[data-material="hyper-glass"] .calendar-week { flex:none; grid-template-rows:36px; min-height:36px; }
+.island[data-material="hyper-glass"] .calendar-weekdays { grid-template-rows:20px; min-height:20px; }
+.island[data-material="hyper-glass"] .calendar-day { box-shadow:none; }
+.island[data-material="hyper-glass"] .calendar-time-panel { min-height:0; padding:12px; gap:12px; }
+.island[data-material="hyper-glass"] .calendar-time-controls { flex:none; grid-template-rows:auto auto; }
+.island[data-material="hyper-glass"] .calendar-time-wheel { padding:8px; gap:6px; }
+.island[data-material="hyper-glass"] .calendar-time-wheel output { font-size:24px; }
+.island[data-material="hyper-glass"] .calendar-time-wheel button:is(:hover,:focus-visible) { color:var(--text); background:var(--hyper-bevel),var(--hyper-fill); }
+.island[data-material="hyper-glass"] .calendar-grid button.calendar-day { color:var(--text); background:transparent; border:0; box-shadow:none; transition:background-color 180ms ease,color 180ms ease; }
+.island[data-material="hyper-glass"] .calendar-grid button.calendar-day:is(:hover,:focus-visible):not(:disabled),
+.island[data-material="hyper-glass"] .calendar-grid button.calendar-day.selected { color:var(--text); background:color-mix(in srgb,var(--text) 10%,var(--card)); box-shadow:none; }
+.island[data-material="hyper-glass"] .calendar-grid button.calendar-day.is-today { box-shadow:inset 0 0 0 1px var(--line); }
+.island[data-material="hyper-glass"].expanded button.calendar-save,
+.island[data-material="hyper-glass"].expanded button.calendar-save:is(:hover,:focus-visible,:active) { color:var(--text); background-image:var(--hyper-bevel); background-color:var(--hyper-fill); border:1px solid var(--line); box-shadow:var(--hyper-rim); filter:none; }
+.island[data-material="hyper-glass"].expanded button.calendar-save:is(:hover,:focus-visible):not(:disabled) { background-color:color-mix(in srgb,var(--text) 7%,var(--hyper-fill)); }
+.island[data-material="hyper-glass"] .calendar-footer { flex-wrap:wrap; gap:10px; }
+.island[data-material="hyper-glass"] .calendar-selection-summary { flex:1 1 180px; }
+@container (max-width:500px) {
+  .island[data-material="hyper-glass"] .reminder-calendar-layout { grid-template-columns:minmax(0,1fr); }
+  .island[data-material="hyper-glass"] .calendar-time-controls { grid-template-columns:repeat(2,minmax(0,1fr)); grid-template-rows:auto; }
+}
+.island[data-material="hyper-glass"] .settings-switch::before,
+.island[data-material="hyper-glass"] .convert-switch-row > i::before { box-shadow:inset 0 0 0 .5px color-mix(in srgb,var(--text) 18%,transparent),inset 0 1px 2px #00000010; transition:background-color 180ms ease; }
+.island[data-material="hyper-glass"] .settings-switch i { box-shadow:inset 0 .6px 0 #fff,inset 0 -.5px 0 #ffffff60,0 1px 3px #00000026; }
+
+/* Profiles use the workspace's one panel; roster/editor are layout sections. */
+.island[data-material="hyper-glass"] .agent-profiles-view .opencode-agent-manager { padding:0; }
+.island[data-material="hyper-glass"] .agent-profiles-view :is(.opencode-profile-roster,.opencode-profile-editor,.opencode-profile-placeholder,.agent-provider-profile) { border:0; background:transparent; box-shadow:none; }
+.island[data-material="hyper-glass"] .agent-profiles-view .opencode-profile-list { gap:5px; padding:4px; }
+.island[data-material="hyper-glass"] .agent-profiles-view button.opencode-profile-row { color:var(--text); background:transparent; border:0; box-shadow:none; min-height:44px; padding:7px 8px; border-radius:10px; transition:background-color 200ms ease,color 200ms ease; }
+.island[data-material="hyper-glass"] .agent-profiles-view button.opencode-profile-row:is(:hover,:focus-visible,.selected) { color:var(--text); background:color-mix(in srgb,var(--text) 7%,var(--card)); box-shadow:none; }
+.island[data-material="hyper-glass"] .agent-profiles-view .opencode-profile-row-icon { border:0; background:transparent; box-shadow:none; }
+.island[data-material="hyper-glass"] .agent-profiles-view button.opencode-profile-back:is(:hover,:focus-visible) { color:var(--text); background:var(--hyper-bevel),var(--hyper-fill); }
+.island[data-material="hyper-glass"] .agent-profiles-view .opencode-profile-sections { width:fit-content; max-width:100%; display:flex; gap:3px; padding:4px; border-radius:999px; background:color-mix(in srgb,var(--text) 4%,transparent); }
+.island[data-material="hyper-glass"] .opencode-profile-sections > button:is(:hover,:focus-visible,[aria-selected="true"]) { color:var(--text); background:transparent; box-shadow:none; }
+.island[data-material="hyper-glass"] .agent-profiles-view .opencode-profile-actions > button:not(.opencode-profile-delete),
+.island[data-material="hyper-glass"] .agent-profiles-view .opencode-profile-actions > button:not(.opencode-profile-delete):is(:hover,:focus-visible) { color:var(--text); background:var(--hyper-bevel),var(--hyper-fill); box-shadow:var(--hyper-rim); }
+@media(max-width:580px) and (max-height:520px) {
+  .island[data-material="hyper-glass"] .home-grid { grid-template-rows:minmax(95px,.7fr) minmax(150px,1fr); }
+  .island[data-material="hyper-glass"] .actions[aria-label="Quick actions"] { grid-template-rows:repeat(4,minmax(0,1fr)); }
+  .island[data-material="hyper-glass"] .actions[aria-label="Quick actions"] > button { min-height:0; padding:4px 6px; font-size:11px; }
+  .island[data-material="hyper-glass"] .actions[aria-label="Quick actions"] > button > svg { width:20px; height:20px; padding:2px; }
+}
+.island[data-material="hyper-glass"][data-hyper-scrolling] [data-hyper-optic],
+.island[data-material="hyper-glass"][data-hyper-quality="efficient"] [data-hyper-optic] { backdrop-filter:none; -webkit-backdrop-filter:none; }
+.hyper-defs { position:absolute; width:0; height:0; overflow:hidden; pointer-events:none; }
+.island[data-material="hyper-glass"][data-hyper-motion="true"] .page-content.entering { animation:hyper-page-arrive 180ms cubic-bezier(.2,.8,.2,1) both; }
+@keyframes hyper-page-arrive { from { opacity:.55; translate:0 3px; } to { opacity:1; translate:0 0; } }
+.island[data-material="hyper-glass"].compact { background:transparent; }
+.island[data-material="hyper-glass"].compact :is(.compact-content,.compact-context-rail) { background:transparent; box-shadow:none; }
+.island[data-material="hyper-glass"].compact .compact-privacy .compact-mic { color:var(--success); }
+.island[data-material="hyper-glass"].compact .compact-privacy .compact-camera { color:var(--weather-rain); }
+.island[data-material="hyper-glass"][data-hyper-motion="false"] :is(button,.settings-switch i,.page-content,.split-range-divider),
+.island[data-material="hyper-glass"][data-reduced-motion="true"] :is(button,.settings-switch i,.page-content,.split-range-divider) { transition:none; animation:none; scale:1; translate:none; }
+.island[data-material="hyper-glass"]:is([data-hyper-motion="false"],[data-reduced-motion="true"]) :is(.control-icon,.actions[aria-label="Quick actions"] > button > svg) { transition:none; translate:none; scale:1; }
+.island[data-material="hyper-glass"]:is([data-hyper-motion="false"],[data-reduced-motion="true"]) [data-hyper-surface]::before { transition:none; }
+.island[data-material="hyper-glass"]:is([data-hyper-motion="false"],[data-reduced-motion="true"]) :is(.settings-switch,.convert-switch-row > i)::before { transition:none; }
+.island[data-material="hyper-glass"][data-hyper-motion="false"] :is(.settings-page,.settings-content,.settings-disclosure-body,.compact-content,.compact-swap-old,.compact-swap-new,.agent-voice-surface,.agent-voice-stage) { transition:none; animation:none; }
+@media(prefers-reduced-motion:reduce) {
+  .island[data-material="hyper-glass"] :is(button,.settings-switch i,.page-content,.split-range-divider) { transition:none; animation:none; scale:1; translate:none; }
+  .island[data-material="hyper-glass"] :is(.control-icon,.actions[aria-label="Quick actions"] > button > svg) { transition:none; translate:none; scale:1; }
+  .island[data-material="hyper-glass"] [data-hyper-surface]::before { transition:none; }
+  .island[data-material="hyper-glass"] :is(.settings-switch,.convert-switch-row > i)::before { transition:none; }
+}
+@media(prefers-reduced-transparency:reduce),(prefers-contrast:more) {
+  .island[data-material="hyper-glass"] { --hyper-fill:var(--card); --hyper-panel-tint:var(--card); --hyper-wash:none; --hyper-bevel:none; --line:var(--muted); background:transparent; }
+  .island[data-material="hyper-glass"] [data-hyper-optic] { backdrop-filter:none; -webkit-backdrop-filter:none; }
+  .island[data-material="hyper-glass"] [data-hyper-host]::before { backdrop-filter:none; -webkit-backdrop-filter:none; }
+}
+@media(forced-colors:active) {
+  .island[data-material="hyper-glass"] { --bg:Canvas; --card:Canvas; --text:CanvasText; --muted:CanvasText; --hyper-fill:ButtonFace; --hyper-bevel:none; --hyper-wash:none; --line:ButtonText; }
+  .island[data-material="hyper-glass"] :is(button,input,textarea,select) { box-shadow:none; forced-color-adjust:auto; }
+}

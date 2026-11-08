@@ -7,6 +7,7 @@ fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=Cargo.toml");
     println!("cargo:rerun-if-changed=island-ui/dist/index.html");
+    println!("cargo:rerun-if-changed=island-ui/dist/figure-worker.js");
     println!("cargo:rerun-if-env-changed=CARGO_PKG_VERSION");
     println!("cargo:rerun-if-env-changed=PATH");
     println!("cargo:rerun-if-env-changed=ProgramFiles(x86)");

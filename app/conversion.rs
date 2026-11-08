@@ -89,7 +89,7 @@ pub struct Converter {
     cancel: Arc<AtomicBool>,
     engine: Option<PathBuf>,
     next_id: u64,
-    last_version_check: Instant,
+    last_version_check: Option<Instant>,
     reinspect_after_finish: bool,
     pending_additions: Vec<PathBuf>,
 }
@@ -228,7 +228,7 @@ try {
         output
     });
     let start = Instant::now();
-    let mut last_sample = start - Duration::from_secs(1);
+    let mut last_sample = start.checked_sub(Duration::from_secs(1)).unwrap_or(start);
     let mut last_progress = start;
     let mut last_bytes = 0;
     let mut last_phase = String::new();
@@ -351,7 +351,7 @@ impl Default for Converter {
             cancel: Arc::new(AtomicBool::new(false)),
             engine,
             next_id: 1,
-            last_version_check: Instant::now() - Duration::from_secs(6 * 60 * 60),
+            last_version_check: None,
             reinspect_after_finish: false,
             pending_additions: Vec::new(),
         };
@@ -455,7 +455,9 @@ impl Converter {
         if self.state.engine_source != "missing"
             && !self.state.engine_busy
             && !self.state.checking_update
-            && self.last_version_check.elapsed() >= Duration::from_secs(6 * 60 * 60)
+            && self
+                .last_version_check
+                .is_none_or(|last| last.elapsed() >= Duration::from_secs(6 * 60 * 60))
         {
             self.check_engine_update();
             changed = true;
@@ -510,7 +512,7 @@ impl Converter {
                     self.refresh_engine();
                     self.state.update_available = false;
                     self.state.latest_version.clear();
-                    self.last_version_check = Instant::now() - Duration::from_secs(6 * 60 * 60);
+                    self.last_version_check = None;
                 }
                 Event::EngineVersion(path, installed, latest) => {
                     if self.state.engine_path == path.to_string_lossy() {
@@ -648,7 +650,7 @@ impl Converter {
             self.state.update_available = false;
             self.state.latest_version.clear();
             self.state.installed_version.clear();
-            self.last_version_check = Instant::now() - Duration::from_secs(6 * 60 * 60);
+            self.last_version_check = None;
         }
     }
 
@@ -665,7 +667,7 @@ impl Converter {
         }
         self.state.checking_update = true;
         self.state.engine_notice = "Checking FFmpeg releases…".into();
-        self.last_version_check = Instant::now();
+        self.last_version_check = Some(Instant::now());
         let sender = self.sender.clone();
         std::thread::spawn(move || {
             let installed = installed_engine_version(&path).unwrap_or_default();

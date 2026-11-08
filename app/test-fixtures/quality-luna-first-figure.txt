@@ -1,0 +1,69 @@
+```island-figure
+{"program":true,"label":"Optimus Prime","duration":4,"steps":[{"label":"Complete model"}],"camera":{"yaw":24,"pitch":10},"labels":[{"text":"Blue helmet and antennae","part":"head_shell"},{"text":"Windshield chest","part":"chest_glass"},{"text":"Red forearm and fist","part":"arm_l"},{"text":"Front wheel","part":"wheel_l"}]}
+{"op":"group","id":"body","transform":{"position":[0,1.7,0]}}
+{"op":"part","id":"waist","label":"Waist","detail":"Blue armored belt above red legs","shape":{"kind":"box","size":[0.76,0.36,0.46],"bevel":0.07},"color":"#174C9A","material":"paint"}
+{"op":"part","id":"belt","label":"Belt plate","detail":"Central silver belt buckle","shape":{"kind":"box","size":[0.25,0.18,0.06],"bevel":0.025},"transform":{"position":[0,0,0.26]},"color":"#C5CDD2","material":"metal"}
+{"op":"part","id":"pelvis","label":"Pelvis","detail":"Red pelvic armor","shape":{"kind":"box","size":[0.92,0.32,0.48],"bevel":0.06},"transform":{"position":[0,-0.27,0]},"color":"#C92E2B","material":"paint"}
+{"op":"part","id":"abdomen","label":"Abdomen","detail":"Dark mechanical midsection","shape":{"kind":"box","size":[0.5,0.42,0.38],"bevel":0.045},"transform":{"position":[0,0.37,0]},"color":"#27333C","material":"metal"}
+{"op":"part","id":"abd_rib","label":"Abdominal ribs","detail":"Stacked silver mechanical ribs","shape":{"kind":"box","size":[0.34,0.045,0.04],"bevel":0.012},"transform":{"position":[0,0.25,0.215]},"repeat":{"count":3,"offset":[0,0.09,0]},"color":"#AAB4BB","material":"metal"}
+{"op":"part","id":"chest","label":"Chest","detail":"Broad red truck-cab armor","shape":{"kind":"box","size":[1.18,0.9,0.55],"bevel":0.1},"transform":{"position":[0,1.02,0]},"color":"#C92E2B","material":"paint"}
+{"op":"part","id":"chest_glass","label":"Windshield","detail":"Two blue truck windshield panes","shape":{"kind":"box","size":[0.47,0.36,0.045],"bevel":0.035},"transform":{"position":[-0.265,1.12,0.298]},"repeat":{"count":2,"offset":[0.53,0,0]},"color":"#258CC3","material":"glass"}
+{"op":"part","id":"wind_frame","label":"Windshield divider","detail":"Raised red center mullion","shape":{"kind":"box","size":[0.055,0.43,0.06],"bevel":0.015},"transform":{"position":[0,1.12,0.32]},"color":"#D63B32","material":"paint"}
+{"op":"part","id":"chest_grille","label":"Chest grille","detail":"Dark lower cab grille inset","shape":{"kind":"box","size":[0.48,0.18,0.035],"bevel":0.02},"transform":{"position":[0,0.73,0.29]},"color":"#24313A","material":"metal"}
+{"op":"part","id":"grille_bar","label":"Grille bars","detail":"Three silver grille slats","shape":{"kind":"box","size":[0.4,0.025,0.025]},"transform":{"position":[0,0.68,0.318]},"repeat":{"count":3,"offset":[0,0.06,0]},"color":"#ADB9C0","material":"metal"}
+{"op":"part","id":"shoulder","label":"Shoulder yoke","detail":"Wide blue shoulder armor","shape":{"kind":"box","size":[1.62,0.32,0.48],"bevel":0.07},"transform":{"position":[0,1.43,0]},"color":"#174C9A","material":"paint"}
+{"op":"part","id":"head_shell","label":"Helmet","detail":"Blue angular helmet with side fins","shape":{"kind":"box","size":[0.48,0.48,0.42],"bevel":0.08},"transform":{"position":[0,2.1,0]},"color":"#174C9A","material":"paint"}
+{"op":"part","id":"helm_crown","label":"Helmet crest","detail":"Raised blue central crown","shape":{"kind":"box","size":[0.22,0.18,0.26],"bevel":0.045},"transform":{"position":[0,2.4,0]},"color":"#205CAA","material":"paint"}
+{"op":"part","id":"ear_l","label":"Left helmet fin","detail":"Blue lateral helmet wing","shape":{"kind":"box","size":[0.16,0.38,0.2],"bevel":0.04},"transform":{"position":[-0.32,2.09,0]},"color":"#174C9A","material":"paint"}
+{"op":"part","id":"ear_r","label":"Right helmet fin","detail":"Blue lateral helmet wing","shape":{"kind":"box","size":[0.16,0.38,0.2],"bevel":0.04},"transform":{"position":[0.32,2.09,0]},"color":"#174C9A","material":"paint"}
+{"op":"part","id":"antenna_l","label":"Left antenna","detail":"Short silver helmet antenna","shape":{"kind":"box","size":[0.045,0.32,0.045],"bevel":0.012},"transform":{"position":[-0.19,2.46,0]},"color":"#C7D0D5","material":"metal"}
+{"op":"part","id":"antenna_r","label":"Right antenna","detail":"Short silver helmet antenna","shape":{"kind":"box","size":[0.045,0.32,0.045],"bevel":0.012},"transform":{"position":[0.19,2.46,0]},"color":"#C7D0D5","material":"metal"}
+{"op":"part","id":"face","label":"Faceplate","detail":"Silver robotic face mask","shape":{"kind":"box","size":[0.3,0.26,0.08],"bevel":0.025},"transform":{"position":[0,2.04,0.23]},"color":"#BBC5CB","material":"metal"}
+{"op":"part","id":"brow","label":"Brow","detail":"Blue brow ridge above eyes","shape":{"kind":"box","size":[0.34,0.07,0.07],"bevel":0.02},"transform":{"position":[0,2.17,0.24]},"color":"#245FA8","material":"paint"}
+{"op":"part","id":"eye_l","label":"Left eye","detail":"Cyan visor lens","shape":{"kind":"box","size":[0.12,0.045,0.025],"bevel":0.01},"transform":{"position":[-0.075,2.12,0.28]},"color":"#55D8F2","material":"glass"}
+{"op":"part","id":"eye_r","label":"Right eye","detail":"Cyan visor lens","shape":{"kind":"box","size":[0.12,0.045,0.025],"bevel":0.01},"transform":{"position":[0.075,2.12,0.28]},"color":"#55D8F2","material":"glass"}
+{"op":"part","id":"cheek_l","label":"Left cheek guard","detail":"Silver side of faceplate","shape":{"kind":"box","size":[0.07,0.17,0.08],"bevel":0.02},"transform":{"position":[-0.19,2.02,0.22]},"color":"#AEBAC1","material":"metal"}
+{"op":"part","id":"cheek_r","label":"Right cheek guard","detail":"Silver side of faceplate","shape":{"kind":"box","size":[0.07,0.17,0.08],"bevel":0.02},"transform":{"position":[0.19,2.02,0.22]},"color":"#AEBAC1","material":"metal"}
+{"op":"part","id":"neck","label":"Neck","detail":"Dark articulated neck","shape":{"kind":"cylinder","radius":0.16,"height":0.18,"bevel":0.02,"segments":12},"transform":{"position":[0,1.68,0]},"color":"#29343B","material":"metal"}
+{"op":"end"}
+{"op":"group","id":"arm_l","transform":{"position":[-0.91,2.78,0]}}
+{"op":"part","id":"arm_l","label":"Upper arm","detail":"Red upper arm behind wheel housing","shape":{"kind":"box","size":[0.38,0.59,0.42],"bevel":0.06},"transform":{"position":[0,-0.36,0]},"color":"#C92E2B","material":"paint"}
+{"op":"part","id":"shoulder_l","label":"Shoulder cap","detail":"Blue outer shoulder cap","shape":{"kind":"box","size":[0.48,0.4,0.48],"bevel":0.08},"transform":{"position":[0,0,0]},"color":"#174C9A","material":"paint"}
+{"op":"part","id":"wheel_l","label":"Front wheel","detail":"Black tire with silver hub","shape":{"kind":"torus","radius":0.22,"thickness":0.085,"segments":20,"radial_segments":8},"transform":{"position":[0.18,0.02,0.02],"rotation":[0,0,90]},"color":"#20262A","material":"rubber"}
+{"op":"part","id":"hub_l","label":"Wheel hub","detail":"Circular silver wheel center","shape":{"kind":"cylinder","radius":0.115,"height":0.12,"bevel":0.02,"segments":16},"transform":{"position":[0.18,0.02,0.02],"rotation":[0,0,90]},"color":"#C5CDD2","material":"metal"}
+{"op":"part","id":"arm_l","label":"Forearm","detail":"Red tapered forearm armor","shape":{"kind":"box","size":[0.4,0.66,0.42],"bevel":0.06},"transform":{"position":[0,-0.92,0]},"color":"#C92E2B","material":"paint"}
+{"op":"part","id":"elbow_l","label":"Elbow joint","detail":"Dark metal elbow connector","shape":{"kind":"cylinder","radius":0.14,"height":0.42,"bevel":0.02,"segments":12},"transform":{"position":[0,-0.68,0],"rotation":[0,0,90]},"color":"#303B43","material":"metal"}
+{"op":"part","id":"fist_l","label":"Left fist","detail":"Silver clenched mechanical hand","shape":{"kind":"box","size":[0.32,0.3,0.28],"bevel":0.07},"transform":{"position":[0,-1.42,0.06]},"color":"#AEB8BE","material":"metal"}
+{"op":"part","id":"knuckle_l","label":"Left knuckles","detail":"Four raised silver knuckles","shape":{"kind":"box","size":[0.055,0.11,0.07],"bevel":0.02},"transform":{"position":[-0.1,-1.4,0.2]},"repeat":{"count":4,"offset":[0.067,0,0]},"color":"#D0D6DA","material":"metal"}
+{"op":"end"}
+{"op":"group","id":"arm_r","transform":{"position":[0.91,2.78,0]}}
+{"op":"part","id":"arm_r","label":"Upper arm","detail":"Red upper arm behind wheel housing","shape":{"kind":"box","size":[0.38,0.59,0.42],"bevel":0.06},"transform":{"position":[0,-0.36,0]},"color":"#C92E2B","material":"paint"}
+{"op":"part","id":"shoulder_r","label":"Shoulder cap","detail":"Blue outer shoulder cap","shape":{"kind":"box","size":[0.48,0.4,0.48],"bevel":0.08},"transform":{"position":[0,0,0]},"color":"#174C9A","material":"paint"}
+{"op":"part","id":"wheel_r","label":"Front wheel","detail":"Black tire with silver hub","shape":{"kind":"torus","radius":0.22,"thickness":0.085,"segments":20,"radial_segments":8},"transform":{"position":[-0.18,0.02,0.02],"rotation":[0,0,90]},"color":"#20262A","material":"rubber"}
+{"op":"part","id":"hub_r","label":"Wheel hub","detail":"Circular silver wheel center","shape":{"kind":"cylinder","radius":0.115,"height":0.12,"bevel":0.02,"segments":16},"transform":{"position":[-0.18,0.02,0.02],"rotation":[0,0,90]},"color":"#C5CDD2","material":"metal"}
+{"op":"part","id":"arm_r","label":"Forearm","detail":"Red tapered forearm armor","shape":{"kind":"box","size":[0.4,0.66,0.42],"bevel":0.06},"transform":{"position":[0,-0.92,0]},"color":"#C92E2B","material":"paint"}
+{"op":"part","id":"elbow_r","label":"Elbow joint","detail":"Dark metal elbow connector","shape":{"kind":"cylinder","radius":0.14,"height":0.42,"bevel":0.02,"segments":12},"transform":{"position":[0,-0.68,0],"rotation":[0,0,90]},"color":"#303B43","material":"metal"}
+{"op":"part","id":"fist_r","label":"Right fist","detail":"Silver clenched mechanical hand","shape":{"kind":"box","size":[0.32,0.3,0.28],"bevel":0.07},"transform":{"position":[0,-1.42,0.06]},"color":"#AEB8BE","material":"metal"}
+{"op":"part","id":"knuckle_r","label":"Right knuckles","detail":"Four raised silver knuckles","shape":{"kind":"box","size":[0.055,0.11,0.07],"bevel":0.02},"transform":{"position":[0.1,-1.4,0.2]},"repeat":{"count":4,"offset":[-0.067,0,0]},"color":"#D0D6DA","material":"metal"}
+{"op":"end"}
+{"op":"group","id":"leg_l","transform":{"position":[-0.43,0.15,0]}}
+{"op":"part","id":"thigh_l","label":"Left thigh","detail":"Red armored upper leg","shape":{"kind":"box","size":[0.43,0.62,0.46],"bevel":0.07},"transform":{"position":[0,-0.48,0]},"color":"#C92E2B","material":"paint"}
+{"op":"part","id":"knee_l","label":"Left knee","detail":"Blue knee armor plate","shape":{"kind":"box","size":[0.46,0.31,0.5],"bevel":0.07},"transform":{"position":[0,-0.82,0.03]},"color":"#174C9A","material":"paint"}
+{"op":"part","id":"shin_l","label":"Left shin","detail":"Red lower leg truck-front armor","shape":{"kind":"box","size":[0.48,0.78,0.5],"bevel":0.07},"transform":{"position":[0,-1.34,0]},"color":"#C92E2B","material":"paint"}
+{"op":"part","id":"shinstripe_l","label":"Left shin accent","detail":"Blue inset shin panel","shape":{"kind":"box","size":[0.25,0.42,0.035],"bevel":0.02},"transform":{"position":[0,-1.33,0.27]},"color":"#174C9A","material":"paint"}
+{"op":"part","id":"ankle_l","label":"Left ankle","detail":"Dark ankle joint","shape":{"kind":"box","size":[0.24,0.2,0.28],"bevel":0.04},"transform":{"position":[0,-1.77,0]},"color":"#28343C","material":"metal"}
+{"op":"part","id":"foot_l","label":"Left foot","detail":"Blue forward-pointing foot","shape":{"kind":"box","size":[0.5,0.2,0.7],"bevel":0.06},"transform":{"position":[0,-1.92,0.12]},"color":"#174C9A","material":"paint"}
+{"op":"part","id":"toe_l","label":"Left toe","detail":"Raised blue toe cap","shape":{"kind":"box","size":[0.46,0.12,0.28],"bevel":0.05},"transform":{"position":[0,-1.89,0.34]},"color":"#205CAA","material":"paint"}
+{"op":"end"}
+{"op":"group","id":"leg_r","transform":{"position":[0.43,0.15,0]}}
+{"op":"part","id":"thigh_r","label":"Right thigh","detail":"Red armored upper leg","shape":{"kind":"box","size":[0.43,0.62,0.46],"bevel":0.07},"transform":{"position":[0,-0.48,0]},"color":"#C92E2B","material":"paint"}
+{"op":"part","id":"knee_r","label":"Right knee","detail":"Blue knee armor plate","shape":{"kind":"box","size":[0.46,0.31,0.5],"bevel":0.07},"transform":{"position":[0,-0.82,0.03]},"color":"#174C9A","material":"paint"}
+{"op":"part","id":"shin_r","label":"Right shin","detail":"Red lower leg truck-front armor","shape":{"kind":"box","size":[0.48,0.78,0.5],"bevel":0.07},"transform":{"position":[0,-1.34,0]},"color":"#C92E2B","material":"paint"}
+{"op":"part","id":"shinstripe_r","label":"Right shin accent","detail":"Blue inset shin panel","shape":{"kind":"box","size":[0.25,0.42,0.035],"bevel":0.02},"transform":{"position":[0,-1.33,0.27]},"color":"#174C9A","material":"paint"}
+{"op":"part","id":"ankle_r","label":"Right ankle","detail":"Dark ankle joint","shape":{"kind":"box","size":[0.24,0.2,0.28],"bevel":0.04},"transform":{"position":[0,-1.77,0]},"color":"#28343C","material":"metal"}
+{"op":"part","id":"foot_r","label":"Right foot","detail":"Blue forward-pointing foot","shape":{"kind":"box","size":[0.5,0.2,0.7],"bevel":0.06},"transform":{"position":[0,-1.92,0.12]},"color":"#174C9A","material":"paint"}
+{"op":"part","id":"toe_r","label":"Right toe","detail":"Raised blue toe cap","shape":{"kind":"box","size":[0.46,0.12,0.28],"bevel":0.05},"transform":{"position":[0,-1.89,0.34]},"color":"#205CAA","material":"paint"}
+{"op":"end"}
+```
+
+Classic red-and-blue Optimus Prime in a neutral upright stance, with a split windshield chest, shoulder wheels, silver faceplate, and truck-front shin armor.

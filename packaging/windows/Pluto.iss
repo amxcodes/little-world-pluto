@@ -1,15 +1,11 @@
 #define PlutoVersion GetEnv('PLUTO_VERSION')
 #define PlutoBinary GetEnv('PLUTO_BINARY')
-#define PlutoRuntimeDir GetEnv('PLUTO_RUNTIME_DIRECTORY')
 #define PlutoPublisher GetEnv('PLUTO_SIGNING_COMPANY_NAME')
 #if PlutoVersion == ""
   #error PLUTO_VERSION must be set by package_windows_installer.ps1
 #endif
 #if PlutoBinary == ""
   #error PLUTO_BINARY must be set by package_windows_installer.ps1
-#endif
-#if PlutoRuntimeDir == ""
-  #error PLUTO_RUNTIME_DIRECTORY must be set by package_windows_installer.ps1
 #endif
 #if PlutoPublisher == ""
   #error PLUTO_SIGNING_COMPANY_NAME must match the release certificate
@@ -49,12 +45,24 @@ VersionInfoDescription=Pluto installer
 
 [Files]
 Source: "{#PlutoBinary}"; DestDir: "{app}"; DestName: "Pluto.exe"; Flags: ignoreversion
-Source: "{#PlutoRuntimeDir}\*.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "THIRD_PARTY_NOTICES.txt"; DestDir: "{app}"; Flags: ignoreversion
-Source: "licenses\*.txt"; DestDir: "{app}\licenses"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\Pluto"; Filename: "{app}\Pluto.exe"; IconFilename: "{app}\Pluto.exe"
+
+[InstallDelete]
+; Remove obsolete optional runtime files from older Pluto installations.
+Type: filesandordirs; Name: "{localappdata}\Pluto\wake-model"
+Type: filesandordirs; Name: "{localappdata}\Pluto\wake-model.new"
+Type: filesandordirs; Name: "{localappdata}\Pluto\wake-model.old"
+Type: files; Name: "{localappdata}\Pluto\logs\wake-engine.log"
+Type: filesandordirs; Name: "{app}\wake-engine"
+Type: files; Name: "{app}\licenses\Apache-2.0-Sherpa-ONNX.txt"
+Type: files; Name: "{app}\licenses\MIT-ONNX-Runtime.txt"
+Type: files; Name: "{app}\sherpa-onnx-c-api.dll"
+Type: files; Name: "{app}\sherpa-onnx-cxx-api.dll"
+Type: files; Name: "{app}\onnxruntime.dll"
+Type: files; Name: "{app}\onnxruntime_providers_shared.dll"
 
 [Run]
 Filename: "{app}\Pluto.exe"; Description: "Launch Pluto"; Flags: nowait postinstall skipifsilent

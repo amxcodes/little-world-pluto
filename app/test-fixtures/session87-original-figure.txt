@@ -1,0 +1,57 @@
+```island-figure
+{"program":true,"label":"Optimus Prime transformation","duration":8,"steps":[{"label":"Truck"},{"label":"Unfolding"},{"label":"Robot"}],"assembly_plan":{"source":"Truck form","destination":"Robot form","assemblies":[{"id":"cab","source":"Cab and front chassis","destination":"Torso and pelvis"},{"id":"legs","source":"Rear chassis and wheel assemblies","destination":"Robot legs and feet"},{"id":"arms","source":"Cab side panels and front wheels","destination":"Robot arms and shoulders"},{"id":"head","source":"Stowed head","destination":"Robot head"}]},"labels":[{"text":"Cab becomes torso","part":"cab.shell"},{"text":"Wheels become shoulders","part":"arms.left.wheel"},{"text":"Rear chassis becomes legs","part":"legs.left.thigh"}]}
+{"op":"group","id":"root"}
+{"op":"group","id":"cab","transform":{"position":[0,1.2,0]}}
+{"op":"part","id":"shell","label":"Cab shell","detail":"Blue truck cab front, forming the robot chest","shape":{"kind":"box","size":[2.4,1.5,1.25],"bevel":0.12},"color":"#1559B7","material":"paint"}
+{"op":"part","id":"windshield","label":"Windshield","detail":"Dark two-pane cab glass","shape":{"kind":"box","size":[1.75,0.48,0.08],"bevel":0.04},"transform":{"position":[0,0.43,0.66]},"color":"#152B46","material":"glass"}
+{"op":"part","id":"grille","label":"Grille","detail":"Silver front grille","shape":{"kind":"box","size":[0.75,0.32,0.08],"bevel":0.03},"transform":{"position":[0,-0.42,0.66]},"color":"#AEB9C2","material":"metal"}
+{"op":"part","id":"bumper","label":"Bumper","detail":"Front chrome bumper","shape":{"kind":"box","size":[2.35,0.18,0.25],"bevel":0.04},"transform":{"position":[0,-0.7,0.62]},"color":"#C7D0D5","material":"metal"}
+{"op":"group","id":"head","transform":{"position":[0,0.87,0]}}
+{"op":"part","id":"helmet","label":"Helmet","detail":"Blue angular robot helmet","shape":{"kind":"box","size":[0.68,0.66,0.58],"bevel":0.08},"transform":{"position":[0,0.22,0]},"color":"#1757B5","material":"paint"}
+{"op":"part","id":"face","label":"Faceplate","detail":"Silver faceplate","shape":{"kind":"box","size":[0.42,0.3,0.12],"bevel":0.04},"transform":{"position":[0,0.12,0.34]},"color":"#B9C4CC","material":"metal"}
+{"op":"part","id":"crest","label":"Crest","detail":"Red forehead crest","shape":{"kind":"box","size":[0.12,0.24,0.12]},"transform":{"position":[0,0.52,0.28]},"color":"#C92B35","material":"paint"}
+{"op":"end"}
+{"op":"end"}
+{"op":"group","id":"legs"}
+{"op":"group","id":"left","transform":{"position":[-0.64,0.25,0]}}
+{"op":"part","id":"thigh","label":"Left thigh","detail":"Red upper leg panel from rear chassis","shape":{"kind":"box","size":[0.82,1.25,0.9],"bevel":0.07},"transform":{"position":[0,0.05,0]},"color":"#C92B35","material":"paint"}
+{"op":"part","id":"shin","label":"Left shin","detail":"Blue lower leg and truck side panel","shape":{"kind":"box","size":[0.78,1.15,0.88],"bevel":0.06},"transform":{"position":[0,-1.08,0.02]},"color":"#1559B7","material":"paint"}
+{"op":"part","id":"foot","label":"Left foot","detail":"Integrated robot foot","shape":{"kind":"box","size":[0.9,0.32,1.12],"bevel":0.06},"transform":{"position":[0,-1.8,0.18]},"color":"#183B70","material":"paint"}
+{"op":"end"}
+{"op":"group","id":"right","transform":{"position":[0.64,0.25,0]}}
+{"op":"part","id":"thigh","label":"Right thigh","detail":"Red upper leg panel from rear chassis","shape":{"kind":"box","size":[0.82,1.25,0.9],"bevel":0.07},"transform":{"position":[0,0.05,0]},"color":"#C92B35","material":"paint"}
+{"op":"part","id":"shin","label":"Right shin","detail":"Blue lower leg and truck side panel","shape":{"kind":"box","size":[0.78,1.15,0.88],"bevel":0.06},"transform":{"position":[0,-1.08,0.02]},"color":"#1559B7","material":"paint"}
+{"op":"part","id":"foot","label":"Right foot","detail":"Integrated robot foot","shape":{"kind":"box","size":[0.9,0.32,1.12],"bevel":0.06},"transform":{"position":[0,-1.8,0.18]},"color":"#183B70","material":"paint"}
+{"op":"end"}
+{"op":"end"}
+{"op":"group","id":"arms"}
+{"op":"group","id":"left","transform":{"position":[-1.52,1.43,0]}}
+{"op":"part","id":"upper","label":"Left upper arm","detail":"Red upper arm beneath shoulder wheel","shape":{"kind":"box","size":[0.62,1.02,0.7],"bevel":0.06},"transform":{"position":[0,-0.62,0]},"color":"#C92B35","material":"paint"}
+{"op":"part","id":"wheel","label":"Left shoulder wheel","detail":"Black tire with silver hub","shape":{"kind":"cylinder","radius":0.48,"height":0.3,"segments":16},"transform":{"position":[0,0.04,0],"rotation":[0,0,90]},"color":"#20252A","material":"rubber"}
+{"op":"part","id":"hub","label":"Left wheel hub","detail":"Silver wheel center","shape":{"kind":"cylinder","radius":0.19,"height":0.32,"segments":12},"transform":{"position":[0,0.04,0.02],"rotation":[0,0,90]},"color":"#C3CDD4","material":"metal"}
+{"op":"part","id":"forearm","label":"Left forearm","detail":"Blue forearm","shape":{"kind":"box","size":[0.68,0.78,0.68],"bevel":0.06},"transform":{"position":[0,-1.44,0]},"color":"#1559B7","material":"paint"}
+{"op":"end"}
+{"op":"group","id":"right","transform":{"position":[1.52,1.43,0]}}
+{"op":"part","id":"upper","label":"Right upper arm","detail":"Red upper arm beneath shoulder wheel","shape":{"kind":"box","size":[0.62,1.02,0.7],"bevel":0.06},"transform":{"position":[0,-0.62,0]},"color":"#C92B35","material":"paint"}
+{"op":"part","id":"wheel","label":"Right shoulder wheel","detail":"Black tire with silver hub","shape":{"kind":"cylinder","radius":0.48,"height":0.3,"segments":16},"transform":{"position":[0,0.04,0],"rotation":[0,0,90]},"color":"#20252A","material":"rubber"}
+{"op":"part","id":"hub","label":"Right wheel hub","detail":"Silver wheel center","shape":{"kind":"cylinder","radius":0.19,"height":0.32,"segments":12},"transform":{"position":[0,0.04,0.02],"rotation":[0,0,90]},"color":"#C3CDD4","material":"metal"}
+{"op":"part","id":"forearm","label":"Right forearm","detail":"Blue forearm","shape":{"kind":"box","size":[0.68,0.78,0.68],"bevel":0.06},"transform":{"position":[0,-1.44,0]},"color":"#1559B7","material":"paint"}
+{"op":"end"}
+{"op":"end"}
+{"op":"end"}
+{"op":"group","id":"cabHinge","transform":{"position":[0,1.2,0]}}
+{"op":"end"}
+{"op":"move","target":"cab","start":0,"end":4,"rotate":[0,0,0],"translate":[0,0,0]}
+{"op":"move","target":"cab","start":4,"end":8,"rotate":[0,-90,0]}
+{"op":"move","target":"legs.left","start":0,"end":4,"translate":[0,0,0]}
+{"op":"move","target":"legs.left","start":4,"end":8,"translate":[0,-0.25,0]}
+{"op":"move","target":"legs.right","start":0,"end":4,"translate":[0,0,0]}
+{"op":"move","target":"legs.right","start":4,"end":8,"translate":[0,-0.25,0]}
+{"op":"move","target":"arms.left","start":0,"end":4,"translate":[0,0,0]}
+{"op":"move","target":"arms.left","start":4,"end":8,"translate":[-0.2,0.4,0]}
+{"op":"move","target":"arms.right","start":0,"end":4,"translate":[0,0,0]}
+{"op":"move","target":"arms.right","start":4,"end":8,"translate":[0.2,0.4,0]}
+{"op":"move","target":"head","start":0,"end":4,"translate":[0,0,0]}
+{"op":"move","target":"head","start":4,"end":8,"translate":[0,0.65,0]}
+```
+The cab lowers into the torso while the rear chassis unfolds into legs and the side wheels rise to the shoulders.

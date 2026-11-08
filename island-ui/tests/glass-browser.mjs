@@ -66,12 +66,19 @@ try {
       }
     }
     await page.locator('.settings-sidebar').getByRole('button', { name: 'General', exact: true }).click();
-    for (const accent of ['lime', 'ice', 'rose', 'violet', 'amber', 'peach', 'mint']) {
+    const accents = await page.getByRole('group', { name: 'Accent gradient', exact: true }).locator('button').evaluateAll(buttons => buttons.map(button => [...button.classList].find(name => name.startsWith('accent-') && name !== 'accent-swatch').slice(7)));
+    for (const accent of accents) {
       await page.evaluate(accentGradient => window.islandReceive({ accentGradient }), accent);
       await page.waitForFunction(accent => document.querySelector('.island').classList.contains(`accent-${accent}`), accent);
+      // Measure the settled foreground, rather than the previous accent mid-transition.
+      await page.waitForFunction(() => {
+        const s = getComputedStyle(document.querySelector('.settings-segments button.selected'));
+        const rgb = s.getPropertyValue('--accent-ink').trim().slice(1).match(/../g).map(n => parseInt(n, 16));
+        return s.color === `rgb(${rgb.join(', ')})`;
+      });
       const selected = await page.locator('.settings-segments button.selected').first().evaluate(el => ({ color: getComputedStyle(el).color, accent: getComputedStyle(el).getPropertyValue('--accent-b') }));
       const hex = selected.accent.trim().slice(1).match(/../g).map(n => parseInt(n, 16));
-      assert.ok(contrast(rgba(selected.color), hex) >= 4.5, `${accent} selected text must contrast against its accent fill`); checks++;
+      assert.ok(contrast(rgba(selected.color), hex) >= 4.5, `${accent} selected text must contrast against its accent fill: ${JSON.stringify(selected)}`); checks++;
     }
     if (glass && scale === 1.25) {
       await page.locator('.settings-content').evaluate(el => { el.scrollTop = 0; });

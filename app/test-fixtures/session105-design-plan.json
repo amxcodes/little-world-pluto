@@ -1,0 +1,1312 @@
+{
+  "version": 1,
+  "subject": "Optimus Prime, classic red-and-blue transforming robot form",
+  "frame": {
+    "up": "y",
+    "forward": "z",
+    "unit": "dominant body width divided by four"
+  },
+  "forms": [
+    {
+      "id": "source",
+      "label": "Optimus Prime standing robot",
+      "silhouette": "Heroic humanoid robot with a broad blue helmet and shoulder line, red chest windows, compact silver waist, blue legs, and red forearms; tractor-trailer cab structure is visible in the chest and shoulders.",
+      "size": [
+        4,
+        7.4,
+        2.4
+      ]
+    }
+  ],
+  "assemblies": [
+    {
+      "id": "torso",
+      "parent": null,
+      "role": "Central armored torso and cab-derived chest",
+      "position": [
+        0,
+        3.1,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "size": [
+        3.2,
+        2.5,
+        1.8
+      ],
+      "mesh_id": "torso_frame",
+      "mesh_size": [
+        2.5,
+        2.35,
+        1.45
+      ],
+      "mesh_position": [
+        0,
+        0,
+        0
+      ],
+      "mesh_rotation": [
+        0,
+        0,
+        0
+      ],
+      "geometry": "Layered beveled torso frame with a compact waist taper, recessed chest bays, and a squared cab front profile.",
+      "material": "blue painted steel with dark recessed seams",
+      "independent_reason": null,
+      "details": [
+        {
+          "id": "left_chest_window",
+          "feature": "Inset trapezoidal cab windshield pane with raised red frame",
+          "position": [
+            -0.62,
+            0.48,
+            0.76
+          ],
+          "rotation": [
+            0,
+            0,
+            -5
+          ],
+          "size": [
+            0.88,
+            0.88,
+            0.12
+          ],
+          "material": "smoky cyan glass and red painted steel"
+        },
+        {
+          "id": "right_chest_window",
+          "feature": "Inset trapezoidal cab windshield pane with raised red frame",
+          "position": [
+            0.62,
+            0.48,
+            0.76
+          ],
+          "rotation": [
+            0,
+            0,
+            5
+          ],
+          "size": [
+            0.88,
+            0.88,
+            0.12
+          ],
+          "material": "smoky cyan glass and red painted steel"
+        },
+        {
+          "id": "chest_grille",
+          "feature": "Narrow ribbed silver radiator grille centered beneath the windows",
+          "position": [
+            0,
+            -0.46,
+            0.76
+          ],
+          "rotation": null,
+          "size": [
+            0.95,
+            0.52,
+            0.13
+          ],
+          "material": "brushed silver steel"
+        },
+        {
+          "id": "waist_belt",
+          "feature": "Separate silver belt plate with a small central blue inset",
+          "position": [
+            0,
+            -1.22,
+            0.08
+          ],
+          "rotation": null,
+          "size": [
+            1.55,
+            0.28,
+            1.15
+          ],
+          "material": "silver steel and blue enamel"
+        }
+      ]
+    },
+    {
+      "id": "head",
+      "parent": "torso",
+      "role": "Helmeted robotic head on a short neck",
+      "position": [
+        0,
+        1.53,
+        0.04
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "size": [
+        1.32,
+        1.2,
+        1.15
+      ],
+      "mesh_id": "helmet",
+      "mesh_size": [
+        1.12,
+        0.9,
+        0.95
+      ],
+      "mesh_position": [
+        0,
+        0.1,
+        0
+      ],
+      "mesh_rotation": [
+        0,
+        0,
+        0
+      ],
+      "geometry": "Angular blue helmet with central brow, cheek guards and a distinct face opening, built as a shaped shell rather than a box.",
+      "material": "blue enamel and silver steel",
+      "independent_reason": null,
+      "details": [
+        {
+          "id": "faceplate",
+          "feature": "Silver segmented mouth and chin guard inside the helmet opening",
+          "position": [
+            0,
+            -0.2,
+            0.49
+          ],
+          "rotation": null,
+          "size": [
+            0.55,
+            0.4,
+            0.16
+          ],
+          "material": "brushed silver steel"
+        },
+        {
+          "id": "left_optic",
+          "feature": "Small inset cyan optical lens",
+          "position": [
+            -0.2,
+            0.12,
+            0.49
+          ],
+          "rotation": null,
+          "size": [
+            0.15,
+            0.12,
+            0.08
+          ],
+          "material": "glowing cyan glass"
+        },
+        {
+          "id": "right_optic",
+          "feature": "Small inset cyan optical lens",
+          "position": [
+            0.2,
+            0.12,
+            0.49
+          ],
+          "rotation": null,
+          "size": [
+            0.15,
+            0.12,
+            0.08
+          ],
+          "material": "glowing cyan glass"
+        },
+        {
+          "id": "left_ear_fin",
+          "feature": "Short outward-projecting helmet audio fin",
+          "position": [
+            -0.62,
+            0.05,
+            0
+          ],
+          "rotation": null,
+          "size": [
+            0.22,
+            0.54,
+            0.36
+          ],
+          "material": "blue enamel"
+        },
+        {
+          "id": "right_ear_fin",
+          "feature": "Short outward-projecting helmet audio fin",
+          "position": [
+            0.62,
+            0.05,
+            0
+          ],
+          "rotation": null,
+          "size": [
+            0.22,
+            0.54,
+            0.36
+          ],
+          "material": "blue enamel"
+        }
+      ]
+    },
+    {
+      "id": "left_shoulder",
+      "parent": "torso",
+      "role": "Left shoulder cab-side armor and shoulder joint",
+      "position": [
+        -1.72,
+        0.88,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "size": [
+        1.2,
+        1.55,
+        1.55
+      ],
+      "mesh_id": "left_shoulder_shell",
+      "mesh_size": [
+        1.02,
+        1.35,
+        1.42
+      ],
+      "mesh_position": [
+        -0.08,
+        0,
+        0
+      ],
+      "mesh_rotation": [
+        0,
+        0,
+        -4
+      ],
+      "geometry": "Broad red shoulder shell with a rounded outer corner and visible cab-side panel contour.",
+      "material": "red painted steel",
+      "independent_reason": null,
+      "details": [
+        {
+          "id": "left_shoulder_lamp",
+          "feature": "Small inset amber cab marker lamp",
+          "position": [
+            -0.12,
+            0.48,
+            0.72
+          ],
+          "rotation": null,
+          "size": [
+            0.18,
+            0.14,
+            0.06
+          ],
+          "material": "amber glass"
+        }
+      ]
+    },
+    {
+      "id": "right_shoulder",
+      "parent": "torso",
+      "role": "Right shoulder cab-side armor and shoulder joint",
+      "position": [
+        1.72,
+        0.88,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "size": [
+        1.2,
+        1.55,
+        1.55
+      ],
+      "mesh_id": "right_shoulder_shell",
+      "mesh_size": [
+        1.02,
+        1.35,
+        1.42
+      ],
+      "mesh_position": [
+        0.08,
+        0,
+        0
+      ],
+      "mesh_rotation": [
+        0,
+        0,
+        4
+      ],
+      "geometry": "Mirrored red shoulder shell with a rounded outer corner and cab-side panel contour.",
+      "material": "red painted steel",
+      "independent_reason": null,
+      "details": [
+        {
+          "id": "right_shoulder_lamp",
+          "feature": "Small inset amber cab marker lamp",
+          "position": [
+            0.12,
+            0.48,
+            0.72
+          ],
+          "rotation": null,
+          "size": [
+            0.18,
+            0.14,
+            0.06
+          ],
+          "material": "amber glass"
+        }
+      ]
+    },
+    {
+      "id": "left_arm",
+      "parent": "left_shoulder",
+      "role": "Left arm with upper arm, elbow, forearm and hand",
+      "position": [
+        -0.02,
+        -0.8,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "size": [
+        1.05,
+        2.8,
+        1.1
+      ],
+      "mesh_id": null,
+      "mesh_size": [
+        1,
+        1,
+        1
+      ],
+      "mesh_position": [
+        0,
+        0,
+        0
+      ],
+      "mesh_rotation": [
+        0,
+        0,
+        0
+      ],
+      "geometry": "Articulated arm carrier; separate upper-arm armor, elbow joint, red forearm shell and articulated hand are explicit child assemblies.",
+      "material": "red painted steel, blue enamel and dark rubber",
+      "independent_reason": null,
+      "details": []
+    },
+    {
+      "id": "left_upper_arm",
+      "parent": "left_arm",
+      "role": "Blue upper arm armor",
+      "position": [
+        0,
+        -0.48,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "size": [
+        0.72,
+        0.98,
+        0.82
+      ],
+      "mesh_id": "left_upper_arm_shell",
+      "mesh_size": [
+        0.68,
+        0.9,
+        0.76
+      ],
+      "mesh_position": [
+        0,
+        0,
+        0
+      ],
+      "mesh_rotation": [
+        0,
+        0,
+        0
+      ],
+      "geometry": "Tapered blue armor sleeve around a dark mechanical upper-arm core.",
+      "material": "blue enamel and dark steel",
+      "independent_reason": null,
+      "details": []
+    },
+    {
+      "id": "left_elbow",
+      "parent": "left_arm",
+      "role": "Visible elbow pivot joint",
+      "position": [
+        0,
+        -1.02,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "size": [
+        0.48,
+        0.46,
+        0.5
+      ],
+      "mesh_id": "left_elbow_hub",
+      "mesh_size": [
+        0.38,
+        0.38,
+        0.4
+      ],
+      "mesh_position": [
+        0,
+        0,
+        0
+      ],
+      "mesh_rotation": [
+        0,
+        0,
+        0
+      ],
+      "geometry": "Round exposed elbow hub with a dark joint collar.",
+      "material": "silver steel and dark rubber",
+      "independent_reason": null,
+      "details": []
+    },
+    {
+      "id": "left_forearm",
+      "parent": "left_arm",
+      "role": "Red cab-derived forearm and hand",
+      "position": [
+        0,
+        -1.78,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "size": [
+        1,
+        1.32,
+        1.08
+      ],
+      "mesh_id": "left_forearm_shell",
+      "mesh_size": [
+        0.92,
+        1.22,
+        1.02
+      ],
+      "mesh_position": [
+        0,
+        0,
+        0
+      ],
+      "mesh_rotation": [
+        0,
+        0,
+        0
+      ],
+      "geometry": "Red beveled forearm casing with a broad front plane and tapered wrist end.",
+      "material": "red painted steel",
+      "independent_reason": null,
+      "details": [
+        {
+          "id": "left_forearm_seam",
+          "feature": "Inset vertical panel seam on the forearm front",
+          "position": [
+            0,
+            0,
+            0.53
+          ],
+          "rotation": null,
+          "size": [
+            0.05,
+            0.86,
+            0.035
+          ],
+          "material": "dark steel"
+        }
+      ]
+    },
+    {
+      "id": "left_hand",
+      "parent": "left_arm",
+      "role": "Left articulated hand",
+      "position": [
+        0,
+        -2.48,
+        0.02
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "size": [
+        0.62,
+        0.48,
+        0.54
+      ],
+      "mesh_id": "left_palm",
+      "mesh_size": [
+        0.5,
+        0.34,
+        0.42
+      ],
+      "mesh_position": [
+        0,
+        -0.04,
+        0
+      ],
+      "mesh_rotation": [
+        0,
+        0,
+        0
+      ],
+      "geometry": "Blue armored palm with a separate thumb and four segmented fingers represented by explicit attached details.",
+      "material": "blue enamel and dark steel",
+      "independent_reason": null,
+      "details": [
+        {
+          "id": "left_thumb",
+          "feature": "Curved segmented thumb on the inner side",
+          "position": [
+            0.3,
+            -0.04,
+            0.03
+          ],
+          "rotation": null,
+          "size": [
+            0.16,
+            0.3,
+            0.18
+          ],
+          "material": "blue enamel"
+        },
+        {
+          "id": "left_fingers",
+          "feature": "Four narrow articulated finger segments grouped as a visible comb",
+          "position": [
+            0,
+            -0.27,
+            0.22
+          ],
+          "rotation": null,
+          "size": [
+            0.42,
+            0.14,
+            0.12
+          ],
+          "material": "blue enamel"
+        }
+      ]
+    },
+    {
+      "id": "right_arm",
+      "parent": "right_shoulder",
+      "role": "Right arm with upper arm, elbow, forearm and hand",
+      "position": [
+        0.02,
+        -0.8,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "size": [
+        1.05,
+        2.8,
+        1.1
+      ],
+      "mesh_id": null,
+      "mesh_size": [
+        1,
+        1,
+        1
+      ],
+      "mesh_position": [
+        0,
+        0,
+        0
+      ],
+      "mesh_rotation": [
+        0,
+        0,
+        0
+      ],
+      "geometry": "Articulated arm carrier; separate upper-arm armor, elbow joint, red forearm shell and articulated hand are explicit child assemblies.",
+      "material": "red painted steel, blue enamel and dark rubber",
+      "independent_reason": null,
+      "details": []
+    },
+    {
+      "id": "right_upper_arm",
+      "parent": "right_arm",
+      "role": "Blue upper arm armor",
+      "position": [
+        0,
+        -0.48,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "size": [
+        0.72,
+        0.98,
+        0.82
+      ],
+      "mesh_id": "right_upper_arm_shell",
+      "mesh_size": [
+        0.68,
+        0.9,
+        0.76
+      ],
+      "mesh_position": [
+        0,
+        0,
+        0
+      ],
+      "mesh_rotation": [
+        0,
+        0,
+        0
+      ],
+      "geometry": "Tapered blue armor sleeve around a dark mechanical upper-arm core.",
+      "material": "blue enamel and dark steel",
+      "independent_reason": null,
+      "details": []
+    },
+    {
+      "id": "right_elbow",
+      "parent": "right_arm",
+      "role": "Visible elbow pivot joint",
+      "position": [
+        0,
+        -1.02,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "size": [
+        0.48,
+        0.46,
+        0.5
+      ],
+      "mesh_id": "right_elbow_hub",
+      "mesh_size": [
+        0.38,
+        0.38,
+        0.4
+      ],
+      "mesh_position": [
+        0,
+        0,
+        0
+      ],
+      "mesh_rotation": [
+        0,
+        0,
+        0
+      ],
+      "geometry": "Round exposed elbow hub with a dark joint collar.",
+      "material": "silver steel and dark rubber",
+      "independent_reason": null,
+      "details": []
+    },
+    {
+      "id": "right_forearm",
+      "parent": "right_arm",
+      "role": "Red cab-derived forearm and hand",
+      "position": [
+        0,
+        -1.78,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "size": [
+        1,
+        1.32,
+        1.08
+      ],
+      "mesh_id": "right_forearm_shell",
+      "mesh_size": [
+        0.92,
+        1.22,
+        1.02
+      ],
+      "mesh_position": [
+        0,
+        0,
+        0
+      ],
+      "mesh_rotation": [
+        0,
+        0,
+        0
+      ],
+      "geometry": "Red beveled forearm casing with a broad front plane and tapered wrist end.",
+      "material": "red painted steel",
+      "independent_reason": null,
+      "details": [
+        {
+          "id": "right_forearm_seam",
+          "feature": "Inset vertical panel seam on the forearm front",
+          "position": [
+            0,
+            0,
+            0.53
+          ],
+          "rotation": null,
+          "size": [
+            0.05,
+            0.86,
+            0.035
+          ],
+          "material": "dark steel"
+        }
+      ]
+    },
+    {
+      "id": "right_hand",
+      "parent": "right_arm",
+      "role": "Right articulated hand",
+      "position": [
+        0,
+        -2.48,
+        0.02
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "size": [
+        0.62,
+        0.48,
+        0.54
+      ],
+      "mesh_id": "right_palm",
+      "mesh_size": [
+        0.5,
+        0.34,
+        0.42
+      ],
+      "mesh_position": [
+        0,
+        -0.04,
+        0
+      ],
+      "mesh_rotation": [
+        0,
+        0,
+        0
+      ],
+      "geometry": "Blue armored palm with a separate thumb and four segmented fingers represented by explicit attached details.",
+      "material": "blue enamel and dark steel",
+      "independent_reason": null,
+      "details": [
+        {
+          "id": "right_thumb",
+          "feature": "Curved segmented thumb on the inner side",
+          "position": [
+            -0.3,
+            -0.04,
+            0.03
+          ],
+          "rotation": null,
+          "size": [
+            0.16,
+            0.3,
+            0.18
+          ],
+          "material": "blue enamel"
+        },
+        {
+          "id": "right_fingers",
+          "feature": "Four narrow articulated finger segments grouped as a visible comb",
+          "position": [
+            0,
+            -0.27,
+            0.22
+          ],
+          "rotation": null,
+          "size": [
+            0.42,
+            0.14,
+            0.12
+          ],
+          "material": "blue enamel"
+        }
+      ]
+    },
+    {
+      "id": "left_leg",
+      "parent": "torso",
+      "role": "Left leg from hip block through shin and foot",
+      "position": [
+        -0.78,
+        -1.3,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "size": [
+        1.25,
+        3.2,
+        1.2
+      ],
+      "mesh_id": null,
+      "mesh_size": [
+        1,
+        1,
+        1
+      ],
+      "mesh_position": [
+        0,
+        0,
+        0
+      ],
+      "mesh_rotation": [
+        0,
+        0,
+        0
+      ],
+      "geometry": "Leg carrier with distinct thigh, knee joint, blue shin armor and forward-set foot as child assemblies.",
+      "material": "blue enamel, silver steel and dark rubber",
+      "independent_reason": null,
+      "details": []
+    },
+    {
+      "id": "left_thigh",
+      "parent": "left_leg",
+      "role": "Upper leg thigh armor",
+      "position": [
+        0,
+        -0.55,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "size": [
+        1,
+        1.18,
+        0.92
+      ],
+      "mesh_id": "left_thigh_shell",
+      "mesh_size": [
+        0.9,
+        1.08,
+        0.84
+      ],
+      "mesh_position": [
+        0,
+        0,
+        0
+      ],
+      "mesh_rotation": [
+        0,
+        0,
+        0
+      ],
+      "geometry": "Blue tapered thigh shell with a subtle forward-facing panel break.",
+      "material": "blue enamel",
+      "independent_reason": null,
+      "details": []
+    },
+    {
+      "id": "left_knee",
+      "parent": "left_leg",
+      "role": "Knee pivot and front cap",
+      "position": [
+        0,
+        -1.2,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "size": [
+        0.72,
+        0.55,
+        0.8
+      ],
+      "mesh_id": "left_knee_cap",
+      "mesh_size": [
+        0.64,
+        0.42,
+        0.68
+      ],
+      "mesh_position": [
+        0,
+        0,
+        0.08
+      ],
+      "mesh_rotation": [
+        0,
+        0,
+        0
+      ],
+      "geometry": "Silver-edged knee cap over a dark transverse hinge barrel.",
+      "material": "silver steel and dark rubber",
+      "independent_reason": null,
+      "details": []
+    },
+    {
+      "id": "left_shin",
+      "parent": "left_leg",
+      "role": "Blue lower-leg armor with wheel sidewall",
+      "position": [
+        0,
+        -1.98,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "size": [
+        1.1,
+        1.5,
+        1.06
+      ],
+      "mesh_id": "left_shin_shell",
+      "mesh_size": [
+        1,
+        1.4,
+        0.96
+      ],
+      "mesh_position": [
+        0,
+        0,
+        0
+      ],
+      "mesh_rotation": [
+        0,
+        0,
+        0
+      ],
+      "geometry": "Broad blue shin shell with a tapered ankle, raised center ridge and outer wheel arch.",
+      "material": "blue enamel",
+      "independent_reason": null,
+      "details": [
+        {
+          "id": "left_shin_wheel",
+          "feature": "Black tire with silver hub on the outer shin side",
+          "position": [
+            -0.52,
+            -0.2,
+            0
+          ],
+          "rotation": null,
+          "size": [
+            0.5,
+            0.5,
+            0.25
+          ],
+          "material": "black rubber and silver steel"
+        }
+      ]
+    },
+    {
+      "id": "left_foot",
+      "parent": "left_leg",
+      "role": "Forward-projecting left foot",
+      "position": [
+        0,
+        -2.72,
+        0.34
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "size": [
+        0.95,
+        0.48,
+        1.25
+      ],
+      "mesh_id": "left_foot_shell",
+      "mesh_size": [
+        0.88,
+        0.4,
+        1.18
+      ],
+      "mesh_position": [
+        0,
+        0,
+        0
+      ],
+      "mesh_rotation": [
+        0,
+        0,
+        0
+      ],
+      "geometry": "Blue armored foot with a sloped toe and dark tread sole.",
+      "material": "blue enamel and black rubber",
+      "independent_reason": null,
+      "details": []
+    },
+    {
+      "id": "right_leg",
+      "parent": "torso",
+      "role": "Right leg from hip block through shin and foot",
+      "position": [
+        0.78,
+        -1.3,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "size": [
+        1.25,
+        3.2,
+        1.2
+      ],
+      "mesh_id": null,
+      "mesh_size": [
+        1,
+        1,
+        1
+      ],
+      "mesh_position": [
+        0,
+        0,
+        0
+      ],
+      "mesh_rotation": [
+        0,
+        0,
+        0
+      ],
+      "geometry": "Mirrored leg carrier with distinct thigh, knee joint, blue shin armor and forward-set foot as child assemblies.",
+      "material": "blue enamel, silver steel and dark rubber",
+      "independent_reason": null,
+      "details": []
+    },
+    {
+      "id": "right_thigh",
+      "parent": "right_leg",
+      "role": "Upper leg thigh armor",
+      "position": [
+        0,
+        -0.55,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "size": [
+        1,
+        1.18,
+        0.92
+      ],
+      "mesh_id": "right_thigh_shell",
+      "mesh_size": [
+        0.9,
+        1.08,
+        0.84
+      ],
+      "mesh_position": [
+        0,
+        0,
+        0
+      ],
+      "mesh_rotation": [
+        0,
+        0,
+        0
+      ],
+      "geometry": "Blue tapered thigh shell with a subtle forward-facing panel break.",
+      "material": "blue enamel",
+      "independent_reason": null,
+      "details": []
+    },
+    {
+      "id": "right_knee",
+      "parent": "right_leg",
+      "role": "Knee pivot and front cap",
+      "position": [
+        0,
+        -1.2,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "size": [
+        0.72,
+        0.55,
+        0.8
+      ],
+      "mesh_id": "right_knee_cap",
+      "mesh_size": [
+        0.64,
+        0.42,
+        0.68
+      ],
+      "mesh_position": [
+        0,
+        0,
+        0.08
+      ],
+      "mesh_rotation": [
+        0,
+        0,
+        0
+      ],
+      "geometry": "Silver-edged knee cap over a dark transverse hinge barrel.",
+      "material": "silver steel and dark rubber",
+      "independent_reason": null,
+      "details": []
+    },
+    {
+      "id": "right_shin",
+      "parent": "right_leg",
+      "role": "Blue lower-leg armor with wheel sidewall",
+      "position": [
+        0,
+        -1.98,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "size": [
+        1.1,
+        1.5,
+        1.06
+      ],
+      "mesh_id": "right_shin_shell",
+      "mesh_size": [
+        1,
+        1.4,
+        0.96
+      ],
+      "mesh_position": [
+        0,
+        0,
+        0
+      ],
+      "mesh_rotation": [
+        0,
+        0,
+        0
+      ],
+      "geometry": "Broad blue shin shell with a tapered ankle, raised center ridge and outer wheel arch.",
+      "material": "blue enamel",
+      "independent_reason": null,
+      "details": [
+        {
+          "id": "right_shin_wheel",
+          "feature": "Black tire with silver hub on the outer shin side",
+          "position": [
+            0.52,
+            -0.2,
+            0
+          ],
+          "rotation": null,
+          "size": [
+            0.5,
+            0.5,
+            0.25
+          ],
+          "material": "black rubber and silver steel"
+        }
+      ]
+    },
+    {
+      "id": "right_foot",
+      "parent": "right_leg",
+      "role": "Forward-projecting right foot",
+      "position": [
+        0,
+        -2.72,
+        0.34
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "size": [
+        0.95,
+        0.48,
+        1.25
+      ],
+      "mesh_id": "right_foot_shell",
+      "mesh_size": [
+        0.88,
+        0.4,
+        1.18
+      ],
+      "mesh_position": [
+        0,
+        0,
+        0
+      ],
+      "mesh_rotation": [
+        0,
+        0,
+        0
+      ],
+      "geometry": "Blue armored foot with a sloped toe and dark tread sole.",
+      "material": "blue enamel and black rubber",
+      "independent_reason": null,
+      "details": []
+    }
+  ],
+  "motions": [],
+  "checks": [
+    "Standing silhouette has a broad shoulder line, helmeted head, red cab chest, blue legs, and forward feet.",
+    "Both chest windows sit within raised red frames above the centered ribbed grille.",
+    "Shoulder shells remain attached to torso; upper arms, elbow hubs, forearms, and hands form continuous silhouettes.",
+    "Thighs, knee caps, shins, outer wheels, and feet align into two balanced legs with no detached parts."
+  ]
+}

@@ -1,0 +1,52 @@
+```island-figure
+{"program":true,"label":"Optimus Prime","duration":5,"camera":{"yaw":28,"pitch":12,"orbit_degrees_per_second":0},"labels":[{"text":"Head","part":"head"},{"text":"Chest windows","part":"windowL"},{"text":"Truck grille","part":"grille"},{"text":"Shoulder armor","part":"shoulderL"},{"text":"Forearm","part":"forearmL"},{"text":"Leg armor","part":"shinL"}],"steps":[{"label":"Front view"}]}
+{"op":"group","id":"torso","transform":{"position":[0,2.15,0]}}
+{"op":"part","id":"abdomen","label":"Abdomen","shape":{"kind":"box","size":[0.86,0.7,0.44],"bevel":0.08},"color":"#B8C6C8","material":"metal"}
+{"op":"part","id":"chest","label":"Red chest armor","shape":{"kind":"box","size":[1.5,0.95,0.5],"bevel":0.1},"transform":{"position":[0,0.83,0]},"color":"#C6292E","material":"paint"}
+{"op":"part","id":"windowL","label":"Blue windshield panel","shape":{"kind":"box","size":[0.56,0.58,0.09],"bevel":0.06},"transform":{"position":[-0.39,0.88,0.3]},"color":"#287BC1","material":"glass"}
+{"op":"part","id":"windowR","label":"Blue windshield panel","shape":{"kind":"box","size":[0.56,0.58,0.09],"bevel":0.06},"transform":{"position":[0.39,0.88,0.3]},"color":"#287BC1","material":"glass"}
+{"op":"part","id":"grille","label":"Silver truck grille","shape":{"kind":"box","size":[0.52,0.25,0.08],"bevel":0.03},"transform":{"position":[0,-0.03,0.28]},"color":"#C4D0D0","material":"metal"}
+{"op":"part","id":"bumper","label":"Front bumper","shape":{"kind":"box","size":[1.28,0.16,0.18],"bevel":0.04},"transform":{"position":[0,-0.43,0.27]},"color":"#AEBABB","material":"metal"}
+{"op":"end"}
+{"op":"group","id":"head","transform":{"position":[0,3.48,0]}}
+{"op":"part","id":"helmet","label":"Blue helmet","shape":{"kind":"box","size":[0.66,0.56,0.52],"bevel":0.12},"color":"#164D91","material":"paint"}
+{"op":"part","id":"face","label":"Silver faceplate","shape":{"kind":"box","size":[0.42,0.28,0.1],"bevel":0.04},"transform":{"position":[0,-0.1,0.29]},"color":"#C9D0D0","material":"metal"}
+{"op":"part","id":"crest","label":"Central helmet crest","shape":{"kind":"box","size":[0.12,0.28,0.1],"bevel":0.03},"transform":{"position":[0,0.37,0.27]},"color":"#D7DEE0","material":"metal"}
+{"op":"part","id":"earL","label":"Helmet side fin","shape":{"kind":"box","size":[0.15,0.42,0.2],"bevel":0.04},"transform":{"position":[-0.4,0.05,0]},"color":"#C6292E","material":"paint"}
+{"op":"part","id":"earR","label":"Helmet side fin","shape":{"kind":"box","size":[0.15,0.42,0.2],"bevel":0.04},"transform":{"position":[0.4,0.05,0]},"color":"#C6292E","material":"paint"}
+{"op":"end"}
+{"op":"group","id":"shoulderL","transform":{"position":[-1.02,2.72,0]}}
+{"op":"part","id":"pauldron","label":"Red shoulder armor","shape":{"kind":"box","size":[0.52,0.65,0.56],"bevel":0.1},"color":"#C6292E","material":"paint"}
+{"op":"part","id":"upperarm","label":"Upper arm","shape":{"kind":"box","size":[0.4,0.68,0.4],"bevel":0.06},"transform":{"position":[0,-0.56,0]},"color":"#174F95","material":"paint"}
+{"op":"part","id":"forearmL","label":"Forearm","shape":{"kind":"box","size":[0.48,0.62,0.46],"bevel":0.08},"transform":{"position":[0,-1.2,0.02]},"color":"#C7D0D0","material":"metal"}
+{"op":"part","id":"wrist","label":"Wrist joint","shape":{"kind":"cylinder","radius":0.17,"height":0.16},"transform":{"position":[0,-1.56,0.02],"rotation":[90,0,0]},"color":"#59666A","material":"metal"}
+{"op":"part","id":"hand","label":"Metal hand","shape":{"kind":"box","size":[0.32,0.38,0.3],"bevel":0.05},"transform":{"position":[0,-1.79,0.03]},"color":"#AEBABB","material":"metal"}
+{"op":"part","id":"wheel","label":"Shoulder wheel","shape":{"kind":"cylinder","radius":0.3,"height":0.2},"transform":{"position":[-0.05,0.12,-0.31],"rotation":[0,0,90]},"color":"#20282B","material":"rubber"}
+{"op":"end"}
+{"op":"group","id":"shoulderR","transform":{"position":[1.02,2.72,0]}}
+{"op":"part","id":"pauldron","label":"Red shoulder armor","shape":{"kind":"box","size":[0.52,0.65,0.56],"bevel":0.1},"color":"#C6292E","material":"paint"}
+{"op":"part","id":"upperarm","label":"Upper arm","shape":{"kind":"box","size":[0.4,0.68,0.4],"bevel":0.06},"transform":{"position":[0,-0.56,0]},"color":"#174F95","material":"paint"}
+{"op":"part","id":"forearm","label":"Forearm","shape":{"kind":"box","size":[0.48,0.62,0.46],"bevel":0.08},"transform":{"position":[0,-1.2,0.02]},"color":"#C7D0D0","material":"metal"}
+{"op":"part","id":"wrist","label":"Wrist joint","shape":{"kind":"cylinder","radius":0.17,"height":0.16},"transform":{"position":[0,-1.56,0.02],"rotation":[90,0,0]},"color":"#59666A","material":"metal"}
+{"op":"part","id":"hand","label":"Metal hand","shape":{"kind":"box","size":[0.32,0.38,0.3],"bevel":0.05},"transform":{"position":[0,-1.79,0.03]},"color":"#AEBABB","material":"metal"}
+{"op":"part","id":"wheel","label":"Shoulder wheel","shape":{"kind":"cylinder","radius":0.3,"height":0.2},"transform":{"position":[0.05,0.12,-0.31],"rotation":[0,0,90]},"color":"#20282B","material":"rubber"}
+{"op":"end"}
+{"op":"group","id":"hip","transform":{"position":[0,0.92,0]}}
+{"op":"part","id":"belt","label":"Waist plate","shape":{"kind":"box","size":[0.95,0.36,0.48],"bevel":0.06},"color":"#C2CCCC","material":"metal"}
+{"op":"part","id":"beltmark","label":"Red waist detail","shape":{"kind":"box","size":[0.2,0.12,0.06]},"transform":{"position":[0,0,0.27]},"color":"#C6292E","material":"paint"}
+{"op":"end"}
+{"op":"group","id":"legL","transform":{"position":[-0.48,0.04,0]}}
+{"op":"part","id":"thigh","label":"Blue thigh","shape":{"kind":"box","size":[0.58,0.86,0.52],"bevel":0.07},"transform":{"position":[0,-0.5,0]},"color":"#174F95","material":"paint"}
+{"op":"part","id":"knee","label":"Knee joint","shape":{"kind":"cylinder","radius":0.22,"height":0.15},"transform":{"position":[0,-0.99,0.1],"rotation":[90,0,0]},"color":"#AEBABB","material":"metal"}
+{"op":"part","id":"shinL","label":"Red and blue shin armor","shape":{"kind":"box","size":[0.62,0.92,0.54],"bevel":0.07},"transform":{"position":[0,-1.53,0]},"color":"#C6292E","material":"paint"}
+{"op":"part","id":"shinblue","label":"Blue lower shin panel","shape":{"kind":"box","size":[0.4,0.5,0.08],"bevel":0.03},"transform":{"position":[0,-1.54,0.3]},"color":"#174F95","material":"paint"}
+{"op":"part","id":"foot","label":"Integrated foot","shape":{"kind":"box","size":[0.72,0.3,0.9],"bevel":0.07},"transform":{"position":[0,-2.11,0.16]},"color":"#174F95","material":"paint"}
+{"op":"end"}
+{"op":"group","id":"legR","transform":{"position":[0.48,0.04,0]}}
+{"op":"part","id":"thigh","label":"Blue thigh","shape":{"kind":"box","size":[0.58,0.86,0.52],"bevel":0.07},"transform":{"position":[0,-0.5,0]},"color":"#174F95","material":"paint"}
+{"op":"part","id":"knee","label":"Knee joint","shape":{"kind":"cylinder","radius":0.22,"height":0.15},"transform":{"position":[0,-0.99,0.1],"rotation":[90,0,0]},"color":"#AEBABB","material":"metal"}
+{"op":"part","id":"shin","label":"Red and blue shin armor","shape":{"kind":"box","size":[0.62,0.92,0.54],"bevel":0.07},"transform":{"position":[0,-1.53,0]},"color":"#C6292E","material":"paint"}
+{"op":"part","id":"shinblue","label":"Blue lower shin panel","shape":{"kind":"box","size":[0.4,0.5,0.08],"bevel":0.03},"transform":{"position":[0,-1.54,0.3]},"color":"#174F95","material":"paint"}
+{"op":"part","id":"foot","label":"Integrated foot","shape":{"kind":"box","size":[0.72,0.3,0.9],"bevel":0.07},"transform":{"position":[0,-2.11,0.16]},"color":"#174F95","material":"paint"}
+{"op":"end"}
+```

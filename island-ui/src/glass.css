@@ -306,3 +306,76 @@
 .island[data-material="glass"].compact .compact-privacy .compact-mic { color:var(--success); }
 .island[data-material="glass"].compact .compact-privacy .compact-camera { color:#4b91d5; }
 .island.light[data-material="glass"].compact .compact-privacy .compact-camera { color:#286eb6; }
+
+/* Match other neutral liquid controls without turning the whole list into a lens. */
+.island[data-material="glass"].expanded .choice-row { background:var(--glass-lens),var(--glass-control); border-color:var(--line); box-shadow:var(--glass-lens-shadow); }
+.island[data-material="glass"].expanded .choice-row:is(:hover,:focus-visible,.is-selected,[aria-current="true"]) { color:var(--accent-ink); background:var(--glass-lens),var(--accent-gradient); border-color:transparent; }
+
+/* Low-specificity families preserve component geometry and semantic overrides.
+   Circular icons and joined dictation controls keep their own radii. */
+.island[data-material="glass"].expanded :where(
+  .agent-voice-top > button,.agent-voice-bottom > button,.agent-attach,.agent-dictate,.agent-submit,
+  .agent-prepare,.agent-extra-folders > button,.agent-default-folder > button,
+  .agent-onboarding-back,.agent-onboarding-continue,.agent-onboarding-project > button,
+  .agent-answer-back,.agent-answer-open,.agent-stop,.agent-filter button,.agent-browser-more,
+  .agent-approval-actions button,.wake-new-conversation,
+  .ask-context-page footer button,.tool-grid > button,.folder-chip,.add-folder,.folder-manage,
+  .new-folder > button,.reminder-pill,.note-tool,.note-quick-reminder > button,.note-quick-item > button,
+  .expand-save,.expand-empty > button,.utility-primary,.reminder-card button,.dictate-record,.dictate-expand-transcript,
+  .record-quality-options > button,.wx-search > button,.settings-custom-endpoint,
+  .settings-save,.meeting-manager-actions button
+) {
+  background:var(--glass-lens),var(--glass-control); color:var(--text);
+  border-color:var(--line); box-shadow:var(--glass-lens-shadow);
+}
+.island[data-material="glass"].expanded :where(
+  .agent-voice-top > button,.agent-voice-bottom > button,.agent-attach,.agent-dictate,.agent-submit,
+  .agent-prepare,.agent-extra-folders > button,.agent-default-folder > button,
+  .agent-onboarding-back,.agent-onboarding-continue,.agent-onboarding-project > button,
+  .agent-answer-back,.agent-answer-open,.agent-stop,.agent-filter button,.agent-browser-more,
+  .agent-approval-actions button,.wake-new-conversation,
+  .ask-context-page footer button,.tool-grid > button,.folder-chip,.add-folder,.folder-manage,
+  .new-folder > button,.reminder-pill,.note-tool,.note-quick-reminder > button,.note-quick-item > button,
+  .expand-save,.expand-empty > button,.utility-primary,.reminder-card button,.dictate-record,.dictate-expand-transcript,
+  .record-quality-options > button,.wx-search > button,.settings-custom-endpoint,
+  .settings-save,.meeting-manager-actions button
+):hover:not(:disabled) {
+  background:var(--glass-lens),color-mix(in srgb,var(--accent) 10%,var(--glass-control));
+  color:var(--text); border-color:var(--glass-edge); filter:none;
+}
+/* Primary and selected actions retain their semantic fill and paired ink. */
+.island[data-material="glass"].expanded :is(
+  .expand-save,.utility-primary,.agent-voice-record,.dictate-record:not(.is-recording),.wx-search > button,
+  .settings-save,.agent-onboarding-continue,.meeting-manager-actions .primary,
+  .folder-chip.active,.agent-filter button.selected,.settings-custom-endpoint.selected,
+  .record-quality-options > button[aria-pressed="true"],.agent-config-chip[aria-pressed="true"],
+  .agent-approval-actions .allow
+),
+.island[data-material="glass"].expanded :is(
+  .expand-save,.utility-primary,.agent-voice-record,.dictate-record:not(.is-recording),.wx-search > button,
+  .settings-save,.agent-onboarding-continue,.meeting-manager-actions .primary,
+  .folder-chip.active,.agent-filter button.selected,.settings-custom-endpoint.selected,
+  .record-quality-options > button[aria-pressed="true"],.agent-config-chip[aria-pressed="true"],
+  .agent-approval-actions .allow
+):hover:not(:disabled) {
+  background:var(--glass-lens),var(--accent-gradient); color:var(--accent-ink);
+  border-color:transparent; box-shadow:var(--glass-lens-shadow); filter:none;
+}
+.island[data-material="glass"] .agent-voice-composer {
+  background:var(--glass-surface); border-color:var(--line); box-shadow:var(--glass-rim);
+}
+.island[data-material="glass"] .expand-save { border-radius:999px; }
+.island[data-material="glass"].expanded .agent-approval-actions .allow-persistent { border-color:color-mix(in srgb,var(--warning) 42%,var(--line)); }
+.island[data-material="glass"] .dictate-record-split {
+  background:var(--glass-lens),color-mix(in srgb,var(--recording) 14%,var(--glass-control));
+  box-shadow:var(--glass-lens-shadow);
+}
+.island[data-material="glass"] .dictate-record-split :is(.dictate-record,.dictate-cancel),
+.island[data-material="glass"] .dictate-record-split :is(.dictate-record,.dictate-cancel):hover:not(:disabled) {
+  background:transparent; box-shadow:none; color:var(--recording);
+}
+.island[data-material="glass"] .dictate-record-split .dictate-cancel:hover:not(:disabled) {
+  background:color-mix(in srgb,var(--recording) 12%,transparent);
+}
+.island[data-material="glass"].expanded :is(.agent-stop,.agent-approval-actions .deny,.expand-remove:hover,.reminder-pill.due) { color:var(--recording); }
+.island[data-material="glass"] .agent-submit:hover:not(:disabled) { background:var(--glass-lens),var(--accent-gradient); color:var(--accent-ink); }

@@ -2,9 +2,9 @@
 //! and the latest assistant reply for the selected session.
 //! Pairing tokens stay in this worker's memory and are never sent to the WebView.
 use std::fs::{self, OpenOptions};
-use std::io::{Read, Write};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::net::{Ipv4Addr, SocketAddrV4, TcpStream};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::{
     Arc,
@@ -22,6 +22,8 @@ pub struct Snapshot {
     pub connected: bool,
     pub missing: bool,
     pub installing: bool,
+    pub install_revision: u64,
+    pub install_error: String,
     pub error: String,
     pub notice: String,
     pub operation_revision: u64,
@@ -179,15 +181,15 @@ struct Client {
 fn run(incoming: Receiver<Action>, outgoing: pluto::latest::Sender<Arc<Snapshot>>) {
     let mut client: Option<Client> = None;
     let mut snapshot = Snapshot::default();
-    let mut last_poll = Instant::now() - Duration::from_secs(10);
+    let mut last_poll: Option<Instant> = None;
     let mut last_sent: Option<Arc<Snapshot>> = None;
     let mut selected_session = String::new();
     let mut loaded_count = 40usize;
     let (versions_tx, versions_rx) = mpsc::channel();
     let mut version_generation = 0u64;
-    let mut last_version_check = Instant::now() - Duration::from_secs(6 * 60 * 60);
-    let mut last_model_refresh = Instant::now() - Duration::from_secs(60);
-    let mut last_agent_refresh = Instant::now() - Duration::from_secs(30);
+    let mut last_version_check: Option<Instant> = None;
+    let mut last_model_refresh: Option<Instant> = None;
+    let mut last_agent_refresh: Option<Instant> = None;
     loop {
         let mut action = incoming.recv_timeout(Duration::from_millis(300)).ok();
         let pending_kind = match &action {
@@ -199,7 +201,7 @@ fn run(incoming: Receiver<Action>, outgoing: pluto::latest::Sender<Arc<Snapshot>
             _ => "",
         };
         if matches!(action, Some(Action::CheckUpdate)) {
-            last_version_check = Instant::now() - Duration::from_secs(6 * 60 * 60);
+            last_version_check = None;
             action = None;
         }
         let pending_operation = matches!(
@@ -230,9 +232,10 @@ fn run(incoming: Receiver<Action>, outgoing: pluto::latest::Sender<Arc<Snapshot>
             }
             .into();
             snapshot.error.clear();
+            snapshot.install_error.clear();
             let _ = outgoing.send(Arc::new(snapshot.clone()));
             match if updating {
-                update_cli(&snapshot.install_source)
+                update_cli()
             } else {
                 install_cli()
             } {
@@ -244,20 +247,55 @@ fn run(incoming: Receiver<Action>, outgoing: pluto::latest::Sender<Arc<Snapshot>
                     }
                     .into();
                     snapshot.missing = false;
+                    snapshot.install_revision = snapshot.install_revision.wrapping_add(1);
                     snapshot.update_available = false;
                     snapshot.models.clear();
                 }
                 Err(error) => {
+                    snapshot.install_error = error.clone();
                     snapshot.notice = error;
                 }
             }
             snapshot.installing = false;
             client = None;
-            last_version_check = Instant::now() - Duration::from_secs(6 * 60 * 60);
-            last_model_refresh = Instant::now() - Duration::from_secs(60);
-            last_agent_refresh = Instant::now() - Duration::from_secs(30);
-            last_sent = None;
+            last_version_check = None;
+            last_model_refresh = None;
+            last_agent_refresh = None;
+            let current = Arc::new(snapshot.clone());
+            let _ = outgoing.send(current.clone());
+            last_sent = Some(current);
             continue;
+        }
+        if let Ok((generation, installed, latest, source)) = versions_rx.try_recv()
+            && generation == version_generation
+        {
+            snapshot.installed_version = installed;
+            snapshot.latest_version = latest;
+            snapshot.install_source = source;
+            snapshot.update_available =
+                newer_version(&snapshot.latest_version, &snapshot.installed_version);
+            snapshot.checking_update = false;
+        }
+        if !snapshot.checking_update
+            && last_version_check
+                .is_none_or(|last| last.elapsed() >= Duration::from_secs(6 * 60 * 60))
+        {
+            let tx = versions_tx.clone();
+            let generation = version_generation;
+            snapshot.checking_update = true;
+            last_version_check = Some(Instant::now());
+            if thread::Builder::new()
+                .name("island-opencode-version".into())
+                .spawn(move || {
+                    let installed =
+                        normalized_version(&cli_output(&["--version"]).unwrap_or_default());
+                    let latest = latest_version().unwrap_or_default();
+                    let _ = tx.send((generation, installed, latest, cli_source().to_owned()));
+                })
+                .is_err()
+            {
+                snapshot.checking_update = false;
+            }
         }
         if client.is_none() {
             match connect() {
@@ -268,7 +306,7 @@ fn run(incoming: Receiver<Action>, outgoing: pluto::latest::Sender<Arc<Snapshot>
                 }
                 Err(error) => {
                     snapshot.connected = false;
-                    snapshot.missing = error == "OpenCode is not installed";
+                    snapshot.missing = cli_binary().is_none();
                     snapshot.error = error;
                 }
             }
@@ -303,7 +341,7 @@ fn run(incoming: Receiver<Action>, outgoing: pluto::latest::Sender<Arc<Snapshot>
                     }
                     Action::Catalog(directory) => {
                         snapshot.model_directory = directory.unwrap_or_default();
-                        last_model_refresh = Instant::now() - Duration::from_secs(60);
+                        last_model_refresh = None;
                         Ok(())
                     }
                     Action::Install | Action::Update | Action::CheckUpdate => Ok(()),
@@ -320,9 +358,11 @@ fn run(incoming: Receiver<Action>, outgoing: pluto::latest::Sender<Arc<Snapshot>
                 if let Err(error) = result {
                     snapshot.notice = error;
                 }
-                last_poll = Instant::now() - Duration::from_secs(10);
+                last_poll = None;
             }
-            if snapshot.connected && last_model_refresh.elapsed() >= Duration::from_secs(60) {
+            if snapshot.connected
+                && last_model_refresh.is_none_or(|last| last.elapsed() >= Duration::from_secs(60))
+            {
                 match refresh_models(conn, &mut snapshot) {
                     Ok(()) => snapshot.model_error.clear(),
                     Err(error) => {
@@ -330,16 +370,18 @@ fn run(incoming: Receiver<Action>, outgoing: pluto::latest::Sender<Arc<Snapshot>
                         snapshot.model_error = error;
                     }
                 }
-                last_model_refresh = Instant::now();
+                last_model_refresh = Some(Instant::now());
             }
-            if snapshot.connected && last_agent_refresh.elapsed() >= Duration::from_secs(20) {
+            if snapshot.connected
+                && last_agent_refresh.is_none_or(|last| last.elapsed() >= Duration::from_secs(20))
+            {
                 match refresh_agents(conn, &mut snapshot) {
                     Ok(()) => snapshot.agent_error.clear(),
                     Err(error) => snapshot.agent_error = error,
                 }
-                last_agent_refresh = Instant::now();
+                last_agent_refresh = Some(Instant::now());
             }
-            if last_poll.elapsed() >= Duration::from_secs(2) {
+            if last_poll.is_none_or(|last| last.elapsed() >= Duration::from_secs(2)) {
                 if let Err(error) = refresh(conn, &mut snapshot, &selected_session, loaded_count) {
                     snapshot.connected = false;
                     snapshot.error = error;
@@ -353,37 +395,7 @@ fn run(incoming: Receiver<Action>, outgoing: pluto::latest::Sender<Arc<Snapshot>
                     snapshot.connected = true;
                     snapshot.error.clear();
                 }
-                last_poll = Instant::now();
-            }
-        }
-        if let Ok((generation, installed, latest, source)) = versions_rx.try_recv()
-            && generation == version_generation
-        {
-            snapshot.installed_version = installed;
-            snapshot.latest_version = latest;
-            snapshot.install_source = source;
-            snapshot.update_available =
-                newer_version(&snapshot.latest_version, &snapshot.installed_version);
-            snapshot.checking_update = false;
-        }
-        if !snapshot.checking_update
-            && last_version_check.elapsed() >= Duration::from_secs(6 * 60 * 60)
-        {
-            let tx = versions_tx.clone();
-            let generation = version_generation;
-            snapshot.checking_update = true;
-            last_version_check = Instant::now();
-            if thread::Builder::new()
-                .name("island-opencode-version".into())
-                .spawn(move || {
-                    let installed =
-                        normalized_version(&cli_output(&["--version"]).unwrap_or_default());
-                    let latest = latest_version().unwrap_or_default();
-                    let _ = tx.send((generation, installed, latest, cli_source().to_owned()));
-                })
-                .is_err()
-            {
-                snapshot.checking_update = false;
+                last_poll = Some(Instant::now());
             }
         }
         // Compare the model directly; do not allocate a full JSON copy every poll.
@@ -400,47 +412,96 @@ fn run(incoming: Receiver<Action>, outgoing: pluto::latest::Sender<Arc<Snapshot>
     }
 }
 
-fn cli() -> std::path::PathBuf {
-    if let Some(path) = managed_cli().filter(|path| path.is_file()) {
-        return path;
+pub(crate) fn cli_binary() -> Option<PathBuf> {
+    if let Some(path) = managed_cli().filter(|path| valid_windows_binary(path)) {
+        return Some(path);
     }
-    std::env::var_os("APPDATA")
-        .map(|root| {
-            std::path::PathBuf::from(root)
-                .join("npm")
-                .join("opencode.cmd")
-        })
-        .filter(|path| path.is_file())
-        .unwrap_or_else(|| "opencode".into())
+    for path in npm_binaries() {
+        if valid_windows_binary(&path) {
+            return Some(path);
+        }
+    }
+    std::env::var_os("PATH").and_then(|paths| {
+        std::env::split_paths(&paths)
+            .map(|directory| directory.join("opencode.exe"))
+            .find(|path| valid_windows_binary(path))
+    })
+}
+
+fn npm_binaries() -> Vec<PathBuf> {
+    let Some(root) = std::env::var_os("APPDATA") else {
+        return Vec::new();
+    };
+    let npm = PathBuf::from(root).join("npm/node_modules");
+    vec![
+        npm.join("@opencode/cli/bin/opencode.exe"),
+        npm.join("opencode-ai/bin/opencode.exe"),
+    ]
+}
+
+pub(crate) fn missing_cli_error() -> String {
+    if npm_binaries().iter().any(|path| path.is_file()) {
+        "OpenCode's npm executable is incomplete or invalid. Use Install to add a working Pluto copy, or repair the npm installation.".into()
+    } else {
+        "OpenCode is not installed".into()
+    }
+}
+
+fn valid_windows_binary(path: &Path) -> bool {
+    let Ok(mut file) = fs::File::open(path) else {
+        return false;
+    };
+    if !file
+        .metadata()
+        .is_ok_and(|metadata| metadata.len() >= 1_000_000)
+    {
+        return false;
+    }
+    let mut dos = [0u8; 64];
+    if file.read_exact(&mut dos).is_err() || &dos[..2] != b"MZ" {
+        return false;
+    }
+    let offset = u32::from_le_bytes(dos[60..64].try_into().unwrap()) as u64;
+    if !(64..=4096).contains(&offset) || file.seek(SeekFrom::Start(offset)).is_err() {
+        return false;
+    }
+    let mut pe = [0u8; 26];
+    if file.read_exact(&mut pe).is_err() || &pe[..4] != b"PE\0\0" {
+        return false;
+    }
+    let machine = u16::from_le_bytes([pe[4], pe[5]]);
+    let expected = if cfg!(target_arch = "aarch64") {
+        0xaa64
+    } else {
+        0x8664
+    };
+    machine == expected && u16::from_le_bytes([pe[24], pe[25]]) == 0x20b
 }
 
 fn cli_source() -> &'static str {
-    if managed_cli().is_some_and(|path| path.is_file()) {
-        "island"
-    } else if std::env::var_os("APPDATA")
-        .map(|root| {
-            std::path::PathBuf::from(root)
-                .join("npm")
-                .join("opencode.cmd")
-        })
-        .is_some_and(|path| path.is_file())
-    {
+    if managed_cli().is_some_and(|path| valid_windows_binary(&path)) {
+        "pluto"
+    } else if npm_binaries().iter().any(|path| valid_windows_binary(path)) {
         "npm"
-    } else {
+    } else if cli_binary().is_some() {
         "external"
+    } else {
+        "missing"
     }
 }
 
 fn latest_version() -> Result<String, String> {
-    let output = Command::new("powershell.exe")
-        .args(["-NoProfile", "-NonInteractive", "-Command",
-            "$ErrorActionPreference='Stop'; (Invoke-RestMethod -Uri 'https://opencode.ai/update/api/latest/cli/npm' -TimeoutSec 12).version"])
-        .stdin(Stdio::null()).creation_flags(0x0800_0000).output()
-        .map_err(|_| "Could not check OpenCode releases".to_owned())?;
-    if !output.status.success() {
-        return Err("Could not check OpenCode releases".into());
+    let mut command = Command::new("powershell.exe");
+    // Windows PowerShell must not import incompatible modules inherited from a PowerShell 7 launcher.
+    command.env_remove("PSModulePath");
+    command.args(["-NoProfile", "-NonInteractive", "-Command",
+        "$ErrorActionPreference='Stop'; (Invoke-RestMethod -Uri 'https://opencode.ai/update/api/latest/cli/npm' -TimeoutSec 12).version"]);
+    let output = run_hidden_with_timeout(&mut command, Duration::from_secs(20))?;
+    let version = normalized_version(&output);
+    if !stable_version(&version) {
+        return Err("OpenCode's stable release response was invalid".into());
     }
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
+    Ok(version)
 }
 
 fn newer_version(latest: &str, installed: &str) -> bool {
@@ -484,69 +545,148 @@ fn normalized_version(output: &str) -> String {
         .unwrap_or_else(|| output.trim().to_owned())
 }
 
-fn update_cli(source: &str) -> Result<(), String> {
-    let _ = cli_output(&["service", "stop"]);
-    if source == "npm" {
-        let mut command = Command::new("npm.cmd");
-        command.args(["install", "-g", "@opencode/cli@latest"]);
-        if !run_hidden_with_timeout(&mut command, Duration::from_secs(300))? {
-            return Err(
-                "npm could not update OpenCode. Close other OpenCode windows and retry.".into(),
-            );
-        }
-        Ok(())
-    } else {
-        install_cli()
+fn update_cli() -> Result<(), String> {
+    let previous = cli_binary();
+    install_cli()?;
+    // Stage and validate first. No running ACP executable is overwritten.
+    if cli_binary() != previous {
+        let _ = cli_output(&["service", "stop"]);
     }
+    Ok(())
 }
 
-fn run_hidden_with_timeout(command: &mut Command, timeout: Duration) -> Result<bool, String> {
-    let mut child = command
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .creation_flags(0x0800_0000)
-        .spawn()
-        .map_err(|_| "Installer could not start".to_owned())?;
-    let start = Instant::now();
-    loop {
-        if let Some(status) = child.try_wait().map_err(|_| "Installer process failed")? {
-            return Ok(status.success());
+fn run_hidden_with_timeout(command: &mut Command, timeout: Duration) -> Result<String, String> {
+    let id = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!("pluto-opencode-{}-{id}", std::process::id()));
+    fs::create_dir(&root).map_err(|e| format!("Could not capture OpenCode output: {e}"))?;
+    let stdout_path = root.join("stdout");
+    let stderr_path = root.join("stderr");
+    let result = (|| {
+        // A background service can inherit stdout. File capture avoids waiting
+        // indefinitely for a descendant to close a pipe after its parent exits.
+        let stdout = fs::File::create(&stdout_path).map_err(|e| e.to_string())?;
+        let stderr = fs::File::create(&stderr_path).map_err(|e| e.to_string())?;
+        let mut child = command
+            .stdin(Stdio::null())
+            .stdout(stdout)
+            .stderr(stderr)
+            .creation_flags(0x0800_0000)
+            .spawn()
+            .map_err(|e| format!("OpenCode command could not start: {e}"))?;
+        let start = Instant::now();
+        let status = loop {
+            match child.try_wait() {
+                Ok(Some(status)) => break status,
+                Ok(None) if start.elapsed() < timeout => thread::sleep(Duration::from_millis(40)),
+                state => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(match state {
+                        Err(e) => format!("OpenCode command failed: {e}"),
+                        _ => format!(
+                            "OpenCode command timed out after {} seconds. The existing installation was kept.",
+                            timeout.as_secs()
+                        ),
+                    });
+                }
+            }
+        };
+        let read = |path: &Path, limit| -> String {
+            let mut bytes = Vec::new();
+            if let Ok(file) = fs::File::open(path) {
+                let _ = file.take(limit).read_to_end(&mut bytes);
+            }
+            String::from_utf8_lossy(&bytes).trim().to_owned()
+        };
+        if status.success() {
+            Ok(read(&stdout_path, 64 * 1024))
+        } else {
+            let details = read(&stderr_path, 4096)
+                .lines()
+                .filter(|line| !line.trim().is_empty())
+                .take(8)
+                .collect::<Vec<_>>()
+                .join(" ")
+                .chars()
+                .take(1200)
+                .collect::<String>();
+            Err(format!(
+                "OpenCode command failed ({status}): {details}. The existing installation was kept."
+            ))
         }
-        if start.elapsed() >= timeout {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err("OpenCode installation timed out. Check the connection and retry.".into());
-        }
-        thread::sleep(Duration::from_millis(250));
-    }
+    })();
+    let _ = fs::remove_file(stdout_path);
+    let _ = fs::remove_file(stderr_path);
+    let _ = fs::remove_dir(root);
+    result
 }
 
-fn managed_cli() -> Option<std::path::PathBuf> {
-    std::env::var_os("LOCALAPPDATA").map(|root| {
-        std::path::PathBuf::from(root)
-            .join("Pluto")
-            .join("tools")
-            .join("opencode")
-            .join("opencode.exe")
-    })
+fn stable_version(version: &str) -> bool {
+    let parts = version.split('.').collect::<Vec<_>>();
+    parts.len() == 3
+        && parts
+            .iter()
+            .all(|part| !part.is_empty() && part.bytes().all(|ch| ch.is_ascii_digit()))
+}
+
+fn managed_root() -> Option<PathBuf> {
+    std::env::var_os("LOCALAPPDATA").map(|root| PathBuf::from(root).join("Pluto/tools/opencode"))
+}
+
+fn managed_cli_at(root: &Path) -> PathBuf {
+    if let Ok(version) = fs::read_to_string(root.join("current-version.txt")) {
+        let version = version.trim();
+        if stable_version(version) {
+            let path = root.join("versions").join(version).join("opencode.exe");
+            if valid_windows_binary(&path) {
+                return path;
+            }
+        }
+    }
+    root.join("opencode.exe")
+}
+
+fn managed_cli() -> Option<PathBuf> {
+    managed_root().map(|root| managed_cli_at(&root))
 }
 
 fn cli_output(args: &[&str]) -> Result<String, String> {
-    let output = Command::new(cli())
-        .args(args)
-        .stdin(Stdio::null())
-        .creation_flags(0x0800_0000)
-        .output()
-        .map_err(|_| "OpenCode is not installed".to_owned())?;
-    if !output.status.success() {
-        return Err("OpenCode service could not start".into());
+    let executable = cli_binary().ok_or_else(missing_cli_error)?;
+    let mut command = Command::new(executable);
+    command.args(args);
+    let result = run_hidden_with_timeout(&mut command, Duration::from_secs(12));
+    if args == ["pair"] {
+        result.map_err(|_| {
+            "OpenCode pairing command failed or timed out. Reconnect to try again.".into()
+        })
+    } else {
+        result
     }
-    String::from_utf8(output.stdout).map_err(|_| "Invalid OpenCode service response".into())
 }
 
 fn install_cli() -> Result<(), String> {
-    let destination = managed_cli().ok_or("Cannot locate the Windows app data folder")?;
+    let root = managed_root().ok_or("Cannot locate the Windows app data folder")?;
+    let expected_version = latest_version()?;
+    if !newer_version(&expected_version, "0.0.0")
+        || expected_version
+            .chars()
+            .any(|ch| !ch.is_ascii_digit() && ch != '.')
+    {
+        return Err("Could not resolve a stable OpenCode version; no update was installed".into());
+    }
+    if let Ok(installed) = cli_output(&["--version"]) {
+        let installed = normalized_version(&installed);
+        if stable_version(&installed) && !newer_version(&expected_version, &installed) {
+            return Ok(());
+        }
+    }
+    let destination = root
+        .join("versions")
+        .join(&expected_version)
+        .join("opencode.exe");
     let asset = if cfg!(target_arch = "aarch64") {
         "opencode-windows-arm64.zip"
     } else {
@@ -556,35 +696,49 @@ fn install_cli() -> Result<(), String> {
     let script = format!(
         r#"
 $ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
 $root = Join-Path $env:LOCALAPPDATA 'Pluto\tools\opencode'
 New-Item -ItemType Directory -Path $root -Force | Out-Null
 $stage = Join-Path $root ('stage-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $stage -Force | Out-Null
 try {{
   $archive = Join-Path $stage 'opencode.zip'
-  Invoke-WebRequest -Uri '{uri}' -OutFile $archive -UseBasicParsing -TimeoutSec 180
+  & (Join-Path ([Environment]::SystemDirectory) 'curl.exe') --fail --silent --show-error --location --max-redirs 5 --connect-timeout 10 --max-time 180 --max-filesize 1073741824 --user-agent 'Pluto-Desktop' --output $archive '{uri}'
+  if ($LASTEXITCODE -ne 0) {{ throw "OpenCode download failed (curl exit $LASTEXITCODE)" }}
   $archiveSize = (Get-Item -LiteralPath $archive).Length
   if ($archiveSize -lt 1 -or $archiveSize -gt 1GB) {{ throw 'OpenCode archive size is outside the allowed range' }}
   Add-Type -AssemblyName System.IO.Compression.FileSystem
+  $unpacked = Join-Path $stage 'unpacked'
+  $unpackedFull = [IO.Path]::GetFullPath($unpacked).TrimEnd('\') + '\'
   $zip = [IO.Compression.ZipFile]::OpenRead($archive)
   try {{
     if ($zip.Entries.Count -gt 256) {{ throw 'OpenCode archive has too many entries' }}
+    foreach ($entry in $zip.Entries) {{
+      $entryPath = [IO.Path]::GetFullPath((Join-Path $unpacked $entry.FullName))
+      if (-not $entryPath.StartsWith($unpackedFull, [StringComparison]::OrdinalIgnoreCase)) {{ throw 'OpenCode archive contains a path outside its extraction directory' }}
+    }}
     $expandedSize = ($zip.Entries | Measure-Object -Property Length -Sum).Sum
     if ($expandedSize -gt 2GB) {{ throw 'OpenCode archive expands beyond the allowed size' }}
   }} finally {{ $zip.Dispose() }}
-  Expand-Archive -LiteralPath $archive -DestinationPath (Join-Path $stage 'unpacked') -Force
+  [IO.Compression.ZipFile]::ExtractToDirectory($archive, $unpacked)
   $binaries = @(Get-ChildItem -LiteralPath (Join-Path $stage 'unpacked') -Recurse -Filter 'opencode.exe' -File)
   if ($binaries.Count -ne 1) {{ throw 'Expected exactly one OpenCode executable in official archive' }}
   $binary = $binaries[0]
-  $next = Join-Path $root 'opencode.new.exe'
+  $next = Join-Path $stage 'opencode.new.exe'
   Copy-Item -LiteralPath $binary.FullName -Destination $next -Force
   $signature = Get-AuthenticodeSignature -FilePath $next
   if ($signature.Status -ne 'Valid' -or $null -eq $signature.SignerCertificate) {{ throw "OpenCode signature is not valid: $($signature.Status)" }}
   $publisher = $signature.SignerCertificate.GetNameInfo([System.Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $false)
   if ($publisher -ne 'Anomaly Innovations, Inc https://anoma.ly/') {{ throw "Unexpected OpenCode publisher: $publisher" }}
-  & $next --version | Out-Null
+  $installedVersion = (& $next --version | Out-String).Trim()
   if ($LASTEXITCODE -ne 0) {{ throw 'OpenCode binary did not start' }}
-  Move-Item -LiteralPath $next -Destination (Join-Path $root 'opencode.exe') -Force
+  if ($installedVersion -notmatch ('(?<![0-9])' + [regex]::Escape('{expected_version}') + '(?![0-9])')) {{ throw "Downloaded OpenCode version $installedVersion did not match {expected_version}" }}
+  $versionRoot = Join-Path (Join-Path $root 'versions') '{expected_version}'
+  New-Item -ItemType Directory -Path $versionRoot -Force | Out-Null
+  $destination = Join-Path $versionRoot 'opencode.exe'
+  if (Test-Path -LiteralPath $destination) {{
+    if ((Get-FileHash -LiteralPath $destination).Hash -ne (Get-FileHash -LiteralPath $next).Hash) {{ throw 'A different executable already exists for this version. The active installation was kept.' }}
+  }} else {{ Move-Item -LiteralPath $next -Destination $destination }}
 }} finally {{
   $rootFull = [IO.Path]::GetFullPath($root).TrimEnd('\') + '\'
   $stageFull = [IO.Path]::GetFullPath($stage)
@@ -593,10 +747,19 @@ try {{
 "#
     );
     let mut command = Command::new("powershell.exe");
+    command.env_remove("PSModulePath");
     command.args(["-NoProfile", "-NonInteractive", "-Command", &script]);
-    if !run_hidden_with_timeout(&mut command, Duration::from_secs(300))? || !destination.is_file() {
-        return Err("OpenCode installation failed. Check the internet connection and available disk space, then retry.".into());
+    run_hidden_with_timeout(&mut command, Duration::from_secs(300))?;
+    if !valid_windows_binary(&destination) {
+        return Err(
+            "The staged OpenCode executable is invalid. The active installation was kept.".into(),
+        );
     }
+    let next = root.join("current-version.next");
+    fs::write(&next, &expected_version)
+        .map_err(|e| format!("Could not stage OpenCode selection: {e}"))?;
+    fs::rename(&next, root.join("current-version.txt"))
+        .map_err(|e| format!("Could not activate OpenCode: {e}"))?;
     Ok(())
 }
 
@@ -1726,4 +1889,152 @@ fn base64(bytes: &[u8]) -> String {
         });
     }
     out
+}
+
+#[cfg(test)]
+mod executable_tests {
+    use super::*;
+
+    #[test]
+    fn rejects_postinstall_placeholder_and_wrong_architecture() {
+        let path = std::env::temp_dir().join(format!(
+            "pluto-opencode-header-{}-{}.bin",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::write(&path, b"echo postinstall script was not run").unwrap();
+        assert!(!valid_windows_binary(&path));
+
+        let mut bytes = vec![0u8; 1_000_000];
+        bytes[..2].copy_from_slice(b"MZ");
+        bytes[60..64].copy_from_slice(&128u32.to_le_bytes());
+        bytes[128..132].copy_from_slice(b"PE\0\0");
+        let machine: u16 = if cfg!(target_arch = "aarch64") {
+            0xaa64
+        } else {
+            0x8664
+        };
+        bytes[132..134].copy_from_slice(&machine.to_le_bytes());
+        bytes[152..154].copy_from_slice(&0x20bu16.to_le_bytes());
+        fs::write(&path, &bytes).unwrap();
+        assert!(valid_windows_binary(&path));
+        bytes[132..134].copy_from_slice(&0u16.to_le_bytes());
+        fs::write(&path, &bytes).unwrap();
+        assert!(!valid_windows_binary(&path));
+        let _ = fs::remove_file(path);
+    }
+}
+
+#[cfg(test)]
+mod install_regressions {
+    use super::*;
+
+    #[test]
+    fn versioned_selection_falls_back_safely_and_never_follows_a_path_in_the_pointer() {
+        let root = std::env::temp_dir().join(format!(
+            "pluto-opencode-selection-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let version = root.join("versions/2.2.6");
+        fs::create_dir_all(&version).unwrap();
+        let mut bytes = vec![0u8; 1_000_000];
+        bytes[..2].copy_from_slice(b"MZ");
+        bytes[60..64].copy_from_slice(&128u32.to_le_bytes());
+        bytes[128..132].copy_from_slice(b"PE\0\0");
+        let machine: u16 = if cfg!(target_arch = "aarch64") {
+            0xaa64
+        } else {
+            0x8664
+        };
+        bytes[132..134].copy_from_slice(&machine.to_le_bytes());
+        bytes[152..154].copy_from_slice(&0x20bu16.to_le_bytes());
+        let legacy = root.join("opencode.exe");
+        let candidate = version.join("opencode.exe");
+        let pointer = root.join("current-version.txt");
+        fs::write(&legacy, &bytes).unwrap();
+        fs::write(&candidate, &bytes).unwrap();
+        assert_eq!(managed_cli_at(&root), legacy);
+        fs::write(&pointer, "2.2.6").unwrap();
+        assert_eq!(managed_cli_at(&root), candidate);
+        fs::write(&pointer, "../../outside").unwrap();
+        assert_eq!(managed_cli_at(&root), legacy);
+        fs::write(&pointer, "2.2.7").unwrap();
+        assert_eq!(managed_cli_at(&root), legacy);
+        fs::write(&pointer, "2.2.6").unwrap();
+        fs::write(&candidate, b"partial download").unwrap();
+        assert_eq!(managed_cli_at(&root), legacy);
+        for path in [legacy, candidate, pointer] {
+            fs::remove_file(path).unwrap();
+        }
+        fs::remove_dir(version).unwrap();
+        fs::remove_dir(root.join("versions")).unwrap();
+        fs::remove_dir(root).unwrap();
+    }
+
+    #[test]
+    fn command_failure_keeps_diagnostics_and_timeout_is_bounded() {
+        let mut failure = Command::new("powershell.exe");
+        failure.args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "[Console]::Error.WriteLine('Archive verification failed'); exit 3",
+        ]);
+        let error = run_hidden_with_timeout(&mut failure, Duration::from_secs(5)).unwrap_err();
+        assert!(error.contains("Archive verification failed"));
+        let mut slow = Command::new("powershell.exe");
+        slow.args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "Start-Sleep -Seconds 5",
+        ]);
+        let started = Instant::now();
+        assert!(
+            run_hidden_with_timeout(&mut slow, Duration::from_millis(150))
+                .unwrap_err()
+                .contains("timed out")
+        );
+        assert!(started.elapsed() < Duration::from_secs(3));
+    }
+
+    #[test]
+    #[ignore = "official installer integration; requires an isolated PLUTO_TEST_INSTALL_ROOT"]
+    fn isolated_official_install_and_repeat_probe() {
+        let root = PathBuf::from(std::env::var("PLUTO_TEST_INSTALL_ROOT").unwrap());
+        assert_eq!(PathBuf::from(std::env::var("LOCALAPPDATA").unwrap()), root);
+        assert!(root.ends_with("opencode-install-review"));
+        install_cli().unwrap();
+        let first = managed_cli().unwrap();
+        assert!(valid_windows_binary(&first));
+        assert!(first.starts_with(root.join("Pluto/tools/opencode/versions")));
+        let modified = fs::metadata(&first).unwrap().modified().unwrap();
+        install_cli().unwrap();
+        assert_eq!(managed_cli().unwrap(), first);
+        assert_eq!(fs::metadata(&first).unwrap().modified().unwrap(), modified);
+        let version = normalized_version(&cli_output(&["--version"]).unwrap());
+        println!(
+            "Verified isolated OpenCode {version}: official signed install, versioned activation and idempotent repeat passed"
+        );
+    }
+
+    #[test]
+    #[ignore = "read-only installed binary diagnostic; set PLUTO_TEST_OPENCODE explicitly"]
+    fn installed_cli_version_probe() {
+        let path = PathBuf::from(std::env::var("PLUTO_TEST_OPENCODE").unwrap());
+        assert!(valid_windows_binary(&path));
+        let mut command = Command::new(path);
+        command.arg("--version");
+        let version = normalized_version(
+            &run_hidden_with_timeout(&mut command, Duration::from_secs(12)).unwrap(),
+        );
+        assert!(stable_version(&version));
+        println!("Installed OpenCode version: {version}");
+    }
 }

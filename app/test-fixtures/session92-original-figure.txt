@@ -1,0 +1,33 @@
+```island-figure
+{"program":true,"label":"Optimus Prime transformation","duration":8,"steps":[{"label":"Truck"},{"label":"Panels open"},{"label":"Robot"},{"label":"Return"},{"label":"Truck"}],"assembly_plan":{"source":"Red and blue semi-truck","destination":"Red-and-blue humanoid robot","assemblies":[{"id":"cab","source":"Cab and chest","destination":"Chest"},{"id":"legs","source":"Front wheel fenders","destination":"Legs"},{"id":"arms","source":"Cab side panels","destination":"Arms"},{"id":"head","source":"Cab roof","destination":"Head"}]},"camera":{"yaw":35,"pitch":12,"orbit_degrees_per_second":0},"cues":[{"at":0,"text":"Truck form"},{"at":0.22,"text":"Cab panels unfold; wheels swing to the sides"},{"at":0.52,"text":"Legs extend and the head rises"},{"at":0.72,"text":"Robot form"},{"at":0.82,"text":"Transformation returns to truck form"}]}
+{"op":"group","id":"frame","transform":{"position":[0,0,0]}}
+{"op":"group","id":"cab","parent":"frame","scope":false,"transform":{"position":[0,1.35,0]}}
+{"op":"part","id":"cab_shell","label":"Cab shell","detail":"Blue truck cab forms the robot's upper torso","shape":{"kind":"box","size":[1.8,1.25,1.15],"bevel":0.12},"color":"#1556A8","material":"paint"}
+{"op":"part","id":"windshield","label":"Windshield","detail":"Dark front glazing on the cab","shape":{"kind":"box","size":[1.42,0.48,0.06],"bevel":0.06},"color":"#182838","transform":{"position":[0,0.32,0.59]}}
+{"op":"part","id":"grille","label":"Grille","detail":"Silver grille on truck front","shape":{"kind":"box","size":[0.68,0.26,0.08],"bevel":0.03},"color":"#AAB5C0","transform":{"position":[0,-0.34,0.61]}}
+{"op":"part","id":"bumper","label":"Bumper","detail":"Truck front bumper","shape":{"kind":"box","size":[1.62,0.18,0.18],"bevel":0.04},"color":"#B9C5D1","transform":{"position":[0,-0.59,0.6]}}
+{"op":"group","id":"head","parent":"frame","scope":false,"transform":{"position":[0,2.15,0]}}
+{"op":"part","id":"helmet","label":"Helmet","detail":"Blue robot helmet with central crest","shape":{"kind":"box","size":[0.62,0.62,0.52],"bevel":0.12},"color":"#174C9B"}
+{"op":"part","id":"crest","label":"Crest","detail":"Red central helmet crest","shape":{"kind":"box","size":[0.16,0.28,0.12],"bevel":0.03},"color":"#C82D32","transform":{"position":[0,0.34,0.22]}}
+{"op":"part","id":"face","label":"Faceplate","detail":"Silver faceplate","shape":{"kind":"box","size":[0.38,0.2,0.1],"bevel":0.04},"color":"#C7D0D8","transform":{"position":[0,-0.14,0.28]}}
+{"op":"group","id":"legs","parent":"frame","scope":false,"transform":{"position":[0,0.15,-0.04]}}
+{"op":"part","id":"left_leg","label":"Left leg","detail":"Red lower cab panel unfolds into left leg","shape":{"kind":"box","size":[0.72,1.1,0.68],"bevel":0.08},"color":"#C72B32","transform":{"position":[-0.43,-0.58,0]}}
+{"op":"part","id":"right_leg","label":"Right leg","detail":"Red lower cab panel unfolds into right leg","shape":{"kind":"box","size":[0.72,1.1,0.68],"bevel":0.08},"color":"#C72B32","transform":{"position":[0.43,-0.58,0]}}
+{"op":"part","id":"left_foot","label":"Left foot","detail":"Blue foot integrated beneath left leg","shape":{"kind":"box","size":[0.76,0.22,0.92],"bevel":0.06},"color":"#164F9E","transform":{"position":[-0.43,-1.18,0.13]}}
+{"op":"part","id":"right_foot","label":"Right foot","detail":"Blue foot integrated beneath right leg","shape":{"kind":"box","size":[0.76,0.22,0.92],"bevel":0.06},"color":"#164F9E","transform":{"position":[0.43,-1.18,0.13]}}
+{"op":"group","id":"arms","parent":"frame","scope":false,"transform":{"position":[0,1.58,0]}}
+{"op":"part","id":"left_arm","label":"Left arm","detail":"Red cab side panel and wheel assembly forms arm","shape":{"kind":"box","size":[0.48,1.18,0.52],"bevel":0.08},"color":"#C72B32","transform":{"position":[-1.2,-0.34,0]}}
+{"op":"part","id":"right_arm","label":"Right arm","detail":"Red cab side panel and wheel assembly forms arm","shape":{"kind":"box","size":[0.48,1.18,0.52],"bevel":0.08},"color":"#C72B32","transform":{"position":[1.2,-0.34,0]}}
+{"op":"part","id":"left_wheel","label":"Left wheel","detail":"Black tire carried on left arm","shape":{"kind":"torus","radius":0.3,"thickness":0.12},"color":"#20252A","transform":{"position":[-1.24,-0.36,0.3],"rotation":[90,0,0]}}
+{"op":"part","id":"right_wheel","label":"Right wheel","detail":"Black tire carried on right arm","shape":{"kind":"torus","radius":0.3,"thickness":0.12},"color":"#20252A","transform":{"position":[1.24,-0.36,0.3],"rotation":[90,0,0]}}
+{"op":"part","id":"left_hand","label":"Left hand","detail":"Blue hand at left forearm","shape":{"kind":"box","size":[0.38,0.34,0.38],"bevel":0.08},"color":"#164F9E","transform":{"position":[-1.2,-1.08,0]}}
+{"op":"part","id":"right_hand","label":"Right hand","detail":"Blue hand at right forearm","shape":{"kind":"box","size":[0.38,0.34,0.38],"bevel":0.08},"color":"#164F9E","transform":{"position":[1.2,-1.08,0]}}
+{"op":"part","id":"left_fender","label":"Left fender","detail":"Red front fender panel above wheel","shape":{"kind":"box","size":[0.76,0.22,0.78],"bevel":0.05},"color":"#C72B32","transform":{"position":[-0.56,0.18,0.14]}}
+{"op":"part","id":"right_fender","label":"Right fender","detail":"Red front fender panel above wheel","shape":{"kind":"box","size":[0.76,0.22,0.78],"bevel":0.05},"color":"#C72B32","transform":{"position":[0.56,0.18,0.14]}}
+{"op":"beat","start":0.5,"end":2.2,"moves":[{"target":"arms","translate":[-0.58,0.12,0]},{"target":"legs","translate":[0,-0.05,0]}]}
+{"op":"beat","start":1.6,"end":3.8,"moves":[{"target":"head","translate":[0,0.28,0]},{"target":"arms","translate":[-0.58,0.12,0]}]}
+{"op":"beat","start":4.6,"end":6.2,"moves":[{"target":"head","translate":[0,0,0]},{"target":"arms","translate":[0,0,0]},{"target":"legs","translate":[0,0,0]}]}
+{"op":"end"}
+```
+
+A schematic transformation: the cab becomes the chest, side panels swing outward as arms, and lower panels separate into legs.
