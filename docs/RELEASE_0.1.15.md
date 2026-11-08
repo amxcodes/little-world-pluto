@@ -1,4 +1,4 @@
-# Pluto v0.1.14
+# Pluto v0.1.15
 
 This release publishes the local improvements developed since v0.1.6.
 
@@ -7,6 +7,9 @@ This release publishes the local improvements developed since v0.1.6.
   control layouts.
 - Refines profile dropdowns/editor tabs, pinning, dictation states and Settings
   text weight across all three appearance modes and both themes.
+- Gives reminder dates, month navigation, time steppers and reminder actions
+  consistent material-aware hover and focus states across the three appearance
+  modes and both themes.
 - Improves Meetings, Notes/reminder calendar, session turns and audio device
   menus. Profiles uses one outer panel; session removal has a red-icon
   confirmation; Hyper Glass shows Shelf as an icon/count.
@@ -22,6 +25,9 @@ This release publishes the local improvements developed since v0.1.6.
 
 The UI corrections do not change the 3D authoring contracts or renderer behavior.
 Release preparation applies Rust formatting and equivalent lint simplifications.
+The release source guard compares normalized Git content and separately rejects
+untracked source files, avoiding Windows EOL-only status reports for generated
+UI bundles.
 
 Windows x64 installer and portable ZIP are signed with the existing Pluto
 release key. Keep app data when upgrading. Extract the portable ZIP before

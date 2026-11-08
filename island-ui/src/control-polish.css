@@ -39,14 +39,45 @@
 .island.expanded .opencode-profile-sections > button:is(:hover,:focus-visible,[aria-selected="true"]) { color:var(--text); background:color-mix(in srgb,var(--text) 7%,var(--card)); box-shadow:none; }
 .island.expanded .opencode-profile-sections[data-hyper-track] > button:is(:hover,:focus-visible,[aria-selected="true"]) { background:transparent; }
 
+/* Reminder controls use the current material on hover without switching to
+   the app accent. Selection remains visible on the chosen date. */
+.island.expanded[data-material] :is(.calendar-top button,.calendar-time-wheel button) {
+  color:var(--muted); background-image:none; background-color:transparent;
+  border:1px solid transparent; box-shadow:none;
+  transition:background-color 180ms ease,color 180ms ease,border-color 180ms ease,transform 180ms ease;
+}
+.island.expanded[data-material] :is(.calendar-top button,.calendar-time-wheel button):is(:hover,:focus-visible,:active):not(:disabled) {
+  color:var(--text); background-image:var(--polish-image); background-color:var(--polish-hover);
+  border-color:var(--line); box-shadow:var(--polish-rim); filter:none;
+}
+.island.expanded[data-material] .calendar-grid button.calendar-day {
+  color:var(--text); background-image:none; border:1px solid transparent; box-shadow:none;
+  transition:background-color 180ms ease,color 180ms ease,border-color 180ms ease,transform 180ms ease;
+}
+.island.expanded[data-material] .calendar-grid button.calendar-day:is(:hover,:focus-visible,:active):not(:disabled,.selected) {
+  color:var(--text); background-image:var(--polish-image); background-color:var(--polish-hover);
+  border-color:var(--line); box-shadow:var(--polish-rim); filter:none;
+}
+.island.expanded[data-material] .calendar-grid button.calendar-day.is-today:not(.selected) { box-shadow:inset 0 0 0 1px var(--line); }
+.island.expanded[data-material] :is(button.calendar-save,.reminder-empty button.utility-primary) {
+  color:var(--text); background-image:var(--polish-image); background-color:var(--polish-fill);
+  border:1px solid var(--line); border-radius:999px; box-shadow:var(--polish-rim); filter:none;
+  font-weight:550; transition:background-color 180ms ease,color 180ms ease,border-color 180ms ease,transform 180ms ease;
+}
+.island.expanded[data-material] :is(button.calendar-save,.reminder-empty button.utility-primary):is(:hover,:focus-visible,:active):not(:disabled) {
+  color:var(--text); background-image:var(--polish-image); background-color:var(--polish-hover);
+  border-color:var(--line); box-shadow:var(--polish-rim); filter:none;
+}
+.island.expanded[data-material] :is(.calendar-top button,.calendar-time-wheel button,.calendar-grid button.calendar-day,button.calendar-save,.reminder-empty button.utility-primary):active:not(:disabled) { transform:scale(.96); }
+
 /* Selection uses its surface and icon cues, without changing text width. */
 .island.settings-open :is(.settings-segments,.settings-lane-tabs,.settings-choice,.appearance-mode-picker) button,
 .island.settings-open :is(.settings-segments,.settings-lane-tabs,.settings-choice,.appearance-mode-picker) button:is(.selected,.active,[aria-pressed="true"],[aria-selected="true"]) { font-weight:500; }
 .island.settings-open button.settings-nav-item,
 .island.settings-open button.settings-nav-item.selected { font-weight:500; }
 
-.island[data-reduced-motion="true"] :is(.opencode-profile-select-trigger,.opencode-profile-back,.opencode-profile-select-menu > button,.opencode-profile-sections > button,.pin-toggle,.dictate-record,.dictate-cancel),
-.island[data-hyper-motion="false"] :is(.opencode-profile-select-trigger,.opencode-profile-back,.opencode-profile-select-menu > button,.opencode-profile-sections > button,.pin-toggle,.dictate-record,.dictate-cancel) { transition:none; }
+.island[data-reduced-motion="true"] :is(.opencode-profile-select-trigger,.opencode-profile-back,.opencode-profile-select-menu > button,.opencode-profile-sections > button,.pin-toggle,.dictate-record,.dictate-cancel,.calendar-top button,.calendar-time-wheel button,.calendar-grid button.calendar-day,.calendar-save,.reminder-empty button.utility-primary),
+.island[data-hyper-motion="false"] :is(.opencode-profile-select-trigger,.opencode-profile-back,.opencode-profile-select-menu > button,.opencode-profile-sections > button,.pin-toggle,.dictate-record,.dictate-cancel,.calendar-top button,.calendar-time-wheel button,.calendar-grid button.calendar-day,.calendar-save,.reminder-empty button.utility-primary) { transition:none; }
 @media(prefers-reduced-motion:reduce) {
-  .island.expanded :is(.opencode-profile-select-trigger,.opencode-profile-back,.opencode-profile-select-menu > button,.opencode-profile-sections > button,.pin-toggle,.dictate-record,.dictate-cancel) { transition:none; }
+  .island.expanded :is(.opencode-profile-select-trigger,.opencode-profile-back,.opencode-profile-select-menu > button,.opencode-profile-sections > button,.pin-toggle,.dictate-record,.dictate-cancel,.calendar-top button,.calendar-time-wheel button,.calendar-grid button.calendar-day,.calendar-save,.reminder-empty button.utility-primary) { transition:none; }
 }
