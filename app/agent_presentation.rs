@@ -1580,6 +1580,44 @@ mod scene_diagnostic_tests {
     }
 
     #[test]
+    fn explicit_human_figure_request_keeps_the_3d_scene() {
+        let scene =
+            extract_complete_visual(include_str!("test-fixtures/quality-sol-first-figure.txt"))
+                .expect("fixture contains a complete figure scene");
+        let policy = VisualPolicy::for_request("Visualize Iron Man in 3D");
+        assert!(policy.human_subject);
+        assert!(policy.requests_visual());
+
+        let published = apply_visual_policy(scene, &policy).expect("figure should be retained");
+        assert!(matches!(
+            published.elements.first(),
+            Some(PresentationElement::FigureScene { .. })
+        ));
+    }
+
+    #[test]
+    fn human_figure_stays_text_when_visuals_are_not_requested_or_forbidden() {
+        let fixture = include_str!("test-fixtures/quality-sol-first-figure.txt");
+
+        let unsolicited = extract_complete_visual(fixture).unwrap();
+        let policy = VisualPolicy::for_request("Iron Man character");
+        let published = apply_visual_policy(unsolicited, &policy).expect("text fallback remains");
+        assert!(matches!(
+            published.elements.first(),
+            Some(PresentationElement::Text { .. })
+        ));
+
+        let text_only = extract_complete_visual(fixture).unwrap();
+        let policy = VisualPolicy::for_request("Visualize an Iron Man character, text only");
+        assert!(!policy.requests_visual());
+        let published = apply_visual_policy(text_only, &policy).expect("text fallback remains");
+        assert!(matches!(
+            published.elements.first(),
+            Some(PresentationElement::Text { .. })
+        ));
+    }
+
+    #[test]
     fn long_body_does_not_hide_a_detached_part_inside_a_large_bounding_sphere() {
         let scene: AgentPresentation = serde_json::from_str(r#"{"version":1,"elements":[{"type":"procedural_scene","label":"Assembly","ops":[{"op":"primitive","id":"body","label":"Body","detail":"Long housing","shape":"box","transform":{"scale":[10,0.2,0.2]}},{"op":"primitive","id":"wheel","label":"Wheel","detail":"Wheel","shape":"cylinder","transform":{"position":[0,2,0]}}],"contacts":[{"from":"body","to":"wheel"}]}]}"#).unwrap();
         let diagnostics = scene_diagnostics(&scene);
@@ -1773,13 +1811,7 @@ pub fn apply_visual_policy(
             );
             let suppress = graphical
                 && (policy.text_only
-                    || (policy.human_subject
-                        && (!policy.explicit_visual
-                            || matches!(
-                                element,
-                                PresentationElement::ProceduralScene { .. }
-                                    | PresentationElement::FigureScene { .. }
-                            )))
+                    || (policy.human_subject && !policy.explicit_visual)
                     || (policy.organic_subject
                         && matches!(
                             element,
