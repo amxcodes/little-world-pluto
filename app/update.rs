@@ -1,6 +1,6 @@
 //! Explicit, signed GitHub-release updates for the installed Windows app.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -283,30 +283,180 @@ fn verify_file(
     expected_hash: &str,
 ) -> Result<(), String> {
     use std::os::windows::process::CommandExt;
-    let script = "$hash = (Get-FileHash -LiteralPath $env:PLUTO_UPDATE_FILE -Algorithm SHA256).Hash; $sig = Get-AuthenticodeSignature -LiteralPath $env:PLUTO_UPDATE_FILE; if ($hash -ine $env:PLUTO_UPDATE_SHA256 -or $sig.Status -notin @('Valid','NotTrusted') -or $null -eq $sig.SignerCertificate -or $sig.SignerCertificate.Subject -cne $env:PLUTO_UPDATE_PUBLISHER -or $sig.SignerCertificate.Thumbprint -ine $env:PLUTO_UPDATE_THUMBPRINT) { exit 1 }";
     let output = Command::new("powershell.exe")
         .creation_flags(0x0800_0000)
-        .args(["-NoProfile", "-NonInteractive", "-Command", script])
+        .args(["-NoProfile", "-NonInteractive", "-Command", VERIFY_SCRIPT])
         .env("PLUTO_UPDATE_FILE", path)
         .env("PLUTO_UPDATE_PUBLISHER", publisher)
         .env("PLUTO_UPDATE_THUMBPRINT", thumbprint)
         .env("PLUTO_UPDATE_SHA256", expected_hash)
         .output()
         .map_err(|_| "Could not verify the installer signature.".to_owned())?;
-    if output.status.success() {
+    if !output.status.success() {
+        return Err("Installer checksum or signature did not match Pluto.".into());
+    }
+    let verification: SignatureVerification = serde_json::from_slice(&output.stdout)
+        .map_err(|_| "Could not verify the installer signature.".to_owned())?;
+    if signature_is_acceptable(&verification, publisher, thumbprint, expected_hash) {
         Ok(())
     } else {
         Err("Installer checksum or signature did not match Pluto.".into())
     }
 }
 
+// Windows can report UnknownError for the release's pinned self-signed
+// certificate even though the Authenticode digest and timestamp are valid.
+// PowerShell marks that case separately only after building the exact pinned
+// code-signing certificate chain and finding UntrustedRoot as its sole issue.
+const VERIFY_SCRIPT: &str = r#"
+$ErrorActionPreference = 'Stop'
+try {
+    $hash = (Get-FileHash -LiteralPath $env:PLUTO_UPDATE_FILE -Algorithm SHA256).Hash
+    $sig = Get-AuthenticodeSignature -LiteralPath $env:PLUTO_UPDATE_FILE
+    $unknownRootOnly = $false
+    if ($sig.Status -eq 'UnknownError' -and $null -ne $sig.SignerCertificate) {
+        $chain = [System.Security.Cryptography.X509Certificates.X509Chain]::new()
+        try {
+            $chain.ChainPolicy.VerificationFlags = [System.Security.Cryptography.X509Certificates.X509VerificationFlags]::AllowUnknownCertificateAuthority
+            $chain.ChainPolicy.ApplicationPolicy.Add([System.Security.Cryptography.Oid]::new('1.3.6.1.5.5.7.3.3'))
+            $chainBuilt = $chain.Build($sig.SignerCertificate)
+            $statuses = @($chain.ChainStatus | ForEach-Object { [string]$_.Status })
+            $elements = @($chain.ChainElements)
+            $unknownRootOnly = $chainBuilt -and
+                $statuses.Count -eq 1 -and $statuses[0] -eq 'UntrustedRoot' -and
+                $elements.Count -eq 1 -and
+                $sig.SignerCertificate.Subject -ceq $sig.SignerCertificate.Issuer -and
+                $elements[0].Certificate.Thumbprint -ieq $sig.SignerCertificate.Thumbprint
+        }
+        finally { $chain.Dispose() }
+    }
+    [pscustomobject]@{
+        Hash = $hash
+        Status = [string]$sig.Status
+        Publisher = if ($null -eq $sig.SignerCertificate) { $null } else { $sig.SignerCertificate.Subject }
+        Thumbprint = if ($null -eq $sig.SignerCertificate) { $null } else { $sig.SignerCertificate.Thumbprint }
+        UnknownRootOnly = $unknownRootOnly
+    } | ConvertTo-Json -Compress
+}
+catch { exit 1 }
+"#;
+
+#[derive(Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct SignatureVerification {
+    hash: String,
+    status: String,
+    publisher: Option<String>,
+    thumbprint: Option<String>,
+    unknown_root_only: bool,
+}
+
+fn signature_is_acceptable(
+    verification: &SignatureVerification,
+    publisher: &str,
+    thumbprint: &str,
+    expected_hash: &str,
+) -> bool {
+    verification.hash.eq_ignore_ascii_case(expected_hash)
+        && verification.publisher.as_deref() == Some(publisher)
+        && verification
+            .thumbprint
+            .as_deref()
+            .is_some_and(|actual| actual.eq_ignore_ascii_case(thumbprint))
+        && match verification.status.as_str() {
+            "Valid" | "NotTrusted" => true,
+            "UnknownError" => verification.unknown_root_only,
+            _ => false,
+        }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::version_parts;
+    use super::{SignatureVerification, signature_is_acceptable, version_parts};
+
+    fn verification(status: &str, unknown_root_only: bool) -> SignatureVerification {
+        SignatureVerification {
+            hash: "aabbcc".into(),
+            status: status.into(),
+            publisher: Some("CN=Pluto Labs Cascade Motion".into()),
+            thumbprint: Some("0123456789ABCDEF".into()),
+            unknown_root_only,
+        }
+    }
+
     #[test]
     fn versions_are_strictly_numeric() {
         assert_eq!(version_parts("1.2.3"), Some([1, 2, 3]));
         assert_eq!(version_parts("1.2.3-beta"), None);
         assert_eq!(version_parts("1.2"), None);
+    }
+
+    #[test]
+    fn accepts_pinned_signer_when_only_the_root_is_untrusted() {
+        assert!(signature_is_acceptable(
+            &verification("UnknownError", true),
+            "CN=Pluto Labs Cascade Motion",
+            "0123456789abcdef",
+            "AABBCC",
+        ));
+    }
+
+    #[test]
+    fn parses_powershell_verification_report() {
+        let report: SignatureVerification = serde_json::from_str(
+            r#"{"Hash":"AABBCC","Status":"UnknownError","Publisher":"CN=Pluto Labs Cascade Motion","Thumbprint":"0123456789ABCDEF","UnknownRootOnly":true}"#,
+        )
+        .unwrap();
+        assert!(signature_is_acceptable(
+            &report,
+            "CN=Pluto Labs Cascade Motion",
+            "0123456789abcdef",
+            "aabbcc",
+        ));
+    }
+
+    #[test]
+    fn rejects_unknown_signature_errors_without_root_only_evidence() {
+        assert!(!signature_is_acceptable(
+            &verification("UnknownError", false),
+            "CN=Pluto Labs Cascade Motion",
+            "0123456789ABCDEF",
+            "aabbcc",
+        ));
+    }
+
+    #[test]
+    fn rejects_changed_hash_or_signer_identity() {
+        let valid = verification("Valid", false);
+        assert!(!signature_is_acceptable(
+            &valid,
+            "CN=Pluto Labs Cascade Motion",
+            "0123456789ABCDEF",
+            "wrong-hash",
+        ));
+        assert!(!signature_is_acceptable(
+            &valid,
+            "CN=Other Publisher",
+            "0123456789ABCDEF",
+            "aabbcc",
+        ));
+        assert!(!signature_is_acceptable(
+            &valid,
+            "CN=Pluto Labs Cascade Motion",
+            "FEDCBA9876543210",
+            "aabbcc",
+        ));
+    }
+
+    #[test]
+    fn rejects_other_authenticode_failures() {
+        for status in ["HashMismatch", "NotSigned", "UnknownError"] {
+            assert!(!signature_is_acceptable(
+                &verification(status, false),
+                "CN=Pluto Labs Cascade Motion",
+                "0123456789ABCDEF",
+                "aabbcc",
+            ));
+        }
     }
 }
